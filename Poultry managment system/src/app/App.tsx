@@ -22,193 +22,21 @@ import {
 } from "recharts";
 import { toast, Toaster } from "sonner";
 
-// ── SUPER ADMIN TYPES ──────────────────────────────────────────────────────────
-type AppMode = "superadmin" | "tenant";
-type Screen =
-  | "login" | "dashboard" | "companies" | "company-detail"
-  | "create-company" | "payments" | "outstanding" | "plans" | "audit-log" | "settings";
-type Lang = "ar" | "en";
-type CompanyStatus = "active" | "trial" | "suspended";
-type CompanyPlan = "basic" | "pro" | "enterprise";
-type TenantRole = "owner" | "accountant" | "cashier";
-type TenantScreen = "dashboard" | "sales" | "sales-list" | "sales-new" | "sales-preview" | "sales-detail" |
-  "purchases" | "purchases-list" | "purchases-new" | "purchases-preview" | "purchases-detail" |
-  "quotations" | "inventory" | "inventory-product" | "inventory-stocktaking" | "inventory-alerts" | "inventory-movement" | "inventory-valuation" |
-  "customers" | "customers-create" | "customers-profile" | "customers-statement" |
-  "suppliers" | "suppliers-new" | "supplier-profile" | "supplier-statement" |
-  "payments" | "expenses" | "expenses-list" | "expenses-recurring" | "expenses-report" | "expense-detail" | "expense-voucher" |
-  "accounts" | "tax" | "tax-sales" | "tax-purchases" | "tax-net" | "tax-warnings" | "tax-audit" | "tax-credit-notes" | "tax-non-taxable" | "tax-settings" | "tax-export-preview" | "users" | "qa-summary" |
-  "payments-movements" | "payments-customer-collection" | "payments-supplier-payment" | "payments-customer-refund" | "payments-supplier-refund" | "payment-receipt-detail" | "payment-receipt-preview" | "payments-method-summary" | "payments-cash-bank" | "payments-report" |
-  "products" | "products-new" | "product-detail" | "product-categories" | "products-bulk-setup" | "products-byproducts" | "products-import-export" |
-  "quotations" | "quotations-new" | "quotation-detail" | "quotation-preview" | "quotation-convert" | "quotation-analytics" |
-  "settings" | "settings-company" | "settings-users" | "settings-user-new" | "settings-user-permissions" |
-  "settings-roles" | "settings-sensitive-actions" | "settings-audit" | "settings-numbering" |
-  "settings-vat" | "settings-print-templates" | "settings-transactions" | "settings-plan" | "settings-security" |
-  "reports" | "reports-daily" | "reports-sales" | "reports-purchases" | "reports-inventory" |
-  "reports-customers" | "reports-suppliers" | "reports-tax" | "reports-profit" | "reports-statements" | "reports-builder";
-
-interface Company {
-  id: string; nameAr: string; nameEn: string; subdomain: string;
-  adminName: string; adminPhone: string; adminEmail: string;
-  plan: CompanyPlan; status: CompanyStatus;
-  monthlyPrice: number; yearlyPrice: number;
-  renewalDate: string; outstandingAmount: number;
-  totalPaid: number; lastPaymentDate: string;
-  createdDate: string; emirate: string; tradeLicense: string;
-  modules: string[];
-}
-
-// ── SUPER ADMIN CONSTANTS ──────────────────────────────────────────────────────
-const ALL_MODULES = [
-  { key: "dashboard", ar: "لوحة التحكم", en: "Dashboard" },
-  { key: "sales", ar: "المبيعات", en: "Sales" },
-  { key: "purchases", ar: "المشتريات", en: "Purchases" },
-  { key: "inventory", ar: "المخزون", en: "Inventory" },
-  { key: "customers", ar: "العملاء", en: "Customers" },
-  { key: "suppliers", ar: "الموردون", en: "Suppliers" },
-  { key: "accounts", ar: "الحسابات", en: "Accounts" },
-  { key: "payments", ar: "المدفوعات والمقبوضات", en: "Payments & Receipts" },
-  { key: "expenses", ar: "المصروفات", en: "Expenses" },
-  { key: "tax", ar: "الضرائب", en: "Tax" },
-  { key: "reports", ar: "التقارير", en: "Reports" },
-  { key: "settings_mod", ar: "الإعدادات", en: "Settings" },
-  { key: "users", ar: "إدارة المستخدمين", en: "User Management" },
-];
-
-const COMPANIES: Company[] = [
-  { id: "1", nameAr: "شركة الوطنية للدواجن", nameEn: "Al Wataniyah Poultry", subdomain: "alwataniyah", adminName: "محمد أحمد السعيد", adminPhone: "+971 50 123 4567", adminEmail: "admin@alwataniyah.com", plan: "pro", status: "active", monthlyPrice: 1500, yearlyPrice: 15000, renewalDate: "2025-02-28", outstandingAmount: 0, totalPaid: 18000, lastPaymentDate: "2025-01-28", createdDate: "2024-01-15", emirate: "دبي / Dubai", tradeLicense: "DM-2024-78945", modules: ["dashboard","sales","purchases","inventory","customers","suppliers","accounts","payments","reports","settings_mod","users"] },
-  { id: "2", nameAr: "مزارع الخليج للدواجن", nameEn: "Gulf Farms Poultry", subdomain: "gulffarms", adminName: "سعيد الحمدي", adminPhone: "+971 55 987 6543", adminEmail: "saeed@gulffarms.com", plan: "basic", status: "trial", monthlyPrice: 800, yearlyPrice: 8000, renewalDate: "2025-01-31", outstandingAmount: 800, totalPaid: 0, lastPaymentDate: "—", createdDate: "2025-01-01", emirate: "الشارقة / Sharjah", tradeLicense: "SH-2025-11234", modules: ["dashboard","sales","inventory","customers","reports"] },
-  { id: "3", nameAr: "الإمارات لتجارة الدواجن", nameEn: "Emirates Poultry Trading", subdomain: "emiratespoultry", adminName: "خالد النعيمي", adminPhone: "+971 50 654 3210", adminEmail: "khaled@emiratespoultry.com", plan: "enterprise", status: "active", monthlyPrice: 3000, yearlyPrice: 30000, renewalDate: "2025-03-15", outstandingAmount: 3000, totalPaid: 36000, lastPaymentDate: "2025-01-10", createdDate: "2023-08-20", emirate: "أبوظبي / Abu Dhabi", tradeLicense: "AD-2023-56789", modules: ALL_MODULES.map(m => m.key) },
-  { id: "4", nameAr: "شركة النور للدواجن", nameEn: "Al Noor Poultry Co", subdomain: "alnoor", adminName: "فاطمة علي راشد", adminPhone: "+971 55 123 4321", adminEmail: "fatima@alnoor.ae", plan: "basic", status: "suspended", monthlyPrice: 800, yearlyPrice: 8000, renewalDate: "2024-12-31", outstandingAmount: 1600, totalPaid: 2400, lastPaymentDate: "2024-10-31", createdDate: "2024-05-12", emirate: "عجمان / Ajman", tradeLicense: "AJ-2024-33421", modules: ["dashboard","sales","inventory"] },
-  { id: "5", nameAr: "دواجن رأس الخيمة", nameEn: "RAK Poultry", subdomain: "rakpoultry", adminName: "عمر المزروعي", adminPhone: "+971 50 432 1987", adminEmail: "omar@rakpoultry.com", plan: "pro", status: "active", monthlyPrice: 1500, yearlyPrice: 15000, renewalDate: "2025-02-10", outstandingAmount: 1500, totalPaid: 15000, lastPaymentDate: "2024-12-10", createdDate: "2024-02-10", emirate: "رأس الخيمة / RAK", tradeLicense: "RK-2024-78123", modules: ["dashboard","sales","purchases","inventory","customers","accounts","payments","reports","settings_mod"] },
-];
-
-const REVENUE_DATA = [
-  { month: "أغسطس", monthEn: "Aug", revenue: 12000, collected: 11500 },
-  { month: "سبتمبر", monthEn: "Sep", revenue: 13500, collected: 12000 },
-  { month: "أكتوبر", monthEn: "Oct", revenue: 14000, collected: 14000 },
-  { month: "نوفمبر", monthEn: "Nov", revenue: 15800, collected: 13200 },
-  { month: "ديسمبر", monthEn: "Dec", revenue: 16500, collected: 15500 },
-  { month: "يناير", monthEn: "Jan", revenue: 17800, collected: 14800 },
-];
-
-const STATUS_PIE = [
-  { name: "نشط", nameEn: "Active", value: 3, color: "#22C55E" },
-  { name: "تجريبي", nameEn: "Trial", value: 1, color: "#F59E0B" },
-  { name: "موقوف", nameEn: "Suspended", value: 1, color: "#EF4444" },
-];
-
-const PAYMENTS_DATA = [
-  { id: "P1", companyId: "1", company: "شركة الوطنية للدواجن", companyEn: "Al Wataniyah Poultry", amount: 1500, method: "transfer", date: "2025-01-28", period: "يناير 2025", reference: "TRF-20250128-001", notes: "دفعة يناير", recordedBy: "أحمد السوبر أدمن" },
-  { id: "P2", companyId: "3", company: "الإمارات لتجارة الدواجن", companyEn: "Emirates Poultry Trading", amount: 3000, method: "cheque", date: "2025-01-10", period: "يناير 2025", reference: "CHQ-456789", notes: "", recordedBy: "أحمد السوبر أدمن" },
-  { id: "P3", companyId: "4", company: "شركة النور للدواجن", companyEn: "Al Noor Poultry Co", amount: 800, method: "cash", date: "2024-10-31", period: "أكتوبر 2024", reference: "CSH-001", notes: "دفعة جزئية", recordedBy: "أحمد السوبر أدمن" },
-  { id: "P4", companyId: "1", company: "شركة الوطنية للدواجن", companyEn: "Al Wataniyah Poultry", amount: 1500, method: "transfer", date: "2024-12-28", period: "ديسمبر 2024", reference: "TRF-20241228-002", notes: "", recordedBy: "أحمد السوبر أدمن" },
-  { id: "P5", companyId: "5", company: "دواجن رأس الخيمة", companyEn: "RAK Poultry", amount: 1500, method: "transfer", date: "2024-12-10", period: "ديسمبر 2024", reference: "TRF-20241210-001", notes: "", recordedBy: "أحمد السوبر أدمن" },
-];
-
-const AUDIT_LOGS = [
-  { id: "A1", timestamp: "2025-01-28 10:34", user: "أحمد (Super Admin)", action: "تسجيل دفعة", actionEn: "Payment Recorded", company: "الوطنية للدواجن", details: "1,500 درهم — يناير 2025", ip: "192.168.1.10" },
-  { id: "A2", timestamp: "2025-01-15 14:20", user: "أحمد (Super Admin)", action: "إنشاء شركة", actionEn: "Company Created", company: "مزارع الخليج", details: "خطة أساسية — تجريبي 30 يوم", ip: "192.168.1.10" },
-  { id: "A3", timestamp: "2024-12-15 09:15", user: "أحمد (Super Admin)", action: "تعليق حساب", actionEn: "Account Suspended", company: "شركة النور للدواجن", details: "سبب: تأخر في الدفع", ip: "192.168.1.10" },
-  { id: "A4", timestamp: "2024-12-01 11:00", user: "أحمد (Super Admin)", action: "تغيير الخطة", actionEn: "Plan Changed", company: "الإمارات للدواجن", details: "Pro → Enterprise", ip: "192.168.1.10" },
-  { id: "A5", timestamp: "2024-11-20 16:45", user: "أحمد (Super Admin)", action: "إنشاء مستخدم أدمن", actionEn: "Admin Created", company: "دواجن رأس الخيمة", details: "عمر المزروعي", ip: "192.168.1.10" },
-];
-
-const PLANS_DATA = [
-  { key: "basic", nameAr: "الأساسية", nameEn: "Basic", monthlyPrice: 800, yearlyPrice: 8000, maxUsers: 5, descAr: "مناسب للشركات الصغيرة", descEn: "For small companies", active: true, modules: ["dashboard","sales","inventory","customers","reports","settings_mod"] },
-  { key: "pro", nameAr: "الاحترافية", nameEn: "Pro", monthlyPrice: 1500, yearlyPrice: 15000, maxUsers: 15, descAr: "للشركات المتوسطة والنامية", descEn: "For medium & growing companies", active: true, modules: ["dashboard","sales","purchases","inventory","customers","suppliers","accounts","payments","reports","settings_mod","users"] },
-  { key: "enterprise", nameAr: "المؤسسية", nameEn: "Enterprise", monthlyPrice: 3000, yearlyPrice: 30000, maxUsers: 999, descAr: "للشركات الكبيرة — جميع الميزات", descEn: "Large enterprises — all features", active: true, modules: ALL_MODULES.map(m => m.key) },
-];
-
-const RECENT_ACTIVITY = [
-  { id: "1", ar: "تم إنشاء شركة جديدة", en: "New company created", company: "مزارع الخليج", time: "منذ ساعتين", type: "create" },
-  { id: "2", ar: "تم تسجيل دفعة", en: "Payment recorded", company: "الوطنية للدواجن", time: "منذ 5 ساعات", type: "payment" },
-  { id: "3", ar: "تم تعليق حساب", en: "Account suspended", company: "شركة النور", time: "منذ يومين", type: "suspend" },
-  { id: "4", ar: "تجديد اشتراك", en: "Subscription renewed", company: "دواجن رأس الخيمة", time: "منذ 3 أيام", type: "renew" },
-];
-
-// ── TENANT CONSTANTS ───────────────────────────────────────────────────────────
-const T_PRODUCTS = [
-  { id: "p1", name: "دجاج 900 جرام",     nameEn: "Chicken 900g",     cartons: 450, pieces: 4500, weightKg: 4050, minStock: 200, priceKg: 13.5 },
-  { id: "p2", name: "دجاج 1000 جرام",    nameEn: "Chicken 1000g",    cartons: 180, pieces: 1800, weightKg: 1800, minStock: 300, priceKg: 14.0 },
-  { id: "p3", name: "دجاج 1100 جرام",    nameEn: "Chicken 1100g",    cartons: 350, pieces: 3500, weightKg: 3850, minStock: 200, priceKg: 14.5 },
-  { id: "p4", name: "دجاج 1200 جرام",    nameEn: "Chicken 1200g",    cartons: 420, pieces: 4200, weightKg: 5040, minStock: 200, priceKg: 15.0 },
-  { id: "p5", name: "دجاج متحرك الوزن", nameEn: "Variable Weight",  cartons: 200, pieces: 2000, weightKg: 2200, minStock: 250, priceKg: 13.0 },
-];
-
-const T_CUSTOMERS = [
-  { id: "c1", name: "مطعم الخليج",           nameEn: "Al Khalij Restaurant",   balance: 12500, overdue: true,  days: 14, creditLimit: 20000 },
-  { id: "c2", name: "سوبر ماركت المدينة",   nameEn: "Al Madina Supermarket",  balance: 8200,  overdue: false, days: 5,  creditLimit: 15000 },
-  { id: "c3", name: "مطبخ الإمارات",         nameEn: "Emirates Kitchen",       balance: 4800,  overdue: true,  days: 21, creditLimit: 10000 },
-];
-
-const T_SUPPLIERS = [
-  { id: "s1", name: "مزرعة العين للدواجن",      nameEn: "Al Ain Poultry Farm",  balance: 28000, due: "2025-02-05", overdue: false },
-  { id: "s2", name: "شركة الإمارات للدواجن",    nameEn: "Emirates Poultry Co",  balance: 15500, due: "2025-01-30", overdue: true  },
-];
-
-const T_INVOICES = [
-  { id: "INV-2025-0081", customer: "مطعم الخليج",         customerEn: "Al Khalij Restaurant",  cartons: 50,  weightKg: 450,  total: 5850, paid: 5850, remaining: 0,    method: "cash",   status: "paid"    as const },
-  { id: "INV-2025-0082", customer: "سوبر ماركت المدينة", customerEn: "Al Madina Supermarket", cartons: 80,  weightKg: 800,  total: 8400, paid: 4200, remaining: 4200, method: "credit", status: "partial" as const },
-  { id: "INV-2025-0083", customer: "مطبخ الإمارات",       customerEn: "Emirates Kitchen",      cartons: 40,  weightKg: 400,  total: 4200, paid: 4200, remaining: 0,    method: "bank",   status: "paid"    as const },
-];
-
-const T_PURCHASES = [
-  { id: "PUR-2025-0041", supplier: "مزرعة العين للدواجن",   supplierEn: "Al Ain Poultry Farm", cartons: 400, weightKg: 4200, total: 8400, method: "credit" },
-  { id: "PUR-2025-0042", supplier: "شركة الإمارات للدواجن", supplierEn: "Emirates Poultry Co", cartons: 220, weightKg: 2800, total: 2800, method: "bank" },
-];
-
-const T_DAILY = [
-  { day: "الأحد",    dayEn: "Sun", sales: 15200, purchases: 9800  },
-  { day: "الاثنين", dayEn: "Mon", sales: 18300, purchases: 12100 },
-  { day: "الثلاثاء",dayEn: "Tue", sales: 14800, purchases: 10200 },
-  { day: "الأربعاء",dayEn: "Wed", sales: 21500, purchases: 14300 },
-  { day: "الخميس",  dayEn: "Thu", sales: 16700, purchases: 11500 },
-  { day: "الجمعة",  dayEn: "Fri", sales: 19200, purchases: 13100 },
-  { day: "اليوم",   dayEn: "Today", sales: 18450, purchases: 11200 },
-];
-
-const T_MONTHLY_PROFIT = [
-  { month: "أغسطس", monthEn: "Aug", profit: 78000 },
-  { month: "سبتمبر",monthEn: "Sep", profit: 82000 },
-  { month: "أكتوبر",monthEn: "Oct", profit: 88000 },
-  { month: "نوفمبر",monthEn: "Nov", profit: 75000 },
-  { month: "ديسمبر",monthEn: "Dec", profit: 91000 },
-  { month: "يناير", monthEn: "Jan", profit: 93000 },
-];
-
-const T_PAY_PIE = [
-  { name: "كاش", nameEn: "Cash", value: 45, color: "#22C55E" },
-  { name: "بنكي", nameEn: "Bank", value: 35, color: "#0F2C59" },
-  { name: "آجل",  nameEn: "Credit", value: 20, color: "#F59E0B" },
-];
-
-const T_NOTIFS = [
-  { id: "n1", type: "warning", ar: "دجاج 1000 جرام منخفض في المخزون",                  en: "Chicken 1000g is low in stock",       nav: "inventory" },
-  { id: "n2", type: "warning", ar: "دجاج متحرك الوزن منخفض في المخزون",              en: "Variable weight chicken is low",      nav: "inventory" },
-  { id: "n3", type: "danger",  ar: "مطعم الخليج: رصيد متأخر AED 12,500",              en: "Al Khalij: overdue AED 12,500",       nav: "customers" },
-  { id: "n4", type: "danger",  ar: "مطبخ الإمارات: رصيد متأخر AED 4,800",             en: "Emirates Kitchen: overdue AED 4,800", nav: "customers" },
-  { id: "n5", type: "warning", ar: "شركة الإمارات للدواجن: دفعة مستحقة AED 15,500", en: "Emirates Poultry: payment due",       nav: "suppliers" },
-  { id: "n6", type: "info",    ar: "الاشتراك ينتهي خلال 7 أيام",                       en: "Subscription expires in 7 days",      nav: "" },
-];
-
-const T_NAV: { key: TenantScreen; icon: ElementType; ar: string; en: string }[] = [
-  { key: "dashboard",   icon: LayoutDashboard, ar: "الرئيسية",                  en: "Dashboard" },
-  { key: "sales",       icon: FileText,         ar: "المبيعات",                   en: "Sales" },
-  { key: "quotations",  icon: Tag,              ar: "عروض الأسعار",             en: "Quotations" },
-  { key: "purchases",   icon: ShoppingCart,     ar: "المشتريات",                 en: "Purchases" },
-  { key: "inventory",   icon: Package,          ar: "المخزون",                   en: "Inventory" },
-  { key: "products",    icon: Tag,              ar: "المنتجات",                  en: "Products" },
-  { key: "customers",   icon: Users,            ar: "العملاء",                   en: "Customers" },
-  { key: "suppliers",   icon: Truck,            ar: "الموردين",                  en: "Suppliers" },
-  { key: "payments",    icon: Wallet,           ar: "المدفوعات والتحصيلات",    en: "Payments" },
-  { key: "expenses",    icon: Receipt,          ar: "المصروفات",                 en: "Expenses" },
-  { key: "accounts",    icon: BookOpen,         ar: "الحسابات",                  en: "Accounts" },
-  { key: "tax",         icon: Calculator,       ar: "الضريبة",                   en: "Tax" },
-  { key: "reports",     icon: BarChart2,        ar: "التقارير",                  en: "Reports" },
-  { key: "users",       icon: Shield,           ar: "المستخدمين والصلاحيات",   en: "Users & Permissions" },
-  { key: "settings",    icon: Settings,         ar: "الإعدادات",                 en: "Settings" },
-];
+// ── SHARED TYPES, NAVIGATION & MOCK DATA (extracted — see src/shared, src/app/navigation, src/data) ──
+import type {
+  Lang, AppMode, TenantRole, TenantScreen, SuperAdminScreen as Screen,
+  Company, CompanyStatus, CompanyPlan,
+  SProduct, SInvLine, SInvStatus, SInvoice,
+} from "@/shared/types";
+import { T_NAV } from "@/app/navigation/tenantNavigation";
+import { SA_NAV } from "@/app/navigation/superAdminNavigation";
+import { TENANT_TITLES, SUPER_ADMIN_TITLES } from "@/app/navigation/screenTitles";
+import { ComingSoonPlaceholder } from "@/shared/components/ComingSoonPlaceholder";
+import {
+  ALL_MODULES, COMPANIES, REVENUE_DATA, STATUS_PIE, PAYMENTS_DATA, AUDIT_LOGS, PLANS_DATA, RECENT_ACTIVITY,
+  T_PRODUCTS, T_CUSTOMERS, T_SUPPLIERS, T_INVOICES, T_PURCHASES, T_DAILY, T_MONTHLY_PROFIT, T_PAY_PIE, T_NOTIFS,
+  S_PRODUCTS, S_CUSTOMERS, S_INVOICES,
+} from "@/data/mock";
 
 // ── SHARED COMPONENTS ──────────────────────────────────────────────────────────
 function StatusBadge({ status, lang }: { status: CompanyStatus; lang: Lang }) {
@@ -319,17 +147,6 @@ function ConfirmModal({ open, title, message, onConfirm, onCancel, danger = fals
     </div>
   );
 }
-
-// ── SUPER ADMIN NAVIGATION ─────────────────────────────────────────────────────
-const SA_NAV = [
-  { key: "dashboard",   icon: LayoutDashboard, ar: "الرئيسية",         en: "Dashboard" },
-  { key: "companies",   icon: Building2,       ar: "الشركات",           en: "Companies" },
-  { key: "payments",    icon: CreditCard,      ar: "المدفوعات",         en: "Payments" },
-  { key: "outstanding", icon: AlertCircle,     ar: "المبالغ المستحقة", en: "Outstanding" },
-  { key: "plans",       icon: Package,         ar: "الخطط والأسعار",   en: "Plans & Pricing" },
-  { key: "audit-log",   icon: ClipboardList,   ar: "سجل العمليات",     en: "Audit Log" },
-  { key: "settings",    icon: Settings,        ar: "الإعدادات",         en: "Settings" },
-];
 
 function Sidebar({ screen, onNavigate, lang, isOpen, onClose, onSwitchToTenant }: {
   screen: Screen; onNavigate: (s: Screen) => void; lang: Lang;
@@ -936,62 +753,9 @@ function AuditLogScreen({ lang }: { lang: Lang }) {
 // PHASE 3: SALES INVOICE DATA & TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-interface SProduct { id: string; name: string; nameAr: string; g: number; ppc: number; priceKg: number; stock: number; variable?: boolean; isPart?: boolean; }
-interface SInvLine { id: string; productId: string; cartons: number; pcs: number; kg: number; priceKg: number; amount: number; kgOverride: boolean; priceOverride: boolean; }
-type SInvStatus = "draft" | "approved" | "partial" | "paid" | "cancelled" | "adjusted";
-interface SInvoice { id: string; date: string; customerId: string; customer: string; customerEn: string; cartons: number; kg: number; subtotal: number; vat: number; total: number; paid: number; remaining: number; method: string; status: SInvStatus; user: string; }
-
-const S_PRODUCTS: SProduct[] = [
-  { id: "w500",  name: "500 GRAM",  nameAr: "500 جرام",  g: 500,  ppc: 20, priceKg: 12.50, stock: 280 },
-  { id: "w550",  name: "550 GRAM",  nameAr: "550 جرام",  g: 550,  ppc: 20, priceKg: 12.75, stock: 240 },
-  { id: "w600",  name: "600 GRAM",  nameAr: "600 جرام",  g: 600,  ppc: 20, priceKg: 13.00, stock: 190 },
-  { id: "w650",  name: "650 GRAM",  nameAr: "650 جرام",  g: 650,  ppc: 20, priceKg: 13.25, stock: 210 },
-  { id: "w700",  name: "700 GRAM",  nameAr: "700 جرام",  g: 700,  ppc: 16, priceKg: 13.25, stock: 175 },
-  { id: "w750",  name: "750 GRAM",  nameAr: "750 جرام",  g: 750,  ppc: 16, priceKg: 13.50, stock: 260 },
-  { id: "w800",  name: "800 GRAM",  nameAr: "800 جرام",  g: 800,  ppc: 16, priceKg: 13.50, stock: 300 },
-  { id: "w850",  name: "850 GRAM",  nameAr: "850 جرام",  g: 850,  ppc: 16, priceKg: 13.75, stock: 320 },
-  { id: "w900",  name: "900 GRAM",  nameAr: "900 جرام",  g: 900,  ppc: 10, priceKg: 13.75, stock: 450 },
-  { id: "w950",  name: "950 GRAM",  nameAr: "950 جرام",  g: 950,  ppc: 10, priceKg: 14.00, stock: 280 },
-  { id: "w1000", name: "1000 GRAM", nameAr: "1000 جرام", g: 1000, ppc: 10, priceKg: 14.00, stock: 180 },
-  { id: "w1050", name: "1050 GRAM", nameAr: "1050 جرام", g: 1050, ppc: 10, priceKg: 14.25, stock: 340 },
-  { id: "w1100", name: "1100 GRAM", nameAr: "1100 جرام", g: 1100, ppc: 10, priceKg: 14.50, stock: 350 },
-  { id: "w1150", name: "1150 GRAM", nameAr: "1150 جرام", g: 1150, ppc: 10, priceKg: 14.50, stock: 290 },
-  { id: "w1200", name: "1200 GRAM", nameAr: "1200 جرام", g: 1200, ppc: 10, priceKg: 14.75, stock: 420 },
-  { id: "w1250", name: "1250 GRAM", nameAr: "1250 جرام", g: 1250, ppc: 10, priceKg: 14.75, stock: 380 },
-  { id: "w1300", name: "1300 GRAM", nameAr: "1300 جرام", g: 1300, ppc: 10, priceKg: 15.00, stock: 410 },
-  { id: "w1350", name: "1350 GRAM", nameAr: "1350 جرام", g: 1350, ppc: 10, priceKg: 15.00, stock: 300 },
-  { id: "w1400", name: "1400 GRAM", nameAr: "1400 جرام", g: 1400, ppc: 10, priceKg: 15.25, stock: 270 },
-  { id: "w1450", name: "1450 GRAM", nameAr: "1450 جرام", g: 1450, ppc: 10, priceKg: 15.25, stock: 220 },
-  { id: "w1500", name: "1500 GRAM", nameAr: "1500 جرام", g: 1500, ppc: 10, priceKg: 15.50, stock: 190 },
-  { id: "w1550", name: "1550 GRAM", nameAr: "1550 جرام", g: 1550, ppc: 10, priceKg: 15.50, stock: 200, variable: true },
-  { id: "w1600", name: "1600 GRAM", nameAr: "1600 جرام", g: 1600, ppc: 10, priceKg: 15.75, stock: 150, variable: true },
-  { id: "w1650", name: "1650 GRAM", nameAr: "1650 جرام", g: 1650, ppc: 10, priceKg: 15.75, stock: 120, variable: true },
-  { id: "w1700", name: "1700 GRAM", nameAr: "1700 جرام", g: 1700, ppc: 10, priceKg: 16.00, stock: 100, variable: true },
-  { id: "liver",   name: "Liver",   nameAr: "كبدة",  g: 0, ppc: 0, priceKg: 4.00,  stock: 500, isPart: true },
-  { id: "gizzard", name: "Gizzard", nameAr: "قانصة", g: 0, ppc: 0, priceKg: 4.00,  stock: 400, isPart: true },
-  { id: "heart",   name: "Heart",   nameAr: "قلب",   g: 0, ppc: 0, priceKg: 5.00,  stock: 300, isPart: true },
-  { id: "breast",  name: "Breast",  nameAr: "صدور",  g: 0, ppc: 0, priceKg: 22.00, stock: 200, isPart: true },
-  { id: "leg",     name: "Leg",     nameAr: "أرجل",  g: 0, ppc: 0, priceKg: 18.00, stock: 250, isPart: true },
-  { id: "wings",   name: "Wings",   nameAr: "أجنحة", g: 0, ppc: 0, priceKg: 14.00, stock: 180, isPart: true },
-  { id: "bone",    name: "Bone",    nameAr: "عظام",  g: 0, ppc: 0, priceKg: 3.00,  stock: 600, isPart: true },
-];
-
-const S_CUSTOMERS = [
-  { id: "sc1", name: "مطعم الخليج",         nameEn: "Al Khalij Restaurant",  phone: "+971 50 123 4567", balance: 12500, creditLimit: 20000, overdue: true,  trn: "" },
-  { id: "sc2", name: "سوبر ماركت المدينة", nameEn: "Al Madina Supermarket", phone: "+971 55 987 6543", balance: 8200,  creditLimit: 15000, overdue: false, trn: "100123456700003" },
-  { id: "sc3", name: "مطبخ الإمارات",       nameEn: "Emirates Kitchen",      phone: "+971 50 654 3210", balance: 4800,  creditLimit: 10000, overdue: true,  trn: "" },
-  { id: "sc4", name: "Prime Fresh Meat LLC", nameEn: "Prime Fresh Meat LLC",  phone: "+971 54 321 6789", balance: 0,     creditLimit: 50000, overdue: false, trn: "100987654300001" },
-];
-
-const S_INVOICES: SInvoice[] = [
-  { id: "INV-2025-0086", date: "2025-01-28", customerId: "sc1", customer: "مطعم الخليج",         customerEn: "Al Khalij Restaurant",  cartons: 10, kg: 126,  subtotal: 1906.25, vat: 95.31,  total: 2001.56, paid: 2001.56, remaining: 0,       method: "cash",   status: "paid",      user: "محمد (كاشير)" },
-  { id: "INV-2025-0085", date: "2025-01-28", customerId: "sc2", customer: "سوبر ماركت المدينة", customerEn: "Al Madina Supermarket", cartons: 80, kg: 800,  subtotal: 11200,   vat: 560,    total: 11760,   paid: 5000,    remaining: 6760,    method: "credit", status: "partial",   user: "محمد (كاشير)" },
-  { id: "INV-2025-0084", date: "2025-01-27", customerId: "sc3", customer: "مطبخ الإمارات",       customerEn: "Emirates Kitchen",      cartons: 40, kg: 400,  subtotal: 5800,    vat: 290,    total: 6090,    paid: 6090,    remaining: 0,       method: "bank",   status: "paid",      user: "أحمد (مالك)" },
-  { id: "INV-2025-0083", date: "2025-01-27", customerId: "sc1", customer: "مطعم الخليج",         customerEn: "Al Khalij Restaurant",  cartons: 20, kg: 200,  subtotal: 2950,    vat: 147.50, total: 3097.50, paid: 0,       remaining: 3097.50, method: "credit", status: "approved",  user: "محمد (كاشير)" },
-  { id: "INV-2025-0082", date: "2025-01-26", customerId: "sc2", customer: "سوبر ماركت المدينة", customerEn: "Al Madina Supermarket", cartons: 0,  kg: 0,    subtotal: 0,       vat: 0,      total: 0,       paid: 0,       remaining: 0,       method: "cash",   status: "draft",     user: "محمد (كاشير)" },
-  { id: "INV-2025-0080", date: "2025-01-25", customerId: "sc3", customer: "مطبخ الإمارات",       customerEn: "Emirates Kitchen",      cartons: 60, kg: 620,  subtotal: 8990,    vat: 449.50, total: 9439.50, paid: 9439.50, remaining: 0,       method: "bank",   status: "adjusted",  user: "أحمد (مالك)" },
-  { id: "INV-2025-0075", date: "2025-01-20", customerId: "sc1", customer: "مطعم الخليج",         customerEn: "Al Khalij Restaurant",  cartons: 30, kg: 320,  subtotal: 4680,    vat: 234,    total: 4914,    paid: 4914,    remaining: 0,       method: "cash",   status: "cancelled", user: "أحمد (مالك)" },
-];
+// Sales-invoice data & types extracted to:
+//   src/shared/types/documents.ts  (SProduct, SInvLine, SInvStatus, SInvoice)
+//   src/data/mock/{products,customers,sales}.mock.ts  (S_PRODUCTS, S_CUSTOMERS, S_INVOICES)
 
 // ── INVOICE STATUS BADGE ───────────────────────────────────────────────────────
 function SInvStatusBadge({ status, lang }: { status: SInvStatus; lang: Lang }) {
@@ -2397,7 +2161,7 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
   const salesTarget = 20000;
   const salesPct = Math.min(100, Math.round((todaySales / salesTarget) * 100));
 
-  const quickActions = [
+  const quickActions: { ar: string; en: string; icon: ElementType; color: string; nav?: TenantScreen }[] = [
     { ar: "عرض سعر جديد",      en: "New Quotation",     icon: Tag,          color: "bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200", nav: "quotations-new" },
     { ar: "فاتورة شراء جديدة", en: "New Purchase",      icon: ShoppingCart, color: "bg-[#0F2C59]/8 text-[#0F2C59] hover:bg-[#0F2C59]/15 border-[#0F2C59]/15", nav: "purchases-new" },
     { ar: "تسجيل تحصيل",       en: "Collect Payment",   icon: Wallet,       color: "bg-teal-50 text-teal-700 hover:bg-teal-100 border-teal-100", nav: "payments" },
@@ -3057,172 +2821,107 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
   const [showPayModal, setShowPayModal] = useState(false);
   const isRTL = lang === "ar";
   const company = COMPANIES.find(c => c.id === companyId) || COMPANIES[0];
+  // Tenant navigation boundary: screens declare `onNavigate: (s: string) => void`,
+  // so wrap the typed setter once here instead of casting at every call site.
+  const navTenant = (s: string) => setTScreen(s as TenantScreen);
 
-  const TENANT_TITLES: Record<TenantScreen, [string, string]> = {
-    dashboard: ["الرئيسية", "Dashboard"], sales: ["فواتير البيع", "Sales Invoices"],
-    "sales-list": ["فواتير البيع", "Sales Invoices"], "sales-new": ["فاتورة بيع جديدة", "New Sales Invoice"],
-    "sales-preview": ["طباعة الفاتورة", "Print Invoice"], "sales-detail": ["تفاصيل الفاتورة", "Invoice Detail"],
-    purchases: ["فواتير الشراء", "Purchase Invoices"], "purchases-list": ["فواتير الشراء", "Purchase Invoices"],
-    "purchases-new": ["فاتورة شراء جديدة", "New Purchase Invoice"],
-    "purchases-preview": ["سجل الشراء الداخلي", "Internal Purchase Record"],
-    "purchases-detail": ["تفاصيل فاتورة الشراء", "Purchase Invoice Detail"],
-    customers: ["العملاء", "Customers"], "customers-create": ["إضافة عميل", "Add Customer"],
-    "customers-profile": ["ملف العميل", "Customer Profile"], "customers-statement": ["كشف حساب", "Account Statement"],
-    suppliers: ["الموردين", "Suppliers"], "suppliers-new": ["إضافة مورد", "Add Supplier"],
-    "supplier-profile": ["ملف المورد", "Supplier Profile"], "supplier-statement": ["كشف حساب مورد", "Supplier Statement"],
-    "payments-movements": ["كل الحركات المالية", "All Movements"], "payments-customer-collection": ["تسجيل تحصيل", "Collect"],
-    "payments-supplier-payment": ["تسجيل دفعة لمورد", "Pay Supplier"], "payments-customer-refund": ["استرجاع مبلغ للعميل", "Customer Refund"],
-    "payments-supplier-refund": ["استرداد مبلغ من المورد", "Supplier Refund"], "payment-receipt-detail": ["تفاصيل الإيصال", "Receipt Detail"],
-    "payment-receipt-preview": ["طباعة الإيصال", "Print Receipt"], "payments-method-summary": ["ملخص طرق الدفع", "Payment Methods"],
-    "payments-cash-bank": ["الخزنة والحسابات البنكية", "Cash & Bank Accounts"], "payments-report": ["تقرير المدفوعات", "Payments Report"],
-    products: ["المنتجات", "Products"], "products-new": ["إضافة منتج", "Add Product"],
-    "product-detail": ["تفاصيل المنتج", "Product Detail"], "product-categories": ["تصنيفات المنتجات", "Categories"],
-    "products-bulk-setup": ["إعداد دفعة واحدة", "Bulk Setup"], "products-byproducts": ["المنتجات الجانبية", "By-products"],
-    "products-import-export": ["استيراد / تصدير", "Import / Export"],
-    quotations: ["عروض الأسعار", "Quotations"], "quotations-new": ["عرض سعر جديد", "New Quotation"],
-    "quotation-detail": ["تفاصيل عرض السعر", "Quotation Detail"], "quotation-preview": ["معاينة عرض السعر", "Quotation Preview"],
-    "quotation-convert": ["تحويل إلى فاتورة", "Convert to Invoice"], "quotation-analytics": ["تحليل عروض الأسعار", "Quotation Analytics"],
-    reports: ["التقارير والتحليلات", "Reports & Analytics"], "reports-daily": ["تقرير اليوم", "Daily Report"],
-    "reports-sales": ["تقارير المبيعات", "Sales Reports"], "reports-purchases": ["تقارير المشتريات", "Purchase Reports"],
-    "reports-inventory": ["تقارير المخزون", "Inventory Reports"], "reports-customers": ["تقارير العملاء", "Customer Reports"],
-    "reports-suppliers": ["تقارير الموردين", "Supplier Reports"], "reports-tax": ["تقرير الضريبة", "Tax Report"],
-    "reports-profit": ["تقرير صافي الربح", "Profit Report"], "reports-statements": ["مركز كشوف الحساب", "Account Statements"],
-    "reports-builder": ["تقرير مخصص", "Custom Report"],
-    settings: ["الإعدادات", "Settings"], "settings-company": ["بيانات الشركة", "Company Profile"],
-    "settings-users": ["المستخدمين", "Users"], "settings-user-new": ["إضافة مستخدم", "Add User"],
-    "settings-user-permissions": ["صلاحيات المستخدم", "User Permissions"], "settings-roles": ["الصلاحيات حسب الدور", "Role Permissions"],
-    "settings-sensitive-actions": ["الإجراءات الحساسة", "Sensitive Actions"], "settings-audit": ["سجل العمليات", "Audit Log"],
-    "settings-numbering": ["ترقيم المستندات", "Document Numbering"], "settings-vat": ["إعدادات الضريبة", "VAT Settings"],
-    "settings-print-templates": ["قوالب الطباعة", "Print Templates"], "settings-transactions": ["إعدادات الفواتير", "Transaction Settings"],
-    "settings-plan": ["الباقة والميزات", "Plan & Features"], "settings-security": ["إعدادات الأمان", "Security Settings"],
-    expenses: ["المصروفات", "Expenses"], "expenses-list": ["قائمة المصروفات", "Expenses List"],
-    "expenses-recurring": ["المصروفات المتكررة", "Recurring Expenses"], "expenses-report": ["تقرير المصروفات", "Expense Report"],
-    "expense-detail": ["تفاصيل المصروف", "Expense Detail"], "expense-voucher": ["سند مصروف", "Expense Voucher"],
-    inventory: ["المخزون", "Inventory"], "inventory-product": ["تفاصيل المنتج", "Product Detail"],
-    "inventory-stocktaking": ["جرد المخزون", "Stocktaking"], "inventory-alerts": ["تنبيهات المخزون", "Low Stock Alerts"],
-    "inventory-movement": ["حركة المخزون", "Inventory Movement"], "inventory-valuation": ["تقييم المخزون", "Inventory Valuation"],
-    payments: ["المدفوعات والتحصيلات", "Payments"], accounts: ["الحسابات", "Accounts"],
-    "qa-summary": ["ملخص مراجعة الجودة", "QA Summary"],
-    tax: ["إدارة الضريبة VAT", "VAT Management"],
-    "tax-sales": ["تقرير ضريبة المبيعات", "Sales VAT Report"],
-    "tax-purchases": ["تقرير ضريبة المشتريات", "Purchase VAT Report"],
-    "tax-net": ["صافي الضريبة التقديري", "Net VAT Estimate"],
-    "tax-warnings": ["تحذيرات الضريبة", "Tax Warnings"],
-    "tax-audit": ["سجل تغييرات الضريبة", "VAT Audit Log"],
-    "tax-credit-notes": ["الإشعارات الدائنة الضريبية", "Tax Credit Notes"],
-    "tax-non-taxable": ["فواتير بدون ضريبة", "Non-Taxable Invoices"],
-    "tax-settings": ["إعدادات الضريبة", "Tax Settings"],
-    "tax-export-preview": ["تصدير تقرير الضريبة", "Export Tax Report"],
-    users: ["المستخدمين والصلاحيات", "Users & Permissions"],
-  };
+  // TENANT_TITLES extracted to src/app/navigation/screenTitles.ts
 
   return (
     <div dir={isRTL ? "rtl" : "ltr"} className={`flex h-screen overflow-hidden bg-[#F8FAFC] ${isRTL ? "flex-row-reverse" : ""}`}>
-      <TenantSidebar screen={tScreen} onNavigate={setTScreen} lang={lang} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} company={company} role={role} />
+      <TenantSidebar screen={tScreen} onNavigate={navTenant} lang={lang} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} company={company} role={role} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <TenantTopBar lang={lang} onLangSwitch={onLangSwitch} onMenuClick={() => setSidebarOpen(true)} role={role} onRoleChange={setRole} onNotificationsClick={() => setShowNotif(v => !v)} notifCount={T_NOTIFS.length} company={company} onBack={onBack} onQAClick={() => setTScreen("qa-summary")} />
         <main className="flex-1 overflow-y-auto relative">
-          {tScreen === "dashboard"    && <TenantDashboardScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {(tScreen === "sales" || tScreen === "sales-list") && <SalesListScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "sales-new"    && <SalesNewScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "sales-preview"&& <SalesPreviewScreen lang={lang} onNavigate={setTScreen} role={role} />}
-          {tScreen === "sales-detail" && <SalesDetailScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {(tScreen === "purchases" || tScreen === "purchases-list") && <PurchListScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "purchases-new"     && <PurchNewScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "purchases-preview" && <PurchPreviewScreen lang={lang} onNavigate={setTScreen} role={role} />}
-          {tScreen === "purchases-detail"  && <PurchDetailScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "customers"          && <CustomersListScreen lang={lang} role={role} onNavigate={setTScreen} setSelectedCustomer={setSelectedCustomerId} />}
-          {tScreen === "customers-create"  && <CreateCustomerScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "customers-profile" && <CustomerProfileScreen lang={lang} role={role} onNavigate={setTScreen} customerId={selectedCustomerId} />}
-          {tScreen === "customers-statement"&& <CustomerStatementScreen lang={lang} customerId={selectedCustomerId} onNavigate={setTScreen} />}
-          {tScreen === "payments"                  && <PaymentsOverviewScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "payments-movements"       && <PaymentMovementsScreen lang={lang} role={role} onNavigate={setTScreen} setSelectedReceiptId={setSelectedReceiptId} />}
-          {tScreen === "payments-customer-refund" && <CustomerRefundScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "payment-receipt-detail"   && <ReceiptPreviewScreen lang={lang} onNavigate={setTScreen} receiptId={selectedReceiptId} />}
-          {tScreen === "payment-receipt-preview"  && <ReceiptPreviewScreen lang={lang} onNavigate={setTScreen} receiptId={selectedReceiptId} />}
-          {tScreen === "payments-method-summary"  && <PaymentMethodSummaryScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "payments-cash-bank"       && <CashBankAccountsScreen lang={lang} onNavigate={setTScreen} />}
-          {tScreen === "payments-report"          && <PaymentsReportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "tax"                      && <TaxDashboardScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "tax-sales"                && <SalesVATReportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "tax-purchases"            && <PurchaseVATReportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "tax-net"                  && <NetVATScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "tax-warnings"             && <TaxWarningsScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "tax-audit"                && <VATAuditScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "tax-credit-notes"         && <TaxCreditNotesScreen lang={lang} onNavigate={setTScreen} />}
-          {tScreen === "tax-non-taxable"          && <NonTaxableInvoicesScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "tax-settings"             && <TaxSettingsPanel lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "tax-export-preview"       && <TaxExportPreviewScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "accounts"               && <AccountsComingSoonScreen lang={lang} onNavigate={setTScreen} />}
-          {tScreen === "qa-summary"             && <QASummaryScreen lang={lang} onNavigate={setTScreen} />}
-          {tScreen === "products"               && <ProductsListScreen lang={lang} role={role} onNavigate={setTScreen} setSelectedProductId={setSelectedProductId} />}
-          {tScreen === "products-new"           && <AddProductScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "product-detail"         && <ProductDetailScreen lang={lang} role={role} onNavigate={setTScreen} productId={selectedProductId} />}
-          {tScreen === "product-categories"     && <ProductCategoriesScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "products-bulk-setup"    && <BulkProductSetupScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "products-byproducts"    && <ByProductsSetupScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "products-import-export" && <ProductImportExportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "quotations"          && <QuotationsListScreen lang={lang} role={role} onNavigate={setTScreen} setSelectedQuotId={setSelectedQuotId} />}
-          {tScreen === "quotations-new"      && <NewQuotationScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "quotation-detail"    && <QuotationDetailScreen lang={lang} role={role} onNavigate={setTScreen} quotId={selectedQuotId} />}
-          {tScreen === "quotation-preview"   && <QuotationPreviewScreen lang={lang} onNavigate={setTScreen} quotId={selectedQuotId} />}
-          {tScreen === "quotation-convert"   && <ConvertQuotationScreen lang={lang} role={role} onNavigate={setTScreen} quotId={selectedQuotId} />}
-          {tScreen === "quotation-analytics" && <QuotationAnalyticsScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "users"                       && <UsersListScreen lang={lang} role={role} onNavigate={setTScreen} setSelectedUserId={setSelectedSettingsUserId} />}
-          {tScreen === "settings"                    && <SettingsHomeScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "settings-company"            && <CompanyProfileScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "settings-users"              && <UsersListScreen lang={lang} role={role} onNavigate={setTScreen} setSelectedUserId={setSelectedSettingsUserId} />}
-          {tScreen === "settings-user-new"           && <CreateUserScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "settings-user-permissions"   && <UserPermissionsScreen lang={lang} role={role} onNavigate={setTScreen} userId={selectedSettingsUserId} />}
-          {tScreen === "settings-roles"              && <RolePermissionsScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "settings-sensitive-actions"  && <SensitiveActionsScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "settings-audit"              && <SettingsAuditScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "settings-numbering"          && <NumberingSettingsScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "settings-vat"                && <VATSettingsScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "settings-transactions"       && <TransactionSettingsScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "settings-plan"               && <PlanFeaturesScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "settings-security"           && <SecuritySettingsScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "reports"             && <ReportsHomeScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "reports-daily"      && <DailySummaryReport lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "reports-sales"      && <SalesReportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "reports-purchases"  && <PurchaseReportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "reports-inventory"  && <InventoryReportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "reports-customers"  && <CustomerReportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "reports-suppliers"  && <SupplierReportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "reports-tax"        && <TaxReportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "reports-profit"     && <ProfitReportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "reports-statements" && <StatementsScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "reports-builder"    && <ReportBuilderScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "expenses"           && <ExpensesOverviewScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "expenses-list"      && <ExpensesListScreen lang={lang} role={role} onNavigate={setTScreen} setSelectedExpense={setSelectedExpenseId} />}
-          {tScreen === "expenses-recurring" && <RecurringExpensesScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "expenses-report"    && <ExpensesReportScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "expense-detail"     && <ExpenseDetailScreen lang={lang} role={role} onNavigate={setTScreen} expenseId={selectedExpenseId} />}
-          {tScreen === "expense-voucher"    && <ExpenseVoucherScreen lang={lang} onNavigate={setTScreen} expenseId={selectedExpenseId} />}
-          {tScreen === "suppliers"          && <SuppliersListScreen lang={lang} role={role} onNavigate={setTScreen} setSelectedSupplier={setSelectedSupplierId} />}
-          {tScreen === "suppliers-new"     && <CreateSupplierScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "supplier-profile"  && <SupplierProfileScreen lang={lang} role={role} onNavigate={setTScreen} supplierId={selectedSupplierId} />}
-          {tScreen === "supplier-statement"&& <SupplierStatementScreen lang={lang} supplierId={selectedSupplierId} onNavigate={setTScreen} />}
-          {(tScreen === "inventory") && <InventoryOverviewScreen lang={lang} role={role} onNavigate={setTScreen} selectedProductId={invProductId} setSelectedProductId={setInvProductId} />}
-          {tScreen === "inventory-product"    && <InvProductDetailScreen lang={lang} role={role} onNavigate={setTScreen} productId={invProductId} />}
-          {tScreen === "inventory-stocktaking"&& <StocktakingScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "inventory-alerts"     && <LowStockScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "inventory-movement"   && <MovementScreen lang={lang} role={role} onNavigate={setTScreen} />}
-          {tScreen === "inventory-valuation"  && <ValuationScreen lang={lang} role={role} onNavigate={setTScreen} />}
+          {tScreen === "dashboard"    && <TenantDashboardScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {(tScreen === "sales" || tScreen === "sales-list") && <SalesListScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "sales-new"    && <SalesNewScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "sales-preview"&& <SalesPreviewScreen lang={lang} onNavigate={navTenant} role={role} />}
+          {tScreen === "sales-detail" && <SalesDetailScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {(tScreen === "purchases" || tScreen === "purchases-list") && <PurchListScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "purchases-new"     && <PurchNewScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "purchases-preview" && <PurchPreviewScreen lang={lang} onNavigate={navTenant} role={role} />}
+          {tScreen === "purchases-detail"  && <PurchDetailScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "customers"          && <CustomersListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedCustomer={setSelectedCustomerId} />}
+          {tScreen === "customers-create"  && <CreateCustomerScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "customers-profile" && <CustomerProfileScreen lang={lang} role={role} onNavigate={navTenant} customerId={selectedCustomerId} />}
+          {tScreen === "customers-statement"&& <CustomerStatementScreen lang={lang} customerId={selectedCustomerId} onNavigate={navTenant} />}
+          {tScreen === "payments"                  && <PaymentsOverviewScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "payments-movements"       && <PaymentMovementsScreen lang={lang} role={role} onNavigate={navTenant} setSelectedReceiptId={setSelectedReceiptId} />}
+          {tScreen === "payments-customer-refund" && <CustomerRefundScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "payment-receipt-detail"   && <ReceiptPreviewScreen lang={lang} onNavigate={navTenant} receiptId={selectedReceiptId} />}
+          {tScreen === "payment-receipt-preview"  && <ReceiptPreviewScreen lang={lang} onNavigate={navTenant} receiptId={selectedReceiptId} />}
+          {tScreen === "payments-method-summary"  && <PaymentMethodSummaryScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "payments-cash-bank"       && <CashBankAccountsScreen lang={lang} onNavigate={navTenant} />}
+          {tScreen === "payments-report"          && <PaymentsReportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "tax"                      && <TaxDashboardScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "tax-sales"                && <SalesVATReportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "tax-purchases"            && <PurchaseVATReportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "tax-net"                  && <NetVATScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "tax-warnings"             && <TaxWarningsScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "tax-audit"                && <VATAuditScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "tax-credit-notes"         && <TaxCreditNotesScreen lang={lang} onNavigate={navTenant} />}
+          {tScreen === "tax-non-taxable"          && <NonTaxableInvoicesScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "tax-settings"             && <TaxSettingsPanel lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "tax-export-preview"       && <TaxExportPreviewScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "accounts"               && <AccountsComingSoonScreen lang={lang} onNavigate={navTenant} />}
+          {tScreen === "qa-summary"             && <QASummaryScreen lang={lang} onNavigate={navTenant} />}
+          {tScreen === "products"               && <ProductsListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedProductId={setSelectedProductId} />}
+          {tScreen === "products-new"           && <AddProductScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "product-detail"         && <ProductDetailScreen lang={lang} role={role} onNavigate={navTenant} productId={selectedProductId} />}
+          {tScreen === "product-categories"     && <ProductCategoriesScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "products-bulk-setup"    && <BulkProductSetupScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "products-byproducts"    && <ByProductsSetupScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "products-import-export" && <ProductImportExportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "quotations"          && <QuotationsListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedQuotId={setSelectedQuotId} />}
+          {tScreen === "quotations-new"      && <NewQuotationScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "quotation-detail"    && <QuotationDetailScreen lang={lang} role={role} onNavigate={navTenant} quotId={selectedQuotId} />}
+          {tScreen === "quotation-preview"   && <QuotationPreviewScreen lang={lang} onNavigate={navTenant} quotId={selectedQuotId} />}
+          {tScreen === "quotation-convert"   && <ConvertQuotationScreen lang={lang} role={role} onNavigate={navTenant} quotId={selectedQuotId} />}
+          {tScreen === "quotation-analytics" && <QuotationAnalyticsScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "users"                       && <UsersListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedUserId={setSelectedSettingsUserId} />}
+          {tScreen === "settings"                    && <SettingsHomeScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-company"            && <CompanyProfileScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-users"              && <UsersListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedUserId={setSelectedSettingsUserId} />}
+          {tScreen === "settings-user-new"           && <CreateUserScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-user-permissions"   && <UserPermissionsScreen lang={lang} role={role} onNavigate={navTenant} userId={selectedSettingsUserId} />}
+          {tScreen === "settings-roles"              && <RolePermissionsScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-sensitive-actions"  && <SensitiveActionsScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-audit"              && <SettingsAuditScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-numbering"          && <NumberingSettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-vat"                && <VATSettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-transactions"       && <TransactionSettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-plan"               && <PlanFeaturesScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-security"           && <SecuritySettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports"             && <ReportsHomeScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports-daily"      && <DailySummaryReport lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports-sales"      && <SalesReportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports-purchases"  && <PurchaseReportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports-inventory"  && <InventoryReportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports-customers"  && <CustomerReportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports-suppliers"  && <SupplierReportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports-tax"        && <TaxReportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports-profit"     && <ProfitReportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports-statements" && <StatementsScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports-builder"    && <ReportBuilderScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "expenses"           && <ExpensesOverviewScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "expenses-list"      && <ExpensesListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedExpense={setSelectedExpenseId} />}
+          {tScreen === "expenses-recurring" && <RecurringExpensesScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "expenses-report"    && <ExpensesReportScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "expense-detail"     && <ExpenseDetailScreen lang={lang} role={role} onNavigate={navTenant} expenseId={selectedExpenseId} />}
+          {tScreen === "expense-voucher"    && <ExpenseVoucherScreen lang={lang} onNavigate={navTenant} expenseId={selectedExpenseId} />}
+          {tScreen === "suppliers"          && <SuppliersListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedSupplier={setSelectedSupplierId} />}
+          {tScreen === "suppliers-new"     && <CreateSupplierScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "supplier-profile"  && <SupplierProfileScreen lang={lang} role={role} onNavigate={navTenant} supplierId={selectedSupplierId} />}
+          {tScreen === "supplier-statement"&& <SupplierStatementScreen lang={lang} supplierId={selectedSupplierId} onNavigate={navTenant} />}
+          {(tScreen === "inventory") && <InventoryOverviewScreen lang={lang} role={role} onNavigate={navTenant} selectedProductId={invProductId} setSelectedProductId={setInvProductId} />}
+          {tScreen === "inventory-product"    && <InvProductDetailScreen lang={lang} role={role} onNavigate={navTenant} productId={invProductId} />}
+          {tScreen === "inventory-stocktaking"&& <StocktakingScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "inventory-alerts"     && <LowStockScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "inventory-movement"   && <MovementScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "inventory-valuation"  && <ValuationScreen lang={lang} role={role} onNavigate={navTenant} />}
           {!["dashboard","sales","sales-list","sales-new","sales-preview","sales-detail","purchases","purchases-list","purchases-new","purchases-preview","purchases-detail","inventory","inventory-product","inventory-stocktaking","inventory-alerts","inventory-movement","inventory-valuation","customers","customers-create","customers-profile","customers-statement","suppliers","suppliers-new","supplier-profile","supplier-statement","expenses","expenses-list","expenses-recurring","expenses-report","expense-detail","expense-voucher","payments","payments-movements","payments-customer-collection","payments-supplier-payment","payments-customer-refund","payment-receipt-detail","payment-receipt-preview","payments-method-summary","payments-cash-bank","payments-report","tax","tax-sales","tax-purchases","tax-net","tax-warnings","tax-audit","tax-credit-notes","tax-non-taxable","tax-settings","tax-export-preview","accounts","qa-summary","products","products-new","product-detail","product-categories","products-bulk-setup","products-byproducts","products-import-export","quotations","quotations-new","quotation-detail","quotation-preview","quotation-convert","quotation-analytics","reports","reports-daily","reports-sales","reports-purchases","reports-inventory","reports-customers","reports-suppliers","reports-tax","reports-profit","reports-statements","reports-builder","settings","settings-company","settings-users","settings-user-new","settings-user-permissions","settings-roles","settings-sensitive-actions","settings-audit","settings-numbering","settings-vat","settings-transactions","settings-plan","settings-security","users"].includes(tScreen) && (
-            <div className="p-8 pt-16 text-center">
-              <div className="w-16 h-16 bg-[#0F2C59]/8 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                {(() => { const n = T_NAV.find(x => x.key === tScreen); if (!n) return null; const Icon = n.icon; return <Icon size={28} className="text-[#0F2C59]" />; })()}
-              </div>
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? TENANT_TITLES[tScreen][0] : TENANT_TITLES[tScreen][1]}</h2>
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700">{isRTL ? "قريباً" : "Soon"}</span>
-              </div>
-              <p className="text-slate-400 font-semibold">{isRTL ? "هذه الصفحة قيد التطوير في المرحلة القادمة" : "This page is coming in the next phase"}</p>
-              <button onClick={() => setTScreen("dashboard")} className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-[#0F2C59] hover:underline">
-                {isRTL ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}{isRTL ? "العودة للرئيسية" : "Back to Dashboard"}
-              </button>
-            </div>
+            <ComingSoonPlaceholder screen={tScreen} isRTL={isRTL} onBackToDashboard={() => setTScreen("dashboard")} />
           )}
         </main>
         {/* Mobile bottom nav */}
@@ -3273,12 +2972,7 @@ export default function App() {
     </>
   );
 
-  const titles: Record<string, [string, string]> = {
-    dashboard: ["الرئيسية", "Dashboard"], companies: ["الشركات", "Companies"],
-    "company-detail": ["تفاصيل الشركة", "Company Details"], "create-company": ["إضافة شركة جديدة", "New Company"],
-    payments: ["المدفوعات", "Payments"], outstanding: ["المبالغ المستحقة", "Outstanding"],
-    plans: ["الخطط والأسعار", "Plans & Pricing"], "audit-log": ["سجل العمليات", "Audit Log"], settings: ["الإعدادات", "Settings"],
-  };
+  const titles = SUPER_ADMIN_TITLES; // extracted to src/app/navigation/screenTitles.ts
   const [titleAr, titleEn] = titles[screen] || ["", ""];
 
   return (

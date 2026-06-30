@@ -77,7 +77,7 @@ const NON_TAX_ROWS = [
 const fmt = (n: number) => n.toLocaleString("ar-SA");
 const fmtAED = (n: number) => `${n.toLocaleString("ar-SA")} د.إ`;
 
-function KpiCard({ label, value, sub, color = "blue", icon: Icon }: { label: string; value: string; sub?: string; color?: string; icon?: React.ComponentType<{ size?: number; className?: string }> }) {
+function KpiCard({ label, value, sub, color = "blue", icon: Icon }: { label: string; value: string; sub?: string; color?: string; icon?: React.ElementType }) {
   const colors: Record<string, string> = {
     blue: "bg-[#0F2C59]/8 text-[#0F2C59]", green: "bg-emerald-50 text-emerald-700",
     amber: "bg-amber-50 text-amber-700", red: "bg-red-50 text-red-600",

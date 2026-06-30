@@ -1,0 +1,9 @@
+-r base.txt
+
+# Local development uses SQLite by default (no native driver needed).
+# Install psycopg only if you point DATABASE_URL at a local PostgreSQL.
+psycopg[binary]==3.2.3
+
+pytest==8.3.4
+pytest-django==4.9.0
+factory_boy==3.3.1

@@ -191,3 +191,11 @@ screen changes.
 - Only non-blocking warnings: chunk size > 500 kB, and `recharts` deprecation notice.
 
 **No backend code, Django project, models, migrations, schema, or API endpoints were created.**
+
+---
+
+> **Update (Phase 2):** TypeScript project support, a typed shared layer, a
+> centralized mock-data layer, and a thin (mock-backed) service boundary were
+> added without changing the UI or business behavior. `typecheck` is now wired
+> and passes with 0 errors. See `FRONTEND_MODULARIZATION_AUDIT.md` and
+> `API_BOUNDARY_PLAN.md` for details.

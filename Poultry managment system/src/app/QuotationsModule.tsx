@@ -286,7 +286,7 @@ export function QuotationsListScreen({ lang, role, onNavigate, setSelectedQuotId
                         <button onClick={() => { setSelectedQuotId(q.id); onNavigate("quotation-detail"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#0F2C59] hover:text-white transition-all"><Eye size={13} /></button>
                         {(q.status === "draft" || q.status === "sent") && <button onClick={() => onNavigate("quotations-new")} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all"><Pencil size={13} /></button>}
                         <button onClick={() => { setSelectedQuotId(q.id); onNavigate("quotation-preview"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all"><Printer size={13} /></button>
-                        {(q.status === "sent" || q.status === "accepted") && q.status !== "converted" && (
+                        {(q.status === "sent" || q.status === "accepted") && (
                           <button onClick={() => { setSelectedQuotId(q.id); onNavigate("quotation-convert"); }} className="text-xs px-2 py-1 bg-violet-500 text-white rounded-lg font-bold hover:bg-violet-600">{isRTL ? "تحويل" : "Convert"}</button>
                         )}
                       </div>
@@ -319,7 +319,7 @@ export function QuotationsListScreen({ lang, role, onNavigate, setSelectedQuotId
               </div>
               <div className="flex gap-2 flex-wrap">
                 <Btn size="sm" variant="secondary" onClick={() => { setSelectedQuotId(q.id); onNavigate("quotation-detail"); }}><Eye size={13} />{isRTL ? "عرض" : "View"}</Btn>
-                {(q.status === "sent" || q.status === "accepted") && q.status !== "converted" && <Btn size="sm" variant="amber" onClick={() => { setSelectedQuotId(q.id); onNavigate("quotation-convert"); }}><FileText size={13} />{isRTL ? "تحويل لفاتورة" : "Convert"}</Btn>}
+                {(q.status === "sent" || q.status === "accepted") && <Btn size="sm" variant="amber" onClick={() => { setSelectedQuotId(q.id); onNavigate("quotation-convert"); }}><FileText size={13} />{isRTL ? "تحويل لفاتورة" : "Convert"}</Btn>}
               </div>
             </Card>
           ))}
@@ -766,10 +766,10 @@ export function QuotationDetailScreen({ lang, role, onNavigate, quotId }: {
       {/* Action bar */}
       <Card className="p-4 flex flex-wrap gap-2 items-center">
         <Btn size="sm" variant="primary" onClick={() => onNavigate("quotation-preview")}><Printer size={13} />{isRTL ? "طباعة" : "Print"}</Btn>
-        {(q.status === "draft" || q.status === "sent") && q.status !== "converted" && <Btn size="sm" variant="secondary" onClick={() => onNavigate("quotations-new")}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
+        {(q.status === "draft" || q.status === "sent") && <Btn size="sm" variant="secondary" onClick={() => onNavigate("quotations-new")}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
         {q.status === "sent" && <Btn size="sm" variant="green" onClick={() => setShowAcceptModal(true)}><CheckCircle size={13} />{isRTL ? "قبول العرض" : "Accept"}</Btn>}
         {q.status === "sent" && <Btn size="sm" variant="danger" onClick={() => setShowRejectModal(true)}><X size={13} />{isRTL ? "رفض العرض" : "Reject"}</Btn>}
-        {(q.status === "sent" || q.status === "accepted") && q.status !== "converted" && <Btn size="sm" variant="amber" onClick={() => onNavigate("quotation-convert")}><FileText size={13} />{isRTL ? "تحويل لفاتورة" : "Convert to Invoice"}</Btn>}
+        {(q.status === "sent" || q.status === "accepted") && <Btn size="sm" variant="amber" onClick={() => onNavigate("quotation-convert")}><FileText size={13} />{isRTL ? "تحويل لفاتورة" : "Convert to Invoice"}</Btn>}
         <Btn size="sm" variant="outline"><RefreshCw size={13} />{isRTL ? "تكرار العرض" : "Duplicate"}</Btn>
         <PremiumBtn lang={lang}>{isRTL ? "إرسال واتساب" : "WhatsApp"}</PremiumBtn>
       </Card>
