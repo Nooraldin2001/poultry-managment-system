@@ -83,6 +83,12 @@ corepack enable || true
 If `corepack enable` fails, you can still use `corepack pnpm ...` directly
 (the deploy script does exactly that).
 
+> **pnpm version:** `frontend/package.json` pins `"packageManager": "pnpm@10.18.0"`,
+> which runs on Node 20. Do **not** rely on corepack's default pnpm (11.x) — it
+> requires Node ≥ 22.13 and will crash on Node 20 with
+> `No such built-in module: node:sqlite`. If you upgrade to Node 22 LTS you may
+> bump the pin, but Node 20 + pnpm 10 is the supported combo here.
+
 ---
 
 ## 6. Firewall
@@ -210,6 +216,10 @@ sudo systemctl reload nginx
 
 ## 14. First deployment
 
+> **Prerequisite:** `backend/.env` **must already exist** (step 11). The script
+> fails fast if it's missing — the systemd `EnvironmentFile` and Django both need
+> it, and without it the service crash-loops with `Result: resources`.
+
 `deploy_vps.sh` uses `sudo` to restart the service and reload Nginx, so run the
 first deployment as **root**:
 
@@ -219,11 +229,12 @@ bash scripts/deploy_vps.sh
 sudo systemctl status poultryhero-backend --no-pager -l
 ```
 
-What the script does: fetch/reset `origin/main`, clean ignored artifacts (keeps
-migrations + `.env`), install backend prod deps, `check` → `migrate` →
-`collectstatic` (production settings), restart the backend, `pnpm install
---frozen-lockfile` + `pnpm run build` the frontend, then `nginx -t` + reload.
-It **never** runs `makemigrations` and **never** touches `backend/.env`.
+What the script does: verify `backend/.env` exists (else abort), fetch/reset
+`origin/main`, clean ignored artifacts while **preserving `.env`** (it backs up
+and restores the env files around `git clean`), install backend prod deps,
+`check` → `migrate` → `collectstatic` (production settings), restart the backend,
+`pnpm install --frozen-lockfile` + `pnpm run build` the frontend, then `nginx -t`
++ reload. It **never** runs `makemigrations` and **never** deletes `backend/.env`.
 
 ---
 

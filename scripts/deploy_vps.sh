@@ -30,6 +30,17 @@ echo "    APP_DIR=$APP_DIR  BRANCH=$BRANCH  SETTINGS=$DJANGO_SETTINGS_MODULE"
 
 cd "$APP_DIR"
 
+# --- 0. Require backend/.env ----------------------------------------------
+# The systemd unit's EnvironmentFile and Django both need it. Fail loudly
+# here instead of letting the service crash-loop with "Result: resources".
+if [[ ! -f "$BACKEND_DIR/.env" ]]; then
+  echo "ERROR: $BACKEND_DIR/.env is missing." >&2
+  echo "       Create it before deploying (see docs/deployment/VPS_DEPLOYMENT_GUIDE.md):" >&2
+  echo "         cp $BACKEND_DIR/.env.production.example $BACKEND_DIR/.env" >&2
+  echo "       then fill in DJANGO_SECRET_KEY, DATABASE_URL, etc." >&2
+  exit 1
+fi
+
 # Avoid git "dubious ownership" when run as a different user (e.g. root).
 git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
 
@@ -38,8 +49,19 @@ echo "==> Fetching origin/$BRANCH and resetting..."
 git fetch --prune origin "$BRANCH"
 git checkout "$BRANCH"
 git reset --hard "origin/$BRANCH"
-# Remove ONLY ignored build artifacts/caches (keeps migrations & .env).
-git clean -fdX -e ".env" -e "backend/.env"
+# Remove ignored build artifacts/caches. NOTE: `git clean -X` deletes ALL
+# gitignored files, which INCLUDES .env (the `-e` excludes do NOT protect
+# files under -X). So back up the env files, clean, then restore them.
+_env_backup="$(mktemp -d)"
+[[ -f "$BACKEND_DIR/.env" ]] && cp -a "$BACKEND_DIR/.env" "$_env_backup/backend.env"
+[[ -f "$APP_DIR/.env" ]] && cp -a "$APP_DIR/.env" "$_env_backup/root.env"
+git clean -fdX
+if [[ -f "$_env_backup/backend.env" ]]; then
+  mkdir -p "$BACKEND_DIR"
+  cp -a "$_env_backup/backend.env" "$BACKEND_DIR/.env"
+fi
+[[ -f "$_env_backup/root.env" ]] && cp -a "$_env_backup/root.env" "$APP_DIR/.env"
+rm -rf "$_env_backup"
 
 # --- 2. Backend ------------------------------------------------------------
 if [[ ! -x "$PY" ]]; then
