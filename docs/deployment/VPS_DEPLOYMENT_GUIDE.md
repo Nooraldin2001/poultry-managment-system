@@ -238,7 +238,11 @@ and restores the env files around `git clean`), install backend prod deps,
 
 ---
 
-## 15. Seed prototype data
+## 15. Seed reference data (production-safe)
+
+Production deployment itself only runs migrate + collectstatic (see
+`scripts/deploy_vps.sh`); it **never** creates demo business data. The only
+reference seeds that are safe on a real tenant carry no business data:
 
 ```bash
 cd /var/www/poultryhero/backend
@@ -247,15 +251,25 @@ export DJANGO_SETTINGS_MODULE=config.settings.production
 
 python manage.py seed_plans
 python manage.py seed_permissions
-python manage.py seed_initial --demo --superadmin admin@poultryhero.solutions --password CHANGE_ME_ADMIN_PASSWORD
-python manage.py seed_product_foundation --company-subdomain demo
-python manage.py seed_customer_supplier_demo --company-subdomain demo
+```
+
+### Optional demo data for staging only
+
+> ⚠️ **Do not run these commands on a real production tenant.** They create fake
+> customers/suppliers/products/inventory/purchases and require the explicit
+> `--confirm-demo-data` flag (they refuse to run and print a warning otherwise).
+
+```bash
+python manage.py seed_initial --demo --confirm-demo-data --superadmin admin@poultryhero.solutions --password CHANGE_ME_ADMIN_PASSWORD
+python manage.py seed_product_foundation --company-subdomain demo --confirm-demo-data
+python manage.py seed_customer_supplier_demo --company-subdomain demo --confirm-demo-data
+python manage.py seed_inventory_demo --company-subdomain demo --confirm-demo-data
+python manage.py seed_purchase_demo --company-subdomain demo --confirm-demo-data
 ```
 
 > `seed_initial --demo` creates the demo tenant on subdomain **`primefresh`**.
 > If you want the seeds attached to the `demo` subdomain instead, create that
-> company first (Super Admin API / Django admin) and pass its subdomain. Adjust
-> `--company-subdomain` to match an existing company.
+> company first (Super Admin API / Django admin) and pass its subdomain.
 
 ---
 

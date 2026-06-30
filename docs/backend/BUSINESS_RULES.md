@@ -116,6 +116,18 @@ Inventory always tracks all three units: **cartons, pieces, KG**.
   already (partly) consumed by an approved sale; otherwise it reverses layers + supplier
   balance (sensitive, reason).
 
+> **Phase 4 implementation note.** Purchases are implemented in `apps.purchases`
+> (`/api/v1/tenant/purchases/`). **Supplier payable and inventory cost basis are kept
+> distinct:** payable = subtotal + VAT − `reduce_supplier_payable` adjustments;
+> inventory cost basis = subtotal + `increase_inventory_cost` adjustments (allocated
+> across product lines by subtotal to set each line's `unit_cost_per_kg`). Approval posts
+> the **gross** payable to the supplier ledger and adds stock via the inventory
+> `add_stock()` service; the matching supplier *payment* ledger entry is deferred to the
+> payments phase (so a cash purchase shows the gross payable until then). Tray pricing is
+> simplified to a pieces basis for now. Cancellation reverses stock only when the
+> purchase's FIFO layers are fully intact, else it returns the error _"Cannot cancel
+> purchase because stock from this purchase has already been consumed."_
+
 ## 9. Inventory / FIFO rules
 
 - One stock location only (no warehouse/muslah split now).

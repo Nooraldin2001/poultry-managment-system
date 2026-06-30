@@ -15,6 +15,10 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--demo", action="store_true", help="Create a demo tenant.")
+        parser.add_argument(
+            "--confirm-demo-data", action="store_true",
+            help="Required together with --demo to actually create the demo tenant.",
+        )
         parser.add_argument("--superadmin", type=str, default=None)
         parser.add_argument("--password", type=str, default=None)
 
@@ -35,6 +39,12 @@ class Command(BaseCommand):
                 self.stdout.write(f"Super admin already exists: {email}")
 
         if options.get("demo"):
+            from apps.core.management.demo_guard import require_demo_confirmation
+
+            # Demo tenant creation is gated so production runs (which only seed
+            # plans + permissions above) never create demo business data.
+            require_demo_confirmation(self, options, what="a demo tenant")
+
             from apps.subscriptions.models import Plan, PlanCode
             from apps.tenants.models import Company
             from apps.tenants.services import create_first_admin_user, provision_company

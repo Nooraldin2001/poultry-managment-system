@@ -50,6 +50,14 @@ class InventoryIntegrityError(Exception):
     """
 
 
+class StockConsumedError(Exception):
+    """Raised when a source's stock cannot be reversed because it was consumed.
+
+    Used by :func:`reverse_source_layers` (e.g. purchase cancellation) to block
+    reversing stock that has already been (partially) sold/consumed.
+    """
+
+
 def _d(value) -> Decimal:
     if isinstance(value, Decimal):
         return value
@@ -649,3 +657,90 @@ def get_product_movement_history(company, product):
         StockMovement.objects.filter(company=company, product=product)
         .order_by("-created_at", "-id")
     )
+
+
+# ── Source reversal (e.g. purchase cancellation) ────────────────────────────
+@transaction.atomic
+def reverse_source_layers(*, company, source_type, source_id, reason, user=None,
+                          reference_number="",
+                          movement_type=MovementType.REVERSAL) -> list:
+    """Reverse the FIFO layers created by a single source (e.g. a purchase).
+
+    Only safe when *every* matching layer is fully intact (nothing consumed).
+    If any matching layer has been partially/fully consumed, raises
+    :class:`StockConsumedError` so the caller can block the operation cleanly.
+
+    Returns the list of outbound reversal movements (empty if no layers exist
+    for the source — e.g. cancelling a purchase with no stock-tracked lines).
+    """
+    layers = list(
+        FIFOStockLayer.objects.select_for_update()
+        .filter(company=company, source_type=source_type, source_id=source_id)
+        .select_related("product")
+        .order_by("product_id", "id")
+    )
+    if not layers:
+        return []
+
+    for layer in layers:
+        if (
+            layer.remaining_kg != layer.original_kg
+            or layer.remaining_cartons != layer.original_cartons
+            or layer.remaining_pieces != layer.original_pieces
+        ):
+            raise StockConsumedError(
+                "Stock from this source has already been consumed; cannot reverse."
+            )
+
+    movements = []
+    now = timezone.now()
+    for layer in layers:
+        product = layer.product
+        balance = _lock_balance(company, product)
+        cartons = layer.original_cartons
+        pieces = layer.original_pieces
+        kg = layer.original_kg
+
+        if (
+            cartons > balance.available_cartons
+            or pieces > balance.available_pieces
+            or kg > balance.available_kg
+        ):
+            raise InventoryIntegrityError(
+                "Balance is lower than the layer being reversed; refusing to "
+                "create negative stock."
+            )
+
+        layer.remaining_cartons = ZERO
+        layer.remaining_pieces = ZERO
+        layer.remaining_kg = ZERO
+        layer.is_depleted = True
+        layer.save(update_fields=[
+            "remaining_cartons", "remaining_pieces", "remaining_kg",
+            "is_depleted", "updated_at",
+        ])
+
+        balance.available_cartons = F("available_cartons") - cartons
+        balance.available_pieces = F("available_pieces") - pieces
+        balance.available_kg = F("available_kg") - kg
+        balance.last_movement_at = now
+        balance.save(update_fields=[
+            "available_cartons", "available_pieces", "available_kg",
+            "last_movement_at", "updated_at",
+        ])
+        balance.refresh_from_db()
+
+        movement = StockMovement.objects.create(
+            company=company, product=product, movement_type=movement_type,
+            direction=MovementDirection.OUT,
+            reference_type=source_type, reference_id=source_id,
+            reference_number=reference_number,
+            cartons_delta=-cartons, pieces_delta=-pieces, kg_delta=-kg,
+            balance_cartons_after=balance.available_cartons,
+            balance_pieces_after=balance.available_pieces,
+            balance_kg_after=balance.available_kg,
+            unit_cost_per_kg=layer.unit_cost_per_kg,
+            reason=reason, created_by=user,
+        )
+        movements.append(movement)
+    return movements

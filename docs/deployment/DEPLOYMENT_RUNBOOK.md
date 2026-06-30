@@ -109,26 +109,46 @@ If `migrate` reports missing migrations, fix it **locally**, commit, then deploy
 
 ---
 
-## Seed demo data
+## Production deployment (what runs automatically)
+
+The deploy (`scripts/deploy_vps.sh`) runs **only**:
+
+1. `manage.py check`
+2. `manage.py migrate --noinput`
+3. `manage.py collectstatic --noinput`
+4. build the frontend (`pnpm run build`)
+5. restart the backend service + reload Nginx
+
+It **never seeds demo/business data**. The only safe-to-run bootstrap commands on
+a real tenant are the reference seeds (no business data):
+
+```bash
+python manage.py seed_plans
+python manage.py seed_permissions
+```
+
+## Optional demo data for staging only
+
+> ⚠️ **Do not run these commands on a real production tenant.** They create fake
+> customers/suppliers/products/inventory/purchases. Every command below now
+> **requires `--confirm-demo-data`** and prints a warning; without the flag it
+> refuses to run.
 
 ```bash
 cd /var/www/poultryhero/backend
 source /var/www/poultryhero/.venv/bin/activate
 export DJANGO_SETTINGS_MODULE=config.settings.production
-python manage.py seed_plans
-python manage.py seed_permissions
-python manage.py seed_initial --demo --superadmin admin@poultryhero.solutions --password CHANGE_ME_ADMIN_PASSWORD
-python manage.py seed_product_foundation --company-subdomain demo
-python manage.py seed_customer_supplier_demo --company-subdomain demo
-python manage.py seed_inventory_demo --company-subdomain demo
+python manage.py seed_initial --demo --confirm-demo-data --superadmin admin@poultryhero.solutions --password CHANGE_ME_ADMIN_PASSWORD
+python manage.py seed_product_foundation --company-subdomain demo --confirm-demo-data
+python manage.py seed_customer_supplier_demo --company-subdomain demo --confirm-demo-data
+python manage.py seed_inventory_demo --company-subdomain demo --confirm-demo-data
+python manage.py seed_purchase_demo --company-subdomain demo --confirm-demo-data
 ```
 
-> `seed_inventory_demo` initializes opening stock (FIFO layers) for the sample
-> products. Run it **after** `seed_product_foundation`. It is idempotent and
-> creates no purchases/sales.
-
-(Adjust `--company-subdomain` to match an existing company; `seed_initial
---demo` creates the `primefresh` tenant.)
+> Run `seed_inventory_demo` **after** `seed_product_foundation`; run
+> `seed_purchase_demo` after suppliers + products exist. All are idempotent.
+> `seed_initial --demo` creates the `primefresh` tenant — adjust
+> `--company-subdomain` to match an existing company.
 
 ---
 

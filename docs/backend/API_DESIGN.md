@@ -173,18 +173,27 @@
 
 ---
 
-## 12. Purchase endpoints  (`/api/v1/purchases/`)
+## 12. Purchase endpoints  (`/api/v1/tenant/purchases/`)  — ✅ IMPLEMENTED (Phase 4)
 
-| Path | Method | Purpose | Request | Response | Perms | Side effects |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/purchases/invoices/` | GET | List (→ `listPurchaseInvoices`) | `status,supplier,date_*` | `ListResponse<PurchaseInvoice>` | `purchase.view` | |
-| `/purchases/invoices/` | POST | Create **draft** | `{supplier_id, payment_method, lines[], supplier_invoice_no?, vat_applied}` | `PurchaseInvoice` | `purchase.add` | **no** stock/balance change |
-| `/purchases/invoices/{id}/` | GET | Detail | — | invoice w/ lines + adjustments | `purchase.view` | |
-| `/purchases/invoices/{id}/` | PATCH | Edit draft | partial | `PurchaseInvoice` | `purchase.change` | price edits **sensitive** |
-| `/purchases/invoices/{id}/approve/` | POST | **Approve** | `{}` | `PurchaseInvoice` | `purchase.approve` | **add stock + create FIFO layers, update supplier balance**; audit |
-| `/purchases/invoices/{id}/cancel/` | POST | **Cancel** | `{reason}` | `PurchaseInvoice` | `purchase.cancel` | **reverse stock if layers unconsumed**, else `409`; reverse supplier balance; audit |
-| `/purchases/invoices/{id}/adjustments/` | GET/POST | Purchase adjustments | `{adjustment_type, amount, ...}` | adjustment | `purchase.change` | type drives effect: supplier payable / inventory cost / expense / commercial deduction; audit |
-| `/purchases/invoices/{id}/attachment/` | POST | Upload original supplier invoice | multipart file | `FileAttachment` | `purchase.change` | |
+Base path is `/api/v1/tenant/purchases/`. Permission codes use the `purchases.*`
+namespace. Draft has no side effects; approval adds stock + posts supplier payable;
+cancellation reverses both (or is blocked if stock was consumed).
+
+| Path | Method | Purpose | Request | Perms | Side effects |
+| --- | --- | --- | --- | --- | --- |
+| `/purchases/` | GET | List | filters: `supplier,status,payment_status,date_from,date_to,supplier_invoice_number,search,has_balance,vat_enabled` | `purchases.view` | |
+| `/purchases/` | POST | Create **draft** (with `lines[]`, `adjustments[]`) | `{supplier, invoice_date, lines[], adjustments[]?, payment_method?, vat_rate?, amount_paid?, supplier_invoice_number?, due_date?, notes?}` | `purchases.create` | **no** stock/ledger change |
+| `/purchases/{id}/` | GET | Detail (lines + adjustments + attachments) | — | `purchases.view` | |
+| `/purchases/{id}/` | PATCH | Edit **draft only** (replaces lines/adjustments if sent) | partial | `purchases.edit` | recompute totals |
+| `/purchases/{id}/approve/` | POST | **Approve** | `{reason}` | `purchases.approve` | add stock + FIFO layers + supplier payable; audit; reason required |
+| `/purchases/{id}/cancel/` | POST | **Cancel** | `{reason}` | `purchases.cancel` | reverse stock if layers unconsumed (else 400), reverse supplier payable; audit; reason required |
+| `/purchases/summary/` | GET | KPIs (month total, counts, unpaid balance, supplier payable, VAT) | — | `purchases.view` | |
+| `/purchases/{id}/lines/` | GET/POST | List / add line (POST draft-only) | line payload | view / `purchases.edit` | recompute |
+| `/purchases/{id}/lines/{line_id}/` | PATCH/DELETE | Edit / remove line (draft-only) | partial | `purchases.edit` | recompute |
+| `/purchases/{id}/adjustments/` | GET/POST | List / add adjustment (POST draft-only) | `{adjustment_type, effect, title, amount, vat_rate?}` | view / `purchases.manage_adjustments` | effect drives payable vs inventory cost vs expense |
+| `/purchases/{id}/adjustments/{id}/` | PATCH/DELETE | Edit / remove adjustment (draft-only) | partial | `purchases.manage_adjustments` | recompute |
+| `/purchases/{id}/attachments/` | GET/POST | List / upload supplier invoice (multipart) | `file, file_type?, notes?` | view / `purchases.upload_attachment` | audit `supplier_invoice_upload` |
+| `/suppliers/{id}/purchases/` | GET | Supplier purchase history | — | `purchases.view` | |
 
 ---
 

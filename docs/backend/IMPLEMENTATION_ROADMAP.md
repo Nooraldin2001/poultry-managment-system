@@ -81,18 +81,31 @@ OpenAPI schema updated.
   engine proven by tests — the engine sales/purchases will reuse.
 - **Next:** Phase 4 (Purchases) calls `add_stock(source_type=purchase_invoice)`.
 
-## Phase 4 — Purchases + purchase approval
+## Phase 4 — Purchases + purchase approval  ✅ DONE
 
-- **Goals:** purchase draft → approve adds stock/layers + supplier balance; adjustments;
-  attachment upload; cancel rules.
-- **Models:** `PurchaseInvoice`, `PurchaseInvoiceLine`, `PurchaseAdjustment` (+ uses
-  Phase 3 inventory + Phase 2 suppliers/products).
-- **APIs:** `/purchases/invoices` (+ approve, cancel, adjustments, attachment).
-- **Tests:** draft adds nothing; approve creates layers + updates supplier balance;
-  cancel blocked if layers consumed; adjustment types apply correct effects; audited.
-- **Risks:** adjustment-effect routing (payable vs inventory cost vs expense); cancel
-  guard.
+- **Goals:** purchase draft → approve adds stock/layers + supplier payable; adjustments;
+  attachment upload; cancel rules; production data hygiene pass.
+- **Models (implemented):** `PurchaseInvoice`, `PurchaseInvoiceLine`,
+  `PurchaseAdjustment`, `PurchaseAttachment`, `PurchaseStatusHistory` (+ uses Phase 3
+  inventory `add_stock`/`reverse_source_layers` + Phase 2 suppliers/products + the
+  `company_settings` numbering service).
+- **APIs (implemented):** `/api/v1/tenant/purchases/` (+ `summary`, `approve`,
+  `cancel`, nested `lines`, `adjustments`, `attachments`) and
+  `/api/v1/tenant/suppliers/{id}/purchases/`. See
+  `PHASE_4_PURCHASES_IMPLEMENTATION_NOTES.md`.
+- **Services:** `create_purchase_invoice`, `recalculate_purchase_invoice`,
+  `approve_purchase_invoice`, `cancel_purchase_invoice`, `create_purchase_attachment`,
+  `get_purchase_summary`, `get_supplier_purchase_history` — all in
+  `apps/purchases/services.py`. Supplier ledger via `suppliers.services`
+  (`record_purchase_invoice` / `reverse_purchase_invoice`).
+- **Tests:** 31 added (158 total passing) — draft has no side effects; approval creates
+  layers/movement/ledger + updates supplier balance + audited; cancel reverses or blocks
+  when stock consumed; adjustment-effect routing (payable vs inventory cost); permission
+  + tenant isolation; production data-hygiene checks.
+- **Data hygiene:** demo seed commands are opt-in (`--confirm-demo-data`); deploy
+  scripts never seed demo data; frontend `useMock` defaults to false in production.
 - **Acceptance:** approving a purchase increases stock + supplier balance atomically.
+- **Next:** Phase 5 (Sales) deducts FIFO + sets COGS + customer balance.
 
 ## Phase 5 — Sales + sales approval
 

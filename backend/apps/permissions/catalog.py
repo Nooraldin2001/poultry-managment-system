@@ -34,7 +34,11 @@ GROUP_ACTIONS = {
     "dashboard": ["view"],
     "sales": ["view", "create", "edit", "approve", "cancel", "print", "export", "sensitive"],
     "quotations": ["view", "create", "edit", "cancel", "print"],
-    "purchases": ["view", "create", "edit", "approve", "cancel", "print", "export", "sensitive"],
+    "purchases": [
+        "view", "create", "edit", "approve", "cancel", "print", "export",
+        "sensitive", "upload_attachment", "view_cost", "manage_adjustments",
+        "override_price",
+    ],
     "inventory": [
         "view", "view_movements", "view_valuation", "adjust", "export",
         "manage", "sensitive",
@@ -80,7 +84,7 @@ EXTRA_PERMISSIONS = [
 # Actions that are inherently sensitive (require reason + audit when performed).
 SENSITIVE_ACTIONS = {
     "approve", "cancel", "sensitive",
-    "edit_opening_balance", "override_credit_limit",
+    "edit_opening_balance", "override_credit_limit", "override_price",
 }
 
 
@@ -108,8 +112,12 @@ ACCOUNTANT_DEFAULTS = [
     "sales.view",
     "sales.print",
     "quotations.view",
-    "purchases.view",
-    "purchases.print",
+    # Purchases: accountant handles purchases end-to-end EXCEPT cancellation and
+    # price override (Owner/Admin or per-user override required for those).
+    "purchases.view", "purchases.create", "purchases.edit",
+    "purchases.approve", "purchases.print", "purchases.export",
+    "purchases.upload_attachment", "purchases.view_cost",
+    "purchases.manage_adjustments",
     # Inventory: read + valuation + export. Adjustments and stocktaking apply
     # stay DISABLED by default (Owner/Admin or per-user override required).
     "inventory.view",

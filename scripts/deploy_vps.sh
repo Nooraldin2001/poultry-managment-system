@@ -73,6 +73,11 @@ echo "==> Installing backend production requirements..."
 "$PIP" install -r "$BACKEND_DIR/requirements/production.txt"
 
 echo "==> Django check / migrate / collectstatic..."
+# DATA HYGIENE: production deploy runs ONLY check + migrate + collectstatic.
+# It NEVER seeds demo business data (no seed_initial --demo, no
+# seed_product_foundation, no seed_customer_supplier_demo, no seed_inventory_demo,
+# no seed_purchase_demo). Those are manual, opt-in, staging/local-only commands
+# (they require --confirm-demo-data). See docs/deployment/DEPLOYMENT_RUNBOOK.md.
 ( cd "$BACKEND_DIR" && "$PY" manage.py check )
 ( cd "$BACKEND_DIR" && "$PY" manage.py migrate --noinput )
 ( cd "$BACKEND_DIR" && "$PY" manage.py collectstatic --noinput )

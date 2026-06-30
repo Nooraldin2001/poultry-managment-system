@@ -33,6 +33,22 @@ Interactive (asks before deploying):
 
 If any local check fails, the script stops **before** committing or deploying.
 
+## Production vs demo data
+
+The deploy step runs **only** migrate + collectstatic + build + restart on the VPS.
+It **never** seeds demo/business data. If you need sample data on a **local or
+staging** tenant, run the demo seed commands manually — they all require
+`--confirm-demo-data` and refuse to run without it:
+
+```bash
+python manage.py seed_product_foundation --company-subdomain demo --confirm-demo-data
+python manage.py seed_customer_supplier_demo --company-subdomain demo --confirm-demo-data
+python manage.py seed_inventory_demo --company-subdomain demo --confirm-demo-data
+python manage.py seed_purchase_demo --company-subdomain demo --confirm-demo-data
+```
+
+> ⚠️ Do not run these on a real production tenant.
+
 ## Notes
 
 - No secrets are passed on the command line; the VPS reads `backend/.env` locally.

@@ -49,7 +49,15 @@ SENSITIVE_ACTIONS = {
     "supplier_agreement_change": RiskLevel.MEDIUM,
     "customer_disable_with_balance": RiskLevel.HIGH,
     "supplier_disable_with_balance": RiskLevel.HIGH,
+    # --- Phase 4: purchase invoices (reason-required) ---
+    "approve_purchase_invoice": RiskLevel.MEDIUM,
+    "override_purchase_price": RiskLevel.HIGH,
+    "purchase_adjustment_change": RiskLevel.MEDIUM,
+    "vat_change_on_purchase": RiskLevel.HIGH,
 }
+
+# Non-reason-required purchase actions still recorded via create_audit_log:
+#   supplier_invoice_upload (attachment uploads).
 
 # Non-reason-required actions still worth recording (use create_audit_log):
 #   product_reactivate, customer_reactivate, supplier_reactivate,

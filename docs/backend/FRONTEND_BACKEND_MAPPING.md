@@ -33,7 +33,7 @@
 | `listInventoryItems()` | `inventory.mock.ts` | `GET /api/v1/tenant/inventory/` ✅ | `InventoryBalance`, `Product` | UI shows total stock; backend reads balances; `?product=&category=&status=&low_stock=&out_of_stock=&search=` |
 | `listSalesInvoices()` | `sales.mock.ts` (`S_INVOICES`) | `GET /api/v1/sales/invoices/` | `SalesInvoice`, `SalesInvoiceLine` | `?status=&date_*=&customer=` |
 | `getSalesInvoiceById(id)` | `sales.mock.ts` | `GET /api/v1/sales/invoices/{id}/` | `SalesInvoice`+lines | Detail includes lines |
-| `listPurchaseInvoices()` | `purchases.mock.ts` | `GET /api/v1/purchases/invoices/` | `PurchaseInvoice`, `PurchaseInvoiceLine` | `?status=&supplier=` |
+| `listPurchaseInvoices()` | `purchases.mock.ts` | `GET /api/v1/tenant/purchases/` ✅ | `PurchaseInvoice`, `PurchaseInvoiceLine` | `?supplier=&status=&payment_status=&date_from=&date_to=&supplier_invoice_number=&search=&has_balance=&vat_enabled=` |
 | `listPaymentMovements()` | `payments.mock.ts` | `GET /api/v1/payments/movements/` | `PaymentMovement`, `PaymentAllocation` | `?party_type=&movement_type=` |
 | `listExpenses()` | `expenses.mock.ts` | `GET /api/v1/expenses/` | `Expense`, `ExpenseCategory` | `?category=&date_*=` |
 | `getReportSummary()` | `reports.mock.ts` (`T_DAILY`,`T_MONTHLY_PROFIT`,`T_PAY_PIE`) | `GET /api/v1/reports/summary/` | aggregates over `SalesInvoice`/`PurchaseInvoice`/`Expense` (+ optional `ReportSnapshot`) | Returns `{daily, monthlyProfit, paymentSplit}` (`ReportSummaryData`) |
@@ -51,7 +51,7 @@ backend concepts"). Add them to `src/services/index.ts` with matching signatures
 | --- | --- | --- |
 | `login()/logout()/refresh()/me()` | `/api/v1/auth/*` | `User`, JWT |
 | `createSalesInvoice()/approveSalesInvoice()/cancelSalesInvoice()` | `POST /sales/invoices/`, `.../approve/`, `.../cancel/` | `SalesInvoice` + inventory side effects |
-| `createPurchaseInvoice()/approve/cancel` | `/purchases/invoices/*` | `PurchaseInvoice` + inventory side effects |
+| `createPurchaseInvoice()/approve/cancel` | `/api/v1/tenant/purchases/*` ✅ (Phase 4) | `PurchaseInvoice` + inventory side effects |
 | `listQuotations()/convertQuotation()` | `/quotations/*` | `Quotation` |
 | `createCollection()/createSupplierPayment()/cancelPayment()` | `/payments/*` | `PaymentMovement` |
 | `createStockAdjustment()/stocktaking*` | `/api/v1/tenant/inventory/adjustments/`, `.../inventory/stocktaking/*` ✅ | `StockAdjustment`, `StocktakingSession` |
@@ -84,6 +84,18 @@ backend concepts"). Add them to `src/services/index.ts` with matching signatures
   only for show/hide; backend enforces.
 
 ---
+
+## Production data hygiene (Phase 4)
+
+`API_CONFIG.useMock` is now driven by the `VITE_USE_MOCK_DATA` env var and **defaults
+to false** in production (see `src/services/api/client.ts` + `frontend/.env.production.example`).
+When false, a console warning is emitted because the live REST client is not implemented
+yet, so mock data is never silently presented as real production data.
+
+> **Known limitation / follow-up:** screens still import mock services from
+> `services/index.ts` regardless of `useMock`. Removing mock data from the production UI
+> and wiring screens to the live APIs is a tracked follow-up:
+> _"Frontend API integration and mock-data removal from production UI."_
 
 ## Integration mechanics (Phase 11)
 
