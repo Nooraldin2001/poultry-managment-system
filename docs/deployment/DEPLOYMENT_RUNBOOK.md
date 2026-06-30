@@ -150,6 +150,25 @@ python manage.py seed_purchase_demo --company-subdomain demo --confirm-demo-data
 > `seed_initial --demo` creates the `primefresh` tenant — adjust
 > `--company-subdomain` to match an existing company.
 
+## Removing demo data from a deployment
+
+**Rule: production deployment must not seed or display demo data.** If a demo
+tenant was ever created (e.g. for a walkthrough), remove it with the safe purge
+command. Always dry-run first; it only ever targets a known demo tenant and never
+deletes reference seeds (Plan / PermissionCode / RolePermissionDefault).
+
+```bash
+cd /var/www/poultryhero/backend
+source /var/www/poultryhero/.venv/bin/activate
+export DJANGO_SETTINGS_MODULE=config.settings.production
+python manage.py purge_demo_data --company-subdomain demo --dry-run
+python manage.py purge_demo_data --company-subdomain demo --confirm-delete-demo-data
+```
+
+The frontend never shows demo data in a production build: `VITE_USE_MOCK_DATA`
+defaults to `false` and is force-disabled in production builds. The deploy script
+refuses to build with `VITE_USE_MOCK_DATA=true`.
+
 ---
 
 ## Backups (before going to production)

@@ -271,6 +271,32 @@ python manage.py seed_purchase_demo --company-subdomain demo --confirm-demo-data
 > If you want the seeds attached to the `demo` subdomain instead, create that
 > company first (Super Admin API / Django admin) and pass its subdomain.
 
+### Removing demo data (data hygiene)
+
+**Production deployment must not seed or display demo data.** To remove a demo
+tenant that was created for a walkthrough, use the safe purge command (dry-run
+first). It targets only a known demo tenant and never deletes reference seeds.
+
+```bash
+cd /var/www/poultryhero/backend
+source /var/www/poultryhero/.venv/bin/activate
+export DJANGO_SETTINGS_MODULE=config.settings.production
+python manage.py purge_demo_data --company-subdomain demo --dry-run
+python manage.py purge_demo_data --company-subdomain demo --confirm-delete-demo-data
+```
+
+### Frontend production data mode
+
+The production frontend build runs in **live-API mode** and shows clean empty
+states (never demo data) until screens are wired to the backend:
+
+* `frontend/.env.production` → `VITE_API_BASE=https://poultryhero.solutions/api`,
+  `VITE_USE_MOCK_DATA=false` (see `frontend/.env.production.example`).
+* `VITE_USE_MOCK_DATA` defaults to `false` and is force-disabled in any
+  production build. `scripts/deploy_vps.sh` refuses to build with it set to `true`.
+* Local development may opt into mock data via `frontend/.env.development`
+  (`VITE_USE_MOCK_DATA=true`).
+
 ---
 
 ## 16. SSL with Certbot (after DNS resolves)

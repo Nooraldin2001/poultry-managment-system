@@ -165,10 +165,31 @@ summary gating), and production data-hygiene checks.
 - **Supplier payment ledger** not implemented (payments phase). Approval posts gross
   payable; `amount_paid` is stored only on the invoice.
 - **Tray pricing** simplified to a pieces basis (no dedicated tray quantity yet).
-- **Frontend API integration** is not done in this phase. Screens still render mock
-  data from `services/mock/*` regardless of `useMock`. Recommended follow-up:
-  _"Frontend API integration and mock-data removal from production UI."_
+- **Frontend API integration** is not done in this phase. After Phase 4A the
+  production UI no longer shows demo data (it renders empty states), but screens
+  are not yet wired to live endpoints — see the Phase 4A section below.
 - Purchase returns / tax credit notes are out of scope.
+
+## Phase 4A — production data hygiene for the frontend
+
+Follow-up that removed demo/hardcoded data from the production UI and added safe
+cleanup tooling. **Rule: production deployment must not seed or display demo data.**
+
+- **Central gate** `frontend/src/services/config.ts` → `IS_MOCK_MODE` =
+  `VITE_USE_MOCK_DATA === "true" && !import.meta.env.PROD` (forced off in prod).
+- **`data/mock/index.ts`** gates every business array to empty in live mode;
+  **`services/index.ts`** returns empty / `ApiUnavailableError` in live mode
+  instead of mock data.
+- **`App.tsx`** demo literals wrapped in `demoNum()` / `demoStr()` (→ 0 / "" in
+  production); Super Admin dashboard KPIs derived from data with empty states;
+  reusable `ProductionEmptyState` / `ApiUnavailableState` components added.
+- **Backend** `purge_demo_data --company-subdomain <sub> --confirm-delete-demo-data`
+  (with `--dry-run`) safely deletes a known demo tenant and its data; never deletes
+  Plan / PermissionCode / RolePermissionDefault. Tested in
+  `backend/tests/test_purge_demo_data.py` (6 tests).
+- **Deploy scripts** export `VITE_USE_MOCK_DATA=false` and refuse to build with it
+  set to `true`; `scripts/check_no_production_mock_data.sh` is a static guard.
+- Full audit: `docs/deployment/PRODUCTION_MOCK_DATA_AUDIT.md`.
 
 ## Recommended next phase
 

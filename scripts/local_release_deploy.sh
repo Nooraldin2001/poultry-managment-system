@@ -41,7 +41,17 @@ confirm() {
 echo "==> Backend: manage.py check + pytest"
 ( cd backend && python manage.py check && python -m pytest -q )
 
-echo "==> Frontend: typecheck + build"
+# DATA HYGIENE: the release build must NOT use mock/demo data. A production
+# `vite build` forces mock mode off in code, but refuse early if someone tries
+# to force it on via the environment.
+if [[ "${VITE_USE_MOCK_DATA:-false}" == "true" ]]; then
+  echo "ERROR: VITE_USE_MOCK_DATA=true is not allowed for a release build." >&2
+  echo "       Production must run on live API data, never demo/mock data." >&2
+  exit 1
+fi
+export VITE_USE_MOCK_DATA="false"
+
+echo "==> Frontend: typecheck + build (VITE_USE_MOCK_DATA=false)"
 ( cd frontend && corepack pnpm run typecheck && corepack pnpm run build )
 
 # --- 2. Commit + push (only if there are changes) --------------------------

@@ -49,6 +49,25 @@ python manage.py seed_purchase_demo --company-subdomain demo --confirm-demo-data
 
 > ⚠️ Do not run these on a real production tenant.
 
+To remove a demo tenant later, use the safe purge command (dry-run first):
+
+```bash
+python manage.py purge_demo_data --company-subdomain demo --dry-run
+python manage.py purge_demo_data --company-subdomain demo --confirm-delete-demo-data
+```
+
+## Frontend mock vs live mode
+
+- **Local development** may use mock data: copy `frontend/.env.development.example`
+  to `frontend/.env.development` (`VITE_USE_MOCK_DATA=true`) for a fully browsable
+  UI without a backend.
+- **Production must use live-API mode**: `VITE_USE_MOCK_DATA=false` (the default).
+  Mock mode is force-disabled in production builds regardless of the flag.
+- The release script exports `VITE_USE_MOCK_DATA=false` and **refuses** to build
+  if it is set to `true`. Mock mode must never be enabled on a production deploy.
+- `bash scripts/check_no_production_mock_data.sh` statically verifies no screen
+  imports mock data directly and no deploy script seeds demo data or enables mock.
+
 ## Notes
 
 - No secrets are passed on the command line; the VPS reads `backend/.env` locally.

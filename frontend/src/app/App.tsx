@@ -32,11 +32,22 @@ import { T_NAV } from "@/app/navigation/tenantNavigation";
 import { SA_NAV } from "@/app/navigation/superAdminNavigation";
 import { TENANT_TITLES, SUPER_ADMIN_TITLES } from "@/app/navigation/screenTitles";
 import { ComingSoonPlaceholder } from "@/shared/components/ComingSoonPlaceholder";
+import { ProductionEmptyState, EMPTY_MESSAGES } from "@/shared/components/ProductionEmptyState";
+import { IS_MOCK_MODE } from "@/services/config";
 import {
   ALL_MODULES, COMPANIES, REVENUE_DATA, STATUS_PIE, PAYMENTS_DATA, AUDIT_LOGS, PLANS_DATA, RECENT_ACTIVITY,
   T_PRODUCTS, T_CUSTOMERS, T_SUPPLIERS, T_INVOICES, T_PURCHASES, T_DAILY, T_MONTHLY_PROFIT, T_PAY_PIE, T_NOTIFS,
   S_PRODUCTS, S_CUSTOMERS, S_INVOICES,
 } from "@/data/mock";
+
+// Demo-number gate: inline hardcoded sample numbers must render as 0 / empty in
+// production (live) mode so the UI never shows fake financial values. In mock
+// mode (dev) they keep their illustrative sample values.
+const demoNum = (n: number): number => (IS_MOCK_MODE ? n : 0);
+// Demo-string gate: inline hardcoded sample text (fake company name, TRN, address,
+// phone in settings/invoice-template previews) renders as a neutral fallback in
+// production so no fake business identity is shown as real.
+const demoStr = (s: string, fallback = ""): string => (IS_MOCK_MODE ? s : fallback);
 
 // ── SHARED COMPONENTS ──────────────────────────────────────────────────────────
 function StatusBadge({ status, lang }: { status: CompanyStatus; lang: Lang }) {
@@ -234,7 +245,7 @@ function LoginScreen({ onLogin, lang, onLangSwitch }: { onLogin: () => void; lan
           <h1 className="text-5xl font-black text-white mb-3">Poultry Hero</h1>
           <p className="text-white/60 text-lg leading-relaxed max-w-xs mx-auto">{isRTL ? "منصة إدارة شركات الدواجن في الإمارات" : "UAE Poultry Companies Management Platform"}</p>
           <div className="mt-12 grid grid-cols-3 gap-3">
-            {[{ n: "5+", ar: "شركة", en: "Companies" }, { n: "AED", ar: "مدفوعات", en: "Payments" }, { n: "3", ar: "خطط", en: "Plans" }].map(s => (
+            {[{ n: "ERP", ar: "نظام متكامل", en: "Integrated" }, { n: "AED", ar: "محاسبة", en: "Accounting" }, { n: "SaaS", ar: "متعدد الشركات", en: "Multi-tenant" }].map(s => (
               <div key={s.n} className="bg-white/8 rounded-2xl p-4 text-center border border-white/10">
                 <div className="text-2xl font-black text-[#22C55E] mb-1">{s.n}</div>
                 <div className="text-white/50 text-xs font-semibold">{isRTL ? s.ar : s.en}</div>
@@ -295,6 +306,17 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
   const isRTL = lang === "ar";
   const outstanding = COMPANIES.filter(c => c.outstandingAmount > 0);
   const upcoming = COMPANIES.filter(c => { const d = Math.ceil((new Date(c.renewalDate).getTime() - Date.now()) / 86400000); return d > 0 && d <= 30; });
+  // All KPIs are derived from the (gated) COMPANIES list, so they show real
+  // counts in mock mode and 0 / empty in production until the backend is wired.
+  const totalCompanies = COMPANIES.length;
+  const activeCompanies = COMPANIES.filter(c => c.status === "active").length;
+  const trialCompanies = COMPANIES.filter(c => c.status === "trial").length;
+  const suspendedCompanies = COMPANIES.filter(c => c.status === "suspended").length;
+  const expectedMonthly = COMPANIES.filter(c => c.status !== "suspended").reduce((s, c) => s + c.monthlyPrice, 0);
+  const totalOutstanding = outstanding.reduce((s, c) => s + c.outstandingAmount, 0);
+  const collectedThisMonth = Math.max(0, expectedMonthly - totalOutstanding);
+  const overdueCount = outstanding.filter(c => new Date(c.renewalDate) < new Date()).length;
+  const hasData = totalCompanies > 0;
   const actIcons: Record<string, ReactNode> = { create: <Plus size={13} className="text-emerald-500" />, payment: <DollarSign size={13} className="text-blue-500" />, suspend: <Ban size={13} className="text-red-500" />, renew: <RefreshCw size={13} className="text-amber-500" /> };
   return (
     <div className="p-4 lg:p-8 space-y-6 max-w-screen-xl mx-auto">
@@ -307,23 +329,29 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
           <Btn variant="outline" onClick={() => onNavigate("companies")}><Building2 size={15} />{isRTL ? "عرض الشركات" : "View Companies"}</Btn>
         </div>
       </Card>
+      {!hasData && (
+        <Card className="p-4 bg-slate-50 border-slate-200">
+          <p className="text-sm font-bold text-slate-500 text-center">{isRTL ? EMPTY_MESSAGES.pendingApi.ar : EMPTY_MESSAGES.pendingApi.en}</p>
+        </Card>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
-        <KpiCard value="5"  labelAr="إجمالي الشركات"    labelEn="Total Companies"  icon={Building2}   iconBg="bg-[#0F2C59]"   lang={lang} />
-        <KpiCard value="3"  labelAr="الشركات النشطة"    labelEn="Active"           icon={CheckCircle} iconBg="bg-emerald-500" lang={lang} />
-        <KpiCard value="1"  labelAr="الشركات التجريبية" labelEn="Trial"            icon={Clock}       iconBg="bg-amber-500"   lang={lang} />
-        <KpiCard value="1"  labelAr="الشركات الموقوفة"  labelEn="Suspended"        icon={Ban}         iconBg="bg-red-500"     lang={lang} />
-        <KpiCard value="24" labelAr="مستخدمين نشطين"    labelEn="Active Users"     icon={Users}       iconBg="bg-violet-500"  lang={lang} />
+        <KpiCard value={`${totalCompanies}`}     labelAr="إجمالي الشركات"    labelEn="Total Companies"  icon={Building2}   iconBg="bg-[#0F2C59]"   lang={lang} />
+        <KpiCard value={`${activeCompanies}`}    labelAr="الشركات النشطة"    labelEn="Active"           icon={CheckCircle} iconBg="bg-emerald-500" lang={lang} />
+        <KpiCard value={`${trialCompanies}`}     labelAr="الشركات التجريبية" labelEn="Trial"            icon={Clock}       iconBg="bg-amber-500"   lang={lang} />
+        <KpiCard value={`${suspendedCompanies}`} labelAr="الشركات الموقوفة"  labelEn="Suspended"        icon={Ban}         iconBg="bg-red-500"     lang={lang} />
+        <KpiCard value={`${upcoming.length}`}    labelAr="تجديدات قريبة"     labelEn="Renewals"         icon={Calendar}    iconBg="bg-violet-500"  lang={lang} sub={isRTL ? "خلال 30 يوم" : "in 30 days"} />
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
-        <KpiCard value="17,800" labelAr="الإيراد الشهري المتوقع" labelEn="Expected Monthly"  icon={TrendingUp}  iconBg="bg-[#0F2C59]"   lang={lang} sub="AED" />
-        <KpiCard value="14,800" labelAr="المدفوع هذا الشهر"      labelEn="Collected"         icon={DollarSign}  iconBg="bg-emerald-500" lang={lang} sub="AED" />
-        <KpiCard value="6,900"  labelAr="المبالغ المستحقة"        labelEn="Outstanding"       icon={AlertCircle} iconBg="bg-red-500"     lang={lang} sub="AED" />
+        <KpiCard value={expectedMonthly.toLocaleString()}      labelAr="الإيراد الشهري المتوقع" labelEn="Expected Monthly"  icon={TrendingUp}  iconBg="bg-[#0F2C59]"   lang={lang} sub="AED" />
+        <KpiCard value={collectedThisMonth.toLocaleString()}   labelAr="المدفوع هذا الشهر"      labelEn="Collected"         icon={DollarSign}  iconBg="bg-emerald-500" lang={lang} sub="AED" />
+        <KpiCard value={totalOutstanding.toLocaleString()}     labelAr="المبالغ المستحقة"        labelEn="Outstanding"       icon={AlertCircle} iconBg="bg-red-500"     lang={lang} sub="AED" />
         <KpiCard value={`${upcoming.length}`} labelAr="تجديدات قريبة" labelEn="Renewals"     icon={Calendar}    iconBg="bg-amber-500"   lang={lang} sub={isRTL ? "خلال 30 يوم" : "in 30 days"} />
-        <KpiCard value="2"      labelAr="مدفوعات متأخرة"          labelEn="Overdue"           icon={XCircle}     iconBg="bg-rose-600"    lang={lang} />
+        <KpiCard value={`${overdueCount}`}      labelAr="مدفوعات متأخرة"          labelEn="Overdue"           icon={XCircle}     iconBg="bg-rose-600"    lang={lang} />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Card className="p-5 lg:col-span-2">
           <h3 className="font-black text-[#0F2C59] mb-5 text-sm">{isRTL ? "الإيرادات الشهرية (AED)" : "Monthly Revenue (AED)"}</h3>
+          {REVENUE_DATA.length === 0 ? <ProductionEmptyState lang={lang} compact /> : (
           <ResponsiveContainer width="100%" height={210}>
             <BarChart data={REVENUE_DATA} barSize={20} barGap={4}>
               <CartesianGrid key="sa-bar-grid" strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -334,9 +362,11 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
               <Bar key="sa-collected" dataKey="collected" fill="#22C55E" radius={[6,6,0,0]} name={isRTL ? "المحصل" : "Collected"} />
             </BarChart>
           </ResponsiveContainer>
+          )}
         </Card>
         <Card className="p-5">
           <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "توزيع حالة الشركات" : "Company Status"}</h3>
+          {STATUS_PIE.length === 0 ? <ProductionEmptyState lang={lang} compact /> : (<>
           <ResponsiveContainer width="100%" height={160}>
             <PieChart>
               <Pie key="sa-status-pie" data={STATUS_PIE} cx="50%" cy="50%" innerRadius={44} outerRadius={68} dataKey="value" paddingAngle={3}>
@@ -353,6 +383,7 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
               </div>
             ))}
           </div>
+          </>)}
         </Card>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -361,6 +392,9 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
             <h3 className="font-black text-[#0F2C59] text-sm">{isRTL ? "تجديدات قريبة" : "Upcoming Renewals"}</h3>
             <Btn variant="ghost" size="sm" onClick={() => onNavigate("companies")}><Eye size={13} />{isRTL ? "الكل" : "All"}</Btn>
           </div>
+          {COMPANIES.filter(c => c.status !== "suspended").length === 0 ? (
+            <ProductionEmptyState lang={lang} compact messageAr={EMPTY_MESSAGES.noRenewals.ar} messageEn={EMPTY_MESSAGES.noRenewals.en} />
+          ) : (
           <div className="divide-y divide-slate-50">
             {COMPANIES.filter(c => c.status !== "suspended").map(c => {
               const days = Math.ceil((new Date(c.renewalDate).getTime() - Date.now()) / 86400000);
@@ -372,6 +406,7 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
               );
             })}
           </div>
+          )}
         </Card>
         <Card>
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -394,6 +429,9 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
       </div>
       <Card>
         <div className="px-5 py-4 border-b border-slate-100"><h3 className="font-black text-[#0F2C59] text-sm">{isRTL ? "النشاط الأخير" : "Recent Activity"}</h3></div>
+        {RECENT_ACTIVITY.length === 0 ? (
+          <ProductionEmptyState lang={lang} compact />
+        ) : (
         <div className="divide-y divide-slate-50">
           {RECENT_ACTIVITY.map(a => (
             <div key={a.id} className="px-5 py-3.5 flex items-center gap-4">
@@ -403,6 +441,7 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
             </div>
           ))}
         </div>
+        )}
       </Card>
     </div>
   );
@@ -513,11 +552,17 @@ function CompanyDetailScreen({ companyId, lang, onNavigate, onSwitchToTenant }: 
   companyId: string; lang: Lang; onNavigate: (s: Screen) => void; onSwitchToTenant: (id: string) => void;
 }) {
   const isRTL = lang === "ar";
-  const c = COMPANIES.find(x => x.id === companyId) || COMPANIES[0];
   const [tab, setTab] = useState("overview");
   const [confirmSuspend, setConfirmSuspend] = useState(false);
+  const c = COMPANIES.find(x => x.id === companyId) ?? null;
   const tabs = [{ k: "overview", ar: "نظرة عامة", en: "Overview" }, { k: "users", ar: "المستخدمون", en: "Users" }, { k: "subscription", ar: "الاشتراك", en: "Subscription" }, { k: "payments", ar: "المدفوعات", en: "Payments" }, { k: "modules", ar: "الوحدات", en: "Modules" }, { k: "activity", ar: "سجل النشاط", en: "Activity" }];
-  const companyPmts = PAYMENTS_DATA.filter(p => p.companyId === c.id);
+  const companyPmts = c ? PAYMENTS_DATA.filter(p => p.companyId === c.id) : [];
+  if (!c) return (
+    <div className="p-4 lg:p-8 max-w-screen-xl mx-auto">
+      <button onClick={() => onNavigate("companies")} className="mb-4 p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
+      <Card className="p-10"><ProductionEmptyState lang={lang} messageAr={EMPTY_MESSAGES.noCompanies.ar} messageEn={EMPTY_MESSAGES.noCompanies.en} /></Card>
+    </div>
+  );
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
       <div className="flex items-start gap-3 flex-wrap">
@@ -940,11 +985,11 @@ function PrintTemplatePanel({ lang, onClose, role }: { lang: Lang; onClose: () =
               <p className="text-xs font-bold text-slate-500">{isRTL ? "رفع شعار الشركة" : "Upload Company Logo"}</p>
               <p className="text-[10px] text-slate-400">PNG, SVG — 200×80px</p>
             </div>
-            <FInput label={isRTL ? "اسم الشركة (عربي)" : "Arabic Company Name"} value="شركة الوطنية للدواجن" onChange={() => {}} />
-            <FInput label={isRTL ? "اسم الشركة (إنجليزي)" : "English Company Name"} value="Al Wataniyah Poultry Co LLC" onChange={() => {}} />
-            <FInput label="TRN" value="100345678901203" onChange={() => {}} />
-            <FInput label={isRTL ? "العنوان" : "Address"} value={isRTL ? "المنطقة الصناعية، الشارع 12، دبي" : "Industrial Area, St 12, Dubai"} onChange={() => {}} />
-            <FInput label={isRTL ? "الهاتف" : "Phone"} value="+971 50 123 4567" onChange={() => {}} />
+            <FInput label={isRTL ? "اسم الشركة (عربي)" : "Arabic Company Name"} value={demoStr("شركة الوطنية للدواجن")} onChange={() => {}} />
+            <FInput label={isRTL ? "اسم الشركة (إنجليزي)" : "English Company Name"} value={demoStr("Al Wataniyah Poultry Co LLC")} onChange={() => {}} />
+            <FInput label="TRN" value={demoStr("100345678901203")} onChange={() => {}} />
+            <FInput label={isRTL ? "العنوان" : "Address"} value={demoStr(isRTL ? "المنطقة الصناعية، الشارع 12، دبي" : "Industrial Area, St 12, Dubai")} onChange={() => {}} />
+            <FInput label={isRTL ? "الهاتف" : "Phone"} value={demoStr("+971 50 123 4567")} onChange={() => {}} />
           </div>
 
           {/* Stamp + Signature */}
@@ -1392,7 +1437,7 @@ function SalesNewScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRo
             {/* Company TRN info */}
             <div className="mt-3 bg-[#0F2C59]/5 border border-[#0F2C59]/15 rounded-xl p-3 flex items-center gap-2">
               <Info size={14} className="text-[#0F2C59]/60 shrink-0" />
-              <span className="text-xs font-bold text-[#0F2C59]/70">TRN: 100345678901203</span>
+              <span className="text-xs font-bold text-[#0F2C59]/70">{demoStr("TRN: 100345678901203")}</span>
             </div>
             {/* Stock issue */}
             {hasStockIssue && (
@@ -1500,17 +1545,17 @@ function SalesPreviewScreen({ lang, onNavigate, role }: { lang: Lang; onNavigate
         <div className="bg-[#0F2C59] text-white p-6">
           <div className="flex items-start justify-between flex-wrap gap-4">
             <div>
-              <div className="text-2xl font-black">شركة الوطنية للدواجن</div>
-              <div className="text-base font-bold text-white/75">Al Wataniyah Poultry Company LLC</div>
-              <div className="text-sm text-white/55 mt-2">{isRTL ? "المنطقة الصناعية، الشارع 12، دبي — UAE" : "Industrial Area, Street 12, Dubai — UAE"}</div>
-              <div className="text-sm text-white/55">+971 50 123 4567 | TRN: 100345678901203</div>
+              <div className="text-2xl font-black">{demoStr("شركة الوطنية للدواجن", isRTL ? "اسم الشركة" : "Company Name")}</div>
+              <div className="text-base font-bold text-white/75">{demoStr("Al Wataniyah Poultry Company LLC")}</div>
+              <div className="text-sm text-white/55 mt-2">{demoStr(isRTL ? "المنطقة الصناعية، الشارع 12، دبي — UAE" : "Industrial Area, Street 12, Dubai — UAE")}</div>
+              <div className="text-sm text-white/55">{demoStr("+971 50 123 4567 | TRN: 100345678901203")}</div>
             </div>
             <div className="text-end">
               <div className="text-2xl font-black text-[#22C55E] leading-tight">TAX INVOICE</div>
               <div className="text-xl font-black text-white/75">فاتورة ضريبية</div>
               <div className="mt-3 space-y-0.5">
-                <div className="text-sm font-bold text-white/70">{isRTL ? "رقم الفاتورة:" : "Invoice #:"} <span className="font-mono text-[#22C55E] font-black">INV-2025-0086</span></div>
-                <div className="text-sm font-bold text-white/70">{isRTL ? "التاريخ:" : "Date:"} <span className="font-mono text-white">2025-01-28</span></div>
+                <div className="text-sm font-bold text-white/70">{isRTL ? "رقم الفاتورة:" : "Invoice #:"} <span className="font-mono text-[#22C55E] font-black">{demoStr("INV-2025-0086", "—")}</span></div>
+                <div className="text-sm font-bold text-white/70">{isRTL ? "التاريخ:" : "Date:"} <span className="font-mono text-white">{demoStr("2025-01-28", "—")}</span></div>
               </div>
             </div>
           </div>
@@ -1520,9 +1565,9 @@ function SalesPreviewScreen({ lang, onNavigate, role }: { lang: Lang; onNavigate
         <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <div className="text-xs font-black text-slate-400 uppercase tracking-wide mb-1.5">{isRTL ? "فاتورة إلى / Bill To" : "Bill To / فاتورة إلى"}</div>
-            <div className="font-black text-slate-800 text-lg">مطعم الخليج</div>
-            <div className="font-bold text-slate-500">Al Khalij Restaurant</div>
-            <div className="text-sm text-slate-400 mt-1">+971 50 123 4567</div>
+            <div className="font-black text-slate-800 text-lg">{demoStr("مطعم الخليج", isRTL ? "اسم العميل" : "Customer Name")}</div>
+            <div className="font-bold text-slate-500">{demoStr("Al Khalij Restaurant")}</div>
+            <div className="text-sm text-slate-400 mt-1">{demoStr("+971 50 123 4567")}</div>
           </div>
           <div className={isRTL ? "" : "text-right"}>
             <div className="text-xs font-black text-slate-400 uppercase tracking-wide mb-1.5">{isRTL ? "TRN العميل" : "Customer TRN"}</div>
@@ -2156,7 +2201,7 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
   const totalSupplier = T_SUPPLIERS.reduce((s, c) => s + c.balance, 0);
   const totalCartons = T_PRODUCTS.reduce((s, p) => s + p.cartons, 0);
   const totalWeight = T_PRODUCTS.reduce((s, p) => s + p.weightKg, 0);
-  const todaySales = 18450; const todayPurchases = 11200; const todayExpenses = 850;
+  const todaySales = demoNum(18450); const todayPurchases = demoNum(11200); const todayExpenses = demoNum(850);
   const todayProfit = todaySales - todayPurchases - todayExpenses;
   const salesTarget = 20000;
   const salesPct = Math.min(100, Math.round((todaySales / salesTarget) * 100));
@@ -2246,7 +2291,7 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
           {showFinancials && <TKpi value={`AED ${todayPurchases.toLocaleString()}`} labelAr="مشتريات اليوم" labelEn="Today's Purchases" icon={ShoppingCart} iconBg="bg-[#0F2C59]" lang={lang} />}
           {showFinancials && <div onClick={() => onNavigate("expenses")} className="cursor-pointer"><TKpi value={`AED ${todayExpenses.toLocaleString()}`} labelAr="مصروفات اليوم" labelEn="Today's Expenses" icon={Receipt} iconBg="bg-amber-500" lang={lang} warn={todayExpenses > 1000} /></div>}
           {showProfit && <TKpi value={`AED ${todayProfit.toLocaleString()}`} labelAr="صافي ربح اليوم" labelEn="Today's Net Profit" icon={Activity} iconBg="bg-emerald-600" lang={lang} formula={isRTL ? "صافي ربح اليوم = مبيعات اليوم - مشتريات اليوم - مصروفات اليوم" : "Net Profit = Sales - Purchases - Expenses"} />}
-          {isCashier && <TKpi value="3" labelAr="فواتير اليوم" labelEn="Today's Invoices" icon={FileText} iconBg="bg-violet-500" lang={lang} />}
+          {isCashier && <TKpi value={`${demoNum(3)}`} labelAr="فواتير اليوم" labelEn="Today's Invoices" icon={FileText} iconBg="bg-violet-500" lang={lang} />}
         </div>
       </div>
 
@@ -2255,10 +2300,10 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
         <div>
           <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">{isRTL ? "أرقام الشهر" : "Monthly Numbers"}</p>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <TKpi value="425,000" labelAr="مبيعات الشهر" labelEn="Monthly Sales" sub="AED" icon={TrendingUp} iconBg="bg-emerald-500" lang={lang} />
-            <TKpi value="298,000" labelAr="مشتريات الشهر" labelEn="Monthly Purchases" sub="AED" icon={ShoppingCart} iconBg="bg-[#0F2C59]" lang={lang} />
-            <TKpi value="34,000" labelAr="مصروفات الشهر" labelEn="Monthly Expenses" sub="AED" icon={Receipt} iconBg="bg-amber-500" lang={lang} />
-            {showProfit && <TKpi value="93,000" labelAr="صافي ربح الشهر" labelEn="Monthly Net Profit" sub="AED" icon={Activity} iconBg="bg-emerald-600" lang={lang} formula={isRTL ? "صافي ربح الشهر = مجموع أرباح الأيام - مصروفات الشهر" : "Monthly Profit = Daily profits sum - Monthly expenses"} />}
+            <TKpi value={demoNum(425000).toLocaleString()} labelAr="مبيعات الشهر" labelEn="Monthly Sales" sub="AED" icon={TrendingUp} iconBg="bg-emerald-500" lang={lang} />
+            <TKpi value={demoNum(298000).toLocaleString()} labelAr="مشتريات الشهر" labelEn="Monthly Purchases" sub="AED" icon={ShoppingCart} iconBg="bg-[#0F2C59]" lang={lang} />
+            <TKpi value={demoNum(34000).toLocaleString()} labelAr="مصروفات الشهر" labelEn="Monthly Expenses" sub="AED" icon={Receipt} iconBg="bg-amber-500" lang={lang} />
+            {showProfit && <TKpi value={demoNum(93000).toLocaleString()} labelAr="صافي ربح الشهر" labelEn="Monthly Net Profit" sub="AED" icon={Activity} iconBg="bg-emerald-600" lang={lang} formula={isRTL ? "صافي ربح الشهر = مجموع أرباح الأيام - مصروفات الشهر" : "Monthly Profit = Daily profits sum - Monthly expenses"} />}
           </div>
         </div>
       )}
@@ -2364,8 +2409,8 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
           {/* Tax */}
           {showFinancials && <div className="bg-slate-50 rounded-2xl p-4">
             <div className="text-xs font-bold text-slate-500 mb-1">{isRTL ? "ضريبة الشهر" : "Tax This Month"}</div>
-            <div className="text-lg font-black text-[#0F2C59] font-mono">AED 2,125</div>
-            <div className="text-xs text-slate-400 mt-1">{isRTL ? "مبيعات: 2,975 | مشتريات: 850" : "Sales: 2,975 | Purchases: 850"}</div>
+            <div className="text-lg font-black text-[#0F2C59] font-mono">AED {demoNum(2125).toLocaleString()}</div>
+            <div className="text-xs text-slate-400 mt-1">{isRTL ? `مبيعات: ${demoNum(2975).toLocaleString()} | مشتريات: ${demoNum(850).toLocaleString()}` : `Sales: ${demoNum(2975).toLocaleString()} | Purchases: ${demoNum(850).toLocaleString()}`}</div>
           </div>}
         </div>
       </Card>
@@ -2518,7 +2563,7 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
               <span className="font-mono font-black text-red-500 text-sm">AED {todayExpenses.toLocaleString()}</span>
             </div>
             <div className="space-y-2.5 mb-5">
-              {[{ ar: "مصاريف سيارات", en: "Vehicles", amt: 350, icon: Truck }, { ar: "مصاريف عمال", en: "Labor", amt: 300, icon: Users }, { ar: "مصاريف تشغيل", en: "Operations", amt: 120, icon: Settings }, { ar: "مصروفات متنوعة", en: "Misc", amt: 80, icon: Tag }].map(e => {
+              {[{ ar: "مصاريف سيارات", en: "Vehicles", amt: demoNum(350), icon: Truck }, { ar: "مصاريف عمال", en: "Labor", amt: demoNum(300), icon: Users }, { ar: "مصاريف تشغيل", en: "Operations", amt: demoNum(120), icon: Settings }, { ar: "مصروفات متنوعة", en: "Misc", amt: demoNum(80), icon: Tag }].map(e => {
                 const Icon = e.icon;
                 return (
                   <div key={e.ar} className="flex items-center gap-3">
@@ -2545,7 +2590,7 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
             <Card className="p-5">
               <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "ملخص الضريبة — هذا الشهر" : "Tax Summary — This Month"}</h3>
               <div className="grid grid-cols-3 gap-3 mb-5">
-                {[["AED 2,975", isRTL ? "ضريبة المبيعات" : "Sales VAT", "text-[#0F2C59]"], ["AED 850", isRTL ? "ضريبة المشتريات" : "Purchase VAT", "text-emerald-600"], ["AED 2,125", isRTL ? "صافي الضريبة" : "Net VAT", "text-amber-600"]].map(([v, l, c]) => (
+                {[[`AED ${demoNum(2975).toLocaleString()}`, isRTL ? "ضريبة المبيعات" : "Sales VAT", "text-[#0F2C59]"], [`AED ${demoNum(850).toLocaleString()}`, isRTL ? "ضريبة المشتريات" : "Purchase VAT", "text-emerald-600"], [`AED ${demoNum(2125).toLocaleString()}`, isRTL ? "صافي الضريبة" : "Net VAT", "text-amber-600"]].map(([v, l, c]) => (
                   <div key={l} className="bg-slate-50 rounded-2xl p-3 text-center">
                     <div className={`text-base font-black font-mono ${c}`}>{v}</div>
                     <div className="text-[10px] text-slate-400 font-bold mt-1 leading-tight">{l}</div>
@@ -2554,7 +2599,7 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
               </div>
               <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4">
                 <CheckCircle size={15} className="text-emerald-500 shrink-0" />
-                <span className="text-xs font-bold text-emerald-700">{isRTL ? "ضريبة القيمة المضافة مفعّلة — TRN: 100345678901203" : "VAT Enabled — TRN: 100345678901203"}</span>
+                <span className="text-xs font-bold text-emerald-700">{demoStr(isRTL ? "ضريبة القيمة المضافة مفعّلة — TRN: 100345678901203" : "VAT Enabled — TRN: 100345678901203", isRTL ? "ضريبة القيمة المضافة" : "VAT")}</span>
               </div>
               <Btn size="sm" variant="secondary" className="w-full justify-center" onClick={() => onNavigate("tax")}><Calculator size={14} />{isRTL ? "تقرير الضريبة" : "Tax Report"}</Btn>
             </Card>
@@ -2820,12 +2865,21 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
   const [showCollectModal, setShowCollectModal] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
   const isRTL = lang === "ar";
-  const company = COMPANIES.find(c => c.id === companyId) || COMPANIES[0];
+  const company = COMPANIES.find(c => c.id === companyId) ?? null;
   // Tenant navigation boundary: screens declare `onNavigate: (s: string) => void`,
   // so wrap the typed setter once here instead of casting at every call site.
   const navTenant = (s: string) => setTScreen(s as TenantScreen);
 
   // TENANT_TITLES extracted to src/app/navigation/screenTitles.ts
+
+  if (!company) return (
+    <div dir={isRTL ? "rtl" : "ltr"} className="min-h-screen bg-[#F8FAFC] p-6 flex items-center justify-center">
+      <div className="max-w-md w-full">
+        <button onClick={onBack} className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-[#0F2C59] hover:underline">{isRTL ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}{isRTL ? "العودة" : "Back"}</button>
+        <Card className="p-10"><ProductionEmptyState lang={lang} messageAr={EMPTY_MESSAGES.noData.ar} messageEn={EMPTY_MESSAGES.noData.en} /></Card>
+      </div>
+    </div>
+  );
 
   return (
     <div dir={isRTL ? "rtl" : "ltr"} className={`flex h-screen overflow-hidden bg-[#F8FAFC] ${isRTL ? "flex-row-reverse" : ""}`}>

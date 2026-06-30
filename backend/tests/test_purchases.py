@@ -425,7 +425,11 @@ def test_deploy_scripts_do_not_seed_demo_data():
         "seed_initial --demo", "seed_product_foundation",
         "seed_customer_supplier_demo", "seed_inventory_demo", "seed_purchase_demo",
     ]
-    for script in scripts_dir.glob("*.sh"):
+    # Only the actual deploy scripts. The data-hygiene detector
+    # (check_no_production_mock_data.sh) intentionally references these tokens.
+    deploy_scripts = ["deploy_vps.sh", "local_release_deploy.sh"]
+    for name in deploy_scripts:
+        script = scripts_dir / name
         # Inspect only executable lines (ignore comments documenting the rule).
         code_lines = [
             line for line in script.read_text(encoding="utf-8").splitlines()

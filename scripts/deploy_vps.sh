@@ -19,8 +19,20 @@ SERVICE_NAME="${SERVICE_NAME:-poultryhero-backend}"
 NGINX_SERVICE="${NGINX_SERVICE:-nginx}"
 BRANCH="${BRANCH:-main}"
 VITE_API_BASE="${VITE_API_BASE:-https://poultryhero.solutions/api}"
+# DATA HYGIENE: production frontend builds must run in live-API mode (no demo
+# data). Default the flag to false and treat this deploy as a production env.
+VITE_USE_MOCK_DATA="${VITE_USE_MOCK_DATA:-false}"
+ENVIRONMENT="${ENVIRONMENT:-production}"
 # manage.py defaults to local settings; force production for deploy commands.
 export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-config.settings.production}"
+
+# --- Safety: never build a production bundle with mock/demo data -----------
+if [[ "$ENVIRONMENT" == "production" && "$VITE_USE_MOCK_DATA" == "true" ]]; then
+  echo "ERROR: refusing to deploy — VITE_USE_MOCK_DATA=true with ENVIRONMENT=production." >&2
+  echo "       Production must run on live API data, never demo/mock data." >&2
+  echo "       Unset VITE_USE_MOCK_DATA (or set it to false) and re-run." >&2
+  exit 1
+fi
 
 PY="$VENV_DIR/bin/python"
 PIP="$VENV_DIR/bin/pip"
@@ -86,10 +98,11 @@ echo "==> Restarting $SERVICE_NAME..."
 sudo systemctl restart "$SERVICE_NAME"
 
 # --- 3. Frontend -----------------------------------------------------------
-echo "==> Building frontend (VITE_API_BASE=$VITE_API_BASE)..."
+echo "==> Building frontend (VITE_API_BASE=$VITE_API_BASE, VITE_USE_MOCK_DATA=$VITE_USE_MOCK_DATA)..."
 (
   cd "$FRONTEND_DIR"
   export VITE_API_BASE
+  export VITE_USE_MOCK_DATA
   corepack pnpm install --frozen-lockfile
   corepack pnpm run build
 )
