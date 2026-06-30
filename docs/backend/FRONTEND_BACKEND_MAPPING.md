@@ -30,7 +30,7 @@
 | `getSupplierById(id)` | `suppliers.mock.ts` | `GET /api/v1/tenant/suppliers/{id}/` ✅ | `Supplier`, `SupplierAgreement` (`/agreements/`) | |
 | `listProducts()` | `products.mock.ts` (`S_PRODUCTS`) | `GET /api/v1/tenant/products/` ✅ | `Product`, `ProductCategory` | Tenant-scoped; `?product_type=&is_active=&category=&search=` |
 | `getProductById(id)` | `products.mock.ts` | `GET /api/v1/tenant/products/{id}/` ✅ | `Product` (+ `/prices/`, `/usage/`) | `disable`/`reactivate` actions |
-| `listInventoryItems()` | `inventory.mock.ts` | `GET /api/v1/inventory/items/` | `InventoryBalance`, `Product` | UI shows total stock; backend reads balances |
+| `listInventoryItems()` | `inventory.mock.ts` | `GET /api/v1/tenant/inventory/` ✅ | `InventoryBalance`, `Product` | UI shows total stock; backend reads balances; `?product=&category=&status=&low_stock=&out_of_stock=&search=` |
 | `listSalesInvoices()` | `sales.mock.ts` (`S_INVOICES`) | `GET /api/v1/sales/invoices/` | `SalesInvoice`, `SalesInvoiceLine` | `?status=&date_*=&customer=` |
 | `getSalesInvoiceById(id)` | `sales.mock.ts` | `GET /api/v1/sales/invoices/{id}/` | `SalesInvoice`+lines | Detail includes lines |
 | `listPurchaseInvoices()` | `purchases.mock.ts` | `GET /api/v1/purchases/invoices/` | `PurchaseInvoice`, `PurchaseInvoiceLine` | `?status=&supplier=` |
@@ -54,7 +54,7 @@ backend concepts"). Add them to `src/services/index.ts` with matching signatures
 | `createPurchaseInvoice()/approve/cancel` | `/purchases/invoices/*` | `PurchaseInvoice` + inventory side effects |
 | `listQuotations()/convertQuotation()` | `/quotations/*` | `Quotation` |
 | `createCollection()/createSupplierPayment()/cancelPayment()` | `/payments/*` | `PaymentMovement` |
-| `createStockAdjustment()/stocktaking*` | `/inventory/adjustments/`, `/inventory/stocktaking/*` | `StockAdjustment`, `StocktakingSession` |
+| `createStockAdjustment()/stocktaking*` | `/api/v1/tenant/inventory/adjustments/`, `.../inventory/stocktaking/*` ✅ | `StockAdjustment`, `StocktakingSession` |
 | `listUsers()/createUser()/setUserPermissions()` | `/settings/users/*` | `User`, `UserPermissionOverride` |
 | `getCustomerStatement()/getSupplierStatement()` | `/customers/{id}/statement/`, `/suppliers/{id}/statement/` | statements |
 | `listAuditLogs()` | `/audit/` | `AuditLog` |

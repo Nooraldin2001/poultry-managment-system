@@ -59,19 +59,27 @@ OpenAPI schema updated.
   pattern; product `usage` placeholder until transactions exist.
 - **Next:** Phase 3 (Inventory) consumes `Product` + opening-balance foundations.
 
-## Phase 3 — Inventory foundation, FIFO layers, stock movements
+## Phase 3 — Inventory foundation, FIFO layers, stock movements  ✅ DONE
 
 - **Goals:** inventory ledger + FIFO primitives + manual adjustments + stocktaking,
   independent of sales/purchases.
-- **Models:** `InventoryBalance`, `StockLayer`, `StockMovement`, `StockAdjustment`,
-  `StocktakingSession`, `StocktakingLine`.
-- **APIs:** `/inventory/items`, `/inventory/movements`, `/inventory/layers`,
-  `/inventory/adjustments`, `/inventory/stocktaking` (+ lines, apply).
-- **Tests:** no negative stock; FIFO consumption helper consumes oldest-first across
-  layers; adjustment + stocktaking create movements; concurrency lock on layers.
-- **Risks:** FIFO consumption correctness + rounding; locking under concurrency.
-- **Acceptance:** stock can be seeded/adjusted; `consume_fifo()` + `add_layer()` services
-  proven by tests — the engine sales/purchases will reuse.
+- **Models (implemented):** `InventoryBalance`, `FIFOStockLayer`, `StockMovement`
+  (append-only), `StockAdjustment`, `StocktakingSession`, `StocktakingLine`,
+  `InventoryValuationSnapshot` (lightweight, optional).
+- **APIs (implemented):** `/api/v1/tenant/inventory/` (+ `summary`, `low-stock`,
+  `valuation`, `movements`, `opening-stock`, `products/{id}` + `/movements`,
+  `adjustments`, `stocktaking` + lines + apply). See
+  `PHASE_3_INVENTORY_IMPLEMENTATION_NOTES.md`.
+- **Services:** `add_stock`, `consume_stock_fifo` (oldest-first, locked),
+  `correct_stock`, `apply_stock_adjustment`, stocktaking create/line/apply,
+  `estimate_fifo_value`, `get_inventory_summary` — all in
+  `apps/inventory/services.py`, used by views and (later) purchases/sales.
+- **Tests:** 37 added (163 total passing) — no negative stock, FIFO consumption
+  + cost, integrity guard when layers can't cover balance, adjustments +
+  stocktaking create movements + audit, role defaults, valuation gating.
+- **Outcome:** stock can be seeded (`seed_inventory_demo`) / adjusted; FIFO
+  engine proven by tests — the engine sales/purchases will reuse.
+- **Next:** Phase 4 (Purchases) calls `add_stock(source_type=purchase_invoice)`.
 
 ## Phase 4 — Purchases + purchase approval
 

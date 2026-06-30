@@ -35,7 +35,10 @@ GROUP_ACTIONS = {
     "sales": ["view", "create", "edit", "approve", "cancel", "print", "export", "sensitive"],
     "quotations": ["view", "create", "edit", "cancel", "print"],
     "purchases": ["view", "create", "edit", "approve", "cancel", "print", "export", "sensitive"],
-    "inventory": ["view", "manage", "sensitive"],
+    "inventory": [
+        "view", "view_movements", "view_valuation", "adjust", "export",
+        "manage", "sensitive",
+    ],
     "products": [
         "view", "create", "edit", "delete", "disable", "export",
         "manage_settings", "view_purchase_cost",
@@ -68,6 +71,10 @@ EXTRA_PERMISSIONS = [
     ("suppliers.special_prices.manage", "suppliers", "special_prices.manage", True),
     ("suppliers.agreements.manage", "suppliers", "agreements.manage", False),
     ("suppliers.statement.export", "suppliers", "statement.export", False),
+    # Inventory multi-segment codes.
+    ("inventory.stocktaking.create", "inventory", "stocktaking.create", False),
+    ("inventory.stocktaking.apply", "inventory", "stocktaking.apply", True),
+    ("inventory.settings.manage", "inventory", "settings.manage", False),
 ]
 
 # Actions that are inherently sensitive (require reason + audit when performed).
@@ -103,7 +110,12 @@ ACCOUNTANT_DEFAULTS = [
     "quotations.view",
     "purchases.view",
     "purchases.print",
+    # Inventory: read + valuation + export. Adjustments and stocktaking apply
+    # stay DISABLED by default (Owner/Admin or per-user override required).
     "inventory.view",
+    "inventory.view_movements",
+    "inventory.view_valuation",
+    "inventory.export",
     # Products: view/create/edit (+ cost visibility & export) for accountant.
     "products.view", "products.create", "products.edit",
     "products.export", "products.view_purchase_cost",

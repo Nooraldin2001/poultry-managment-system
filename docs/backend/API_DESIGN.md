@@ -188,17 +188,29 @@
 
 ---
 
-## 13. Inventory endpoints  (`/api/v1/inventory/`)
+## 13. Inventory endpoints  (`/api/v1/tenant/inventory/`)  ✅ IMPLEMENTED (Phase 3)
+
+> Implemented under `/api/v1/tenant/inventory/` (tenant-scoped). The UI shows
+> total stock per product (`InventoryBalance`); FIFO layers stay hidden and
+> power valuation. See `PHASE_3_INVENTORY_IMPLEMENTATION_NOTES.md`.
 
 | Path | Method | Purpose | Request | Response | Perms | Side effects |
 | --- | --- | --- | --- | --- | --- | --- |
-| `/inventory/items/` | GET | On-hand per product (→ `listInventoryItems`) | `search,low_stock` | `ListResponse<InventoryItem>` | `inventory.view` | reads `InventoryBalance` |
-| `/inventory/movements/` | GET | Stock movement ledger | `product,date_*,type` | `ListResponse<StockMovement>` | `inventory.view` | |
-| `/inventory/layers/` | GET | FIFO cost layers (debug/cost view) | `product` | layer list | `inventory.view` | |
-| `/inventory/adjustments/` | POST | **Manual stock adjustment** | `{product_id, direction, qty, reason}` | adjustment | `inventory.adjust` | **updates balance + StockMovement**; no negative stock; **sensitive (reason)** |
-| `/inventory/stocktaking/` | POST | Open stocktaking session | `{}` | session | `inventory.adjust` | snapshots system qty |
-| `/inventory/stocktaking/{id}/lines/` | POST/PATCH | Enter counts | `{product_id, counted_*}` | line | `inventory.adjust` | computes diff |
-| `/inventory/stocktaking/{id}/apply/` | POST | **Apply differences** | `{reason}` | session | `inventory.adjust` | creates adjustment movements per diff; **sensitive** |
+| `inventory/` | GET | On-hand per product | `product,category,status,low_stock,out_of_stock,search` | balance list | `inventory.view` | reads `InventoryBalance`; `estimated_fifo_value` only if `inventory.view_valuation` |
+| `inventory/summary/` | GET | Totals + low/out counts + FIFO value | — | summary | `inventory.view` | |
+| `inventory/low-stock/` | GET | Low / out-of-stock products | — | balance list | `inventory.view` | |
+| `inventory/products/{id}/` | GET | Single product balance + recent movements | — | detail | `inventory.view` | |
+| `inventory/products/{id}/movements/` | GET | Per-product movement ledger | — | movement list | `inventory.view_movements` | |
+| `inventory/movements/` | GET | Global movement ledger | `product,movement_type,date_from,date_to,reference_type,user` | movement list | `inventory.view_movements` | |
+| `inventory/valuation/` | GET | FIFO valuation per product + total | — | valuation | `inventory.view_valuation` | Owner/Admin + Accountant by default; Cashier denied |
+| `inventory/opening-stock/` | POST | Initialize opening stock | `{product, cartons, pieces, kg, unit_cost_per_kg, reference_number?, reason, notes?}` | movement | `inventory.adjust` | `add_stock(opening_inventory)` → FIFO layer + movement; **reason required** |
+| `inventory/adjustments/` | GET/POST | **Manual stock adjustment** | `{product, adjustment_type, cartons/pieces/kg or new_*, unit_cost_per_kg?, reason}` | adjustment | view / `inventory.adjust` | **updates balance + StockMovement (+FIFO)**; no negative stock; **sensitive (reason)** |
+| `inventory/adjustments/{id}/` | GET | Adjustment detail | — | adjustment | `inventory.view` | |
+| `inventory/stocktaking/` | GET/POST | List / open count session | `{count_date?, generate_lines?, reason?, notes?}` | session | view / `inventory.stocktaking.create` | snapshots system qty |
+| `inventory/stocktaking/{id}/` | GET | Session detail + lines | — | session | `inventory.view` | |
+| `inventory/stocktaking/{id}/lines/` | GET/POST | List / enter counts | `{product, actual_*}` | line | `inventory.stocktaking.create` | computes diff |
+| `inventory/stocktaking/{id}/lines/{line_id}/` | PATCH | Update a count line | `{actual_*, reason?}` | line | `inventory.stocktaking.create` | recomputes diff (draft only) |
+| `inventory/stocktaking/{id}/apply/` | POST | **Apply differences** | `{reason}` | session | `inventory.stocktaking.apply` | creates movements per diff; cannot apply twice; **sensitive** |
 
 ---
 

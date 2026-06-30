@@ -120,7 +120,12 @@ python manage.py seed_permissions
 python manage.py seed_initial --demo --superadmin admin@poultryhero.solutions --password CHANGE_ME_ADMIN_PASSWORD
 python manage.py seed_product_foundation --company-subdomain demo
 python manage.py seed_customer_supplier_demo --company-subdomain demo
+python manage.py seed_inventory_demo --company-subdomain demo
 ```
+
+> `seed_inventory_demo` initializes opening stock (FIFO layers) for the sample
+> products. Run it **after** `seed_product_foundation`. It is idempotent and
+> creates no purchases/sales.
 
 (Adjust `--company-subdomain` to match an existing company; `seed_initial
 --demo` creates the `primefresh` tenant.)

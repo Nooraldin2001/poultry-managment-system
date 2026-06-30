@@ -128,6 +128,12 @@ Inventory always tracks all three units: **cartons, pieces, KG**.
   (sensitive, reason).
 - Stocktaking differences create stock movement records on apply (sensitive).
 - **Every** stock movement is auditable (append-only ledger).
+- **Phase 3 implementation detail:** FIFO cost is **normalized per KG**
+  (`unit_cost_per_kg`); valuation/COGS = `Σ(remaining_kg × unit_cost_per_kg)`.
+  Products without meaningful KG fall back to zero cost (documented limitation).
+  `InventoryBalance` is created lazily on first movement/adjustment. Consumption
+  is blocked if FIFO layers cannot cover the KG the balance claims (integrity
+  guard). See `PHASE_3_INVENTORY_IMPLEMENTATION_NOTES.md`.
 
 ## 10. Customer account rules
 

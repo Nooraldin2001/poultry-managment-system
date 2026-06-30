@@ -20,6 +20,7 @@ api_v1 = [
     path("tenant/", include("apps.products.urls")),
     path("tenant/", include("apps.customers.urls")),
     path("tenant/", include("apps.suppliers.urls")),
+    path("tenant/", include("apps.inventory.urls")),
 ]
 
 urlpatterns = [

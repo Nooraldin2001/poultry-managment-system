@@ -28,6 +28,8 @@ SENSITIVE_ACTIONS = {
     "edit_supplier_opening_balance": RiskLevel.HIGH,
     "manual_stock_adjustment": RiskLevel.HIGH,
     "stocktaking_apply": RiskLevel.HIGH,
+    "opening_inventory": RiskLevel.MEDIUM,
+    "inventory_correction": RiskLevel.HIGH,
     "vat_rate_change": RiskLevel.HIGH,
     "vat_disabled": RiskLevel.HIGH,
     "numbering_change": RiskLevel.MEDIUM,
