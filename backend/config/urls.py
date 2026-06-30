@@ -5,7 +5,10 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from apps.core.health import HealthView
+
 api_v1 = [
+    path("health/", HealthView.as_view(), name="health"),
     path("auth/", include("apps.accounts.urls")),
     path("admin/", include("apps.tenants.admin_urls")),
     path("admin/", include("apps.subscriptions.urls")),
