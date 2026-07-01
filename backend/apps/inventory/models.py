@@ -35,6 +35,7 @@ _NON_NEG = [MinValueValidator(ZERO)]
 
 class StockSourceType(models.TextChoices):
     PURCHASE_INVOICE = "purchase_invoice", "Purchase Invoice"
+    SALES_INVOICE = "sales_invoice", "Sales Invoice"
     MANUAL_INCREASE = "manual_increase", "Manual Increase"
     STOCKTAKING_INCREASE = "stocktaking_increase", "Stocktaking Increase"
     OPENING_INVENTORY = "opening_inventory", "Opening Inventory"

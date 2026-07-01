@@ -54,6 +54,24 @@ SENSITIVE_ACTIONS = {
     "override_purchase_price": RiskLevel.HIGH,
     "purchase_adjustment_change": RiskLevel.MEDIUM,
     "vat_change_on_purchase": RiskLevel.HIGH,
+    # --- Phase 5: sales invoices (reason-required) ---
+    "approve_sales_invoice": RiskLevel.MEDIUM,
+    "override_sales_price": RiskLevel.HIGH,
+    "override_kg": RiskLevel.HIGH,
+    "free_product_override": RiskLevel.HIGH,
+    "credit_limit_override": RiskLevel.HIGH,
+    "collection_adjustment": RiskLevel.HIGH,
+    "vat_change_on_sales": RiskLevel.HIGH,
+    "invoice_discount": RiskLevel.MEDIUM,
+    # --- Phase 6: payments (reason-required) ---
+    "customer_refund": RiskLevel.HIGH,
+    "supplier_refund": RiskLevel.HIGH,
+    "payment_cancel": RiskLevel.HIGH,
+    # --- Phase 7: quotations (reason-required) ---
+    "reject_quotation": RiskLevel.MEDIUM,
+    "cancel_quotation": RiskLevel.HIGH,
+    "convert_quotation_to_sales": RiskLevel.MEDIUM,
+    "override_quotation_price": RiskLevel.HIGH,
 }
 
 # Non-reason-required purchase actions still recorded via create_audit_log:

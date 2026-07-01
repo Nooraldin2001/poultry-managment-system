@@ -120,6 +120,76 @@ def update_customer_opening_balance_with_reason(*, customer, new_amount, new_typ
 
 
 @transaction.atomic
+def record_sales_invoice(*, customer, amount, reference_id, reference_number,
+                         created_by=None, reason="", entry_date=None,
+                         description="Sales invoice approved"):
+    """Post customer receivable (debit) for an approved sales invoice.
+
+    Debit increases ``current_balance`` (positive = customer owes us).
+    Only the *unpaid* balance should be posted (``balance_due``).
+    """
+    amount = Decimal(amount or 0)
+    if amount <= 0:
+        return None
+    return _append_ledger(
+        customer,
+        entry_type=CustomerLedgerEntry.EntryType.SALES_INVOICE,
+        debit=amount,
+        description=description,
+        entry_date=entry_date,
+        created_by=created_by,
+        reason=reason,
+        reference_type="sales_invoice",
+        reference_id=reference_id,
+        reference_number=reference_number,
+    )
+
+
+@transaction.atomic
+def reverse_sales_invoice(*, customer, amount, reference_id, reference_number,
+                          created_by=None, reason="", entry_date=None,
+                          description="Sales invoice cancelled"):
+    """Reverse a previously posted sales receivable (credit), keeping history."""
+    amount = Decimal(amount or 0)
+    if amount <= 0:
+        return None
+    return _append_ledger(
+        customer,
+        entry_type=CustomerLedgerEntry.EntryType.SALES_RETURN,
+        credit=amount,
+        description=description,
+        entry_date=entry_date,
+        created_by=created_by,
+        reason=reason,
+        reference_type="sales_invoice",
+        reference_id=reference_id,
+        reference_number=reference_number,
+    )
+
+
+@transaction.atomic
+def record_collection_adjustment(*, customer, amount, reference_id, reference_number,
+                                 created_by=None, reason="", entry_date=None,
+                                 description="Collection adjustment"):
+    """Reduce customer balance (credit) without changing invoice lines."""
+    amount = Decimal(amount or 0)
+    if amount <= 0:
+        raise ValidationError({"amount": "Adjustment amount must be positive."})
+    return _append_ledger(
+        customer,
+        entry_type=CustomerLedgerEntry.EntryType.COLLECTION_DISCOUNT,
+        credit=amount,
+        description=description,
+        entry_date=entry_date,
+        created_by=created_by,
+        reason=reason,
+        reference_type="sales_invoice",
+        reference_id=reference_id,
+        reference_number=reference_number,
+    )
+
+
+@transaction.atomic
 def create_customer_special_price(*, company, customer, product, price, price_type,
                                   reason="", notes="", created_by=None,
                                   allow_override=False):
@@ -200,3 +270,107 @@ def change_customer_credit_limit(*, customer, new_limit, change_type, reason,
         customer.credit_limit = new_limit
         customer.save(update_fields=["credit_limit"])
     return change
+
+
+@transaction.atomic
+def record_customer_collection(*, customer, amount, reference_id, reference_number,
+                               created_by=None, reason="", entry_date=None,
+                               description="Customer collection"):
+    """Post a customer collection (credit). Reduces receivable balance."""
+    amount = Decimal(amount or 0)
+    if amount <= 0:
+        raise ValidationError({"amount": "Collection amount must be positive."})
+    return _append_ledger(
+        customer,
+        entry_type=CustomerLedgerEntry.EntryType.COLLECTION,
+        credit=amount,
+        description=description,
+        entry_date=entry_date,
+        created_by=created_by,
+        reason=reason,
+        reference_type="payment_movement",
+        reference_id=reference_id,
+        reference_number=reference_number,
+    )
+
+
+@transaction.atomic
+def reverse_customer_collection(*, customer, amount, reference_id, reference_number,
+                                created_by=None, reason="", entry_date=None,
+                                description="Collection cancelled"):
+    """Reverse a collection (debit), keeping history."""
+    amount = Decimal(amount or 0)
+    if amount <= 0:
+        return None
+    return _append_ledger(
+        customer,
+        entry_type=CustomerLedgerEntry.EntryType.MANUAL_ADJUSTMENT,
+        debit=amount,
+        description=description,
+        entry_date=entry_date,
+        created_by=created_by,
+        reason=reason,
+        reference_type="payment_movement",
+        reference_id=reference_id,
+        reference_number=reference_number,
+    )
+
+
+@transaction.atomic
+def record_customer_refund(*, customer, amount, reference_id, reference_number,
+                           created_by=None, reason="", entry_date=None,
+                           description="Customer refund", allow_positive_balance=False):
+    """Refund money to customer (debit). Normally reduces customer credit balance.
+
+  If customer balance is positive (they owe us), refund increases what they owe
+  unless ``allow_positive_balance`` is True (override).
+    """
+    amount = Decimal(amount or 0)
+    if amount <= 0:
+        raise ValidationError({"amount": "Refund amount must be positive."})
+    if not reason or not reason.strip():
+        raise ValidationError({"reason": "Reason is required for customer refund."})
+
+    prev = customer.current_balance or ZERO
+    if prev > ZERO and not allow_positive_balance:
+        raise ValidationError(
+            "Customer has a receivable balance; refund would increase amount owed."
+        )
+    if prev <= ZERO and (prev + amount) > ZERO and not allow_positive_balance:
+        raise ValidationError(
+            "Refund exceeds customer credit balance."
+        )
+
+    return _append_ledger(
+        customer,
+        entry_type=CustomerLedgerEntry.EntryType.CUSTOMER_REFUND,
+        debit=amount,
+        description=description,
+        entry_date=entry_date,
+        created_by=created_by,
+        reason=reason,
+        reference_type="payment_movement",
+        reference_id=reference_id,
+        reference_number=reference_number,
+    )
+
+
+@transaction.atomic
+def reverse_customer_refund(*, customer, amount, reference_id, reference_number,
+                            created_by=None, reason="", entry_date=None,
+                            description="Customer refund cancelled"):
+    amount = Decimal(amount or 0)
+    if amount <= 0:
+        return None
+    return _append_ledger(
+        customer,
+        entry_type=CustomerLedgerEntry.EntryType.MANUAL_ADJUSTMENT,
+        credit=amount,
+        description=description,
+        entry_date=entry_date,
+        created_by=created_by,
+        reason=reason,
+        reference_type="payment_movement",
+        reference_id=reference_id,
+        reference_number=reference_number,
+    )

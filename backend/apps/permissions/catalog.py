@@ -18,6 +18,7 @@ GROUPS = [
     "customers",
     "suppliers",
     "payments",
+    "receipts",
     "expenses",
     "reports",
     "tax",
@@ -32,8 +33,15 @@ GROUPS = [
 # (price edit, KG override, opening-balance edit, etc.) for that module.
 GROUP_ACTIONS = {
     "dashboard": ["view"],
-    "sales": ["view", "create", "edit", "approve", "cancel", "print", "export", "sensitive"],
-    "quotations": ["view", "create", "edit", "cancel", "print"],
+    "sales": [
+        "view", "create", "edit", "approve", "cancel", "print", "export",
+        "sensitive", "view_cost", "view_profit", "override_price", "override_kg",
+        "apply_discount", "collection_adjustment", "credit_override",
+    ],
+    "quotations": [
+        "view", "create", "edit", "send", "accept", "reject", "cancel",
+        "convert_to_sales", "print", "export", "override_price", "free_product_override",
+    ],
     "purchases": [
         "view", "create", "edit", "approve", "cancel", "print", "export",
         "sensitive", "upload_attachment", "view_cost", "manage_adjustments",
@@ -56,7 +64,12 @@ GROUP_ACTIONS = {
         "view", "create", "edit", "delete", "export", "sensitive",
         "disable", "view_balance", "edit_opening_balance",
     ],
-    "payments": ["view", "create", "cancel", "print", "sensitive"],
+    "payments": [
+        "view", "create_customer_collection", "create_supplier_payment",
+        "create_customer_refund", "create_supplier_refund", "cancel", "allocate",
+        "print", "export", "reconcile", "sensitive",
+    ],
+    "receipts": ["view", "print"],
     "expenses": ["view", "create", "edit", "cancel"],
     "reports": ["view", "export"],
     "tax": ["view", "edit", "export", "sensitive"],
@@ -85,6 +98,8 @@ EXTRA_PERMISSIONS = [
 SENSITIVE_ACTIONS = {
     "approve", "cancel", "sensitive",
     "edit_opening_balance", "override_credit_limit", "override_price",
+    "override_kg", "apply_discount", "collection_adjustment", "credit_override",
+    "view_cost", "view_profit",
 }
 
 
@@ -110,8 +125,23 @@ def code_set():
 ACCOUNTANT_DEFAULTS = [
     "dashboard.view",
     "sales.view",
+    "sales.create",
+    "sales.edit",
+    "sales.approve",
     "sales.print",
+    "sales.export",
+    "sales.apply_discount",
+    "sales.view_cost",
+    "sales.view_profit",
     "quotations.view",
+    "quotations.create",
+    "quotations.edit",
+    "quotations.send",
+    "quotations.accept",
+    "quotations.reject",
+    "quotations.print",
+    "quotations.export",
+    "quotations.convert_to_sales",
     # Purchases: accountant handles purchases end-to-end EXCEPT cancellation and
     # price override (Owner/Admin or per-user override required for those).
     "purchases.view", "purchases.create", "purchases.edit",
@@ -134,7 +164,11 @@ ACCOUNTANT_DEFAULTS = [
     # Suppliers: same conservative posture.
     "suppliers.view", "suppliers.create", "suppliers.edit",
     "suppliers.view_balance", "suppliers.statement.export",
-    "payments.view", "payments.create", "payments.print",
+    "payments.view", "payments.create_customer_collection",
+    "payments.create_supplier_payment", "payments.create_customer_refund",
+    "payments.create_supplier_refund", "payments.allocate",
+    "payments.print", "payments.export", "payments.reconcile",
+    "receipts.view", "receipts.print",
     "expenses.view", "expenses.create", "expenses.edit",
     "reports.view", "reports.export",
     "tax.view", "tax.export",
@@ -145,11 +179,12 @@ ACCOUNTANT_DEFAULTS = [
 CASHIER_DEFAULTS = [
     "dashboard.view",
     "sales.view", "sales.create", "sales.print",
-    "quotations.view", "quotations.create", "quotations.print",
+    "quotations.view", "quotations.create", "quotations.send", "quotations.print",
     "products.view",
     "customers.view",
     "inventory.view",
-    "payments.create", "payments.print",
+    "payments.view", "payments.create_customer_collection", "payments.print",
+    "receipts.view", "receipts.print",
 ]
 
 

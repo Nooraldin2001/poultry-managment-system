@@ -228,16 +228,15 @@ def _available_layer_kg(company, product) -> Decimal:
 
 
 @transaction.atomic
-def consume_stock_fifo(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO,
-                       reference_type="", reference_id=None, reference_number="",
-                       reason="", user=None, notes="",
-                       movement_type=MovementType.MANUAL_DECREASE,
-                       audit_action=None) -> StockMovement:
-    """Consume stock oldest-first. Never allows negative balance/layers.
+def consume_stock_fifo_detailed(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO,
+                              reference_type="", reference_id=None, reference_number="",
+                              reason="", user=None, notes="",
+                              movement_type=MovementType.MANUAL_DECREASE,
+                              audit_action=None):
+    """Consume stock oldest-first; returns ``(movement, allocations)``.
 
-    Reduces FIFO layers (KG-driven for costing) and the balance, returning the
-    outbound :class:`StockMovement`. Raises :class:`InventoryIntegrityError` if
-    the balance claims KG that the FIFO layers cannot cover.
+    ``allocations`` is a list of dicts with layer + quantities consumed, for
+  sales profit traceability and cancellation stock return.
     """
     cartons, pieces, kg = _validate_quantities(cartons, pieces, kg)
     balance = _lock_balance(company, product)
@@ -252,7 +251,6 @@ def consume_stock_fifo(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO,
             "Insufficient stock: requested quantity exceeds available balance."
         )
 
-    # Protect FIFO integrity: layers must cover the KG the balance claims.
     if kg > ZERO and kg > _available_layer_kg(company, product):
         raise InventoryIntegrityError(
             "FIFO layers do not cover the requested KG; refusing to consume to "
@@ -267,6 +265,7 @@ def consume_stock_fifo(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO,
 
     need_cartons, need_pieces, need_kg = cartons, pieces, kg
     fifo_cost_consumed = ZERO
+    allocations = []
 
     for layer in layers:
         if need_cartons <= 0 and need_pieces <= 0 and need_kg <= 0:
@@ -291,13 +290,21 @@ def consume_stock_fifo(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO,
             "is_depleted", "updated_at",
         ])
 
-        fifo_cost_consumed += (take_kg * layer.unit_cost_per_kg)
+        cost_share = (take_kg * layer.unit_cost_per_kg).quantize(MONEY_Q)
+        fifo_cost_consumed += cost_share
+        allocations.append({
+            "fifo_layer": layer,
+            "quantity_kg": take_kg,
+            "quantity_cartons": take_cartons,
+            "quantity_pieces": take_pieces,
+            "unit_cost_per_kg": layer.unit_cost_per_kg,
+            "cost_amount": cost_share,
+        })
         need_cartons -= take_cartons
         need_pieces -= take_pieces
         need_kg -= take_kg
 
     if need_kg > Decimal("0.0001"):
-        # Should not happen after the coverage check above; guard anyway.
         raise InventoryIntegrityError(
             "FIFO layers exhausted before satisfying requested KG."
         )
@@ -333,6 +340,22 @@ def consume_stock_fifo(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO,
             previous=previous, balance=balance, reason=reason,
             reference_type="stock_movement", reference_id=movement.id,
         )
+    return movement, allocations
+
+
+@transaction.atomic
+def consume_stock_fifo(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO,
+                       reference_type="", reference_id=None, reference_number="",
+                       reason="", user=None, notes="",
+                       movement_type=MovementType.MANUAL_DECREASE,
+                       audit_action=None) -> StockMovement:
+    """Consume stock oldest-first. Never allows negative balance/layers."""
+    movement, _ = consume_stock_fifo_detailed(
+        company=company, product=product, cartons=cartons, pieces=pieces, kg=kg,
+        reference_type=reference_type, reference_id=reference_id,
+        reference_number=reference_number, reason=reason, user=user, notes=notes,
+        movement_type=movement_type, audit_action=audit_action,
+    )
     return movement
 
 

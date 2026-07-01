@@ -124,6 +124,7 @@ class SupplierLedgerEntry(TenantOwnedModel):
         OPENING_BALANCE = "opening_balance", "Opening Balance"
         PURCHASE_INVOICE = "purchase_invoice", "Purchase Invoice"
         SUPPLIER_PAYMENT = "supplier_payment", "Supplier Payment"
+        SUPPLIER_REFUND = "supplier_refund", "Supplier Refund"
         PURCHASE_DEDUCTION = "purchase_deduction", "Purchase Deduction"
         PURCHASE_CANCELLATION = "purchase_cancellation", "Purchase Cancellation"
         PURCHASE_RETURN = "purchase_return", "Purchase Return"

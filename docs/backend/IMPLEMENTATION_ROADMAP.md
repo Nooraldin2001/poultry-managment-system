@@ -105,54 +105,49 @@ OpenAPI schema updated.
 - **Data hygiene:** demo seed commands are opt-in (`--confirm-demo-data`); deploy
   scripts never seed demo data; frontend `useMock` defaults to false in production.
 - **Acceptance:** approving a purchase increases stock + supplier balance atomically.
-- **Next:** Phase 5 (Sales) deducts FIFO + sets COGS + customer balance.
 
-## Phase 5 — Sales + sales approval
+## Phase 5 — Sales + sales approval  — ✅ IMPLEMENTED
 
-- **Goals:** sales draft → approve deducts FIFO + sets COGS + customer balance; credit
-  limit + special prices + free products; cancel reversal; collection adjustment.
-- **Models:** `SalesInvoice`, `SalesInvoiceLine` (+ inventory, customers, products).
-- **APIs:** `/sales/invoices` (+ approve, cancel, collection-adjustment, print).
-- **Tests:** draft no side effects; approve insufficient stock → `409`; FIFO COGS across
-  layers; credit-limit block + override; cancel restores stock + reverses balance; price/
-  kg/qty overrides sensitive.
-- **Risks:** correctness of COGS + reversal; credit-limit boundary; free-product VAT.
-- **Acceptance:** end-to-end sale approve/cancel keeps inventory + customer balance + audit
-  consistent.
+- **App:** `apps.sales` — models, calculations, services, serializers, viewset, admin.
+- **Goals met:** draft → approve deducts FIFO + COGS + customer receivable; credit limit +
+  override; special prices + free products; cancel reversal; collection adjustment
+  foundation; print-preview JSON API.
+- **APIs:** `/api/v1/tenant/sales/` (+ approve, cancel, collection-adjustment,
+  print-preview, summary, price-preview, stock-check, lines, adjustments);
+  `/api/v1/tenant/customers/{id}/sales/`.
+- **Inventory:** `consume_stock_fifo_detailed` extended; `SalesInventoryAllocation` for
+  layer trace + cancellation return.
+- **Tests:** 33 added (197 total passing) — draft no side effects; approval FIFO/ledger/
+  profit/audit; credit limit + override; cancel reversal; collection adjustment;
+  permissions + tenant isolation.
+- **Data hygiene:** no sales demo seed in deploy; `purge_demo_data` includes sales models.
+- **Acceptance:** end-to-end sale approve/cancel keeps inventory + customer balance +
+  audit consistent.
+- **Next:** Phase 6 (Payments and receipts).
 
-## Phase 6 — Payments and receipts
+## Phase 6 — Payments and receipts  — ✅ IMPLEMENTED
 
-- **Goals:** collections, supplier payments, refunds, allocations, printable receipts,
-  cancellation reversal.
-- **Models:** `PaymentMovement`, `PaymentAllocation`, `Receipt`.
-- **APIs:** `/payments/movements`, `/payments/collections`, `/payments/supplier-payments`,
-  `/payments/refunds`, `/payments/movements/{id}/cancel`, `/payments/receipts/{id}/print`.
-- **Tests:** collection updates invoice paid/remaining + customer balance; on-account
-  payments; cancel reverses; discounts sensitive.
-- **Risks:** allocation across multiple invoices; over-allocation guards.
-- **Acceptance:** payments reconcile invoice + account balances; receipts printable.
+- **App:** `apps.payments` — `PaymentMovement`, `PaymentAllocation`, `PaymentStatusHistory`.
+- **Goals met:** customer collections, supplier payments, refunds, invoice allocations,
+  receipt numbering, cancellation/reversal, print-preview JSON, reconciliation.
+- **APIs:** `/api/v1/tenant/payments/...`, `/api/v1/tenant/receipts/...`.
+- **Tests:** 22 added (219 total passing).
+- **Acceptance:** collections/payments update ledger + invoice payment state; cancellation
+  reverses safely; receipts printable via JSON preview.
+- **Next:** Phase 7 (Quotations).
 
-## Phase 7 — Expenses
+## Phase 7 — Quotations  — ✅ IMPLEMENTED
 
-- **Goals:** expenses + categories + recurring + purchase-linked effects.
-- **Models:** `ExpenseCategory`, `Expense`, `RecurringExpense`.
-- **APIs:** `/expenses` (+ cancel), `/expenses/categories`, `/expenses/recurring`.
-- **Tests:** purchase-linked effects; recurring generation (task/command); cancel reverses
-  + audited.
-- **Risks:** recurring generation idempotency; purchase-effect coupling.
-- **Acceptance:** expenses feed profit reports; recurring templates generate on cadence.
+- **App:** `apps.quotations` — `Quotation`, `QuotationLine`, `QuotationStatusHistory`.
+- **Goals met:** lifecycle (draft/sent/accepted/rejected/cancelled/expired/converted),
+  special/free pricing, conversion to sales draft, print-preview JSON, stock warnings.
+- **APIs:** `/api/v1/tenant/quotations/...`, `/customers/{id}/quotations/`.
+- **Tests:** 27 added (246 total passing).
+- **No side effects:** no inventory, ledger, or payments at any quotation status.
+- **Acceptance:** convert → sales draft → approval path works without double stock deduction.
+- **Next:** Phase 8 (Expenses).
 
-## Phase 8 — Quotations
-
-- **Goals:** quotations (no side effects) + convert to sales draft + expiry job.
-- **Models:** `Quotation`, `QuotationLine`.
-- **APIs:** `/quotations` (+ status, convert).
-- **Tests:** no stock/balance change; convert creates sales draft; stock re-checked at sale
-  approval; expiry flips status.
-- **Risks:** conversion data fidelity (special prices carried over).
-- **Acceptance:** quotation → sales draft → approval works without double-counting stock.
-
-## Phase 9 — Tax / VAT
+## Phase 8 — Expenses
 
 - **Goals:** VAT settings, per-document VAT records, summaries, credit-note placeholder.
 - **Models:** `VatSettings`, `VatRecord`, `TaxCreditNote` (placeholder).

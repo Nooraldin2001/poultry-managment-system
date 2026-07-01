@@ -161,6 +161,104 @@ def reverse_purchase_invoice(*, supplier, amount, reference_id, reference_number
 
 
 @transaction.atomic
+def record_supplier_payment(*, supplier, amount, reference_id, reference_number,
+                            created_by=None, reason="", entry_date=None,
+                            description="Supplier payment"):
+    """Post supplier payment (debit). Reduces payable balance."""
+    amount = Decimal(amount or 0)
+    if amount <= 0:
+        raise ValidationError({"amount": "Payment amount must be positive."})
+    return _append_ledger(
+        supplier,
+        entry_type=SupplierLedgerEntry.EntryType.SUPPLIER_PAYMENT,
+        debit=amount,
+        description=description,
+        entry_date=entry_date,
+        created_by=created_by,
+        reason=reason,
+        reference_type="payment_movement",
+        reference_id=reference_id,
+        reference_number=reference_number,
+    )
+
+
+@transaction.atomic
+def reverse_supplier_payment(*, supplier, amount, reference_id, reference_number,
+                             created_by=None, reason="", entry_date=None,
+                             description="Supplier payment cancelled"):
+    amount = Decimal(amount or 0)
+    if amount <= 0:
+        return None
+    return _append_ledger(
+        supplier,
+        entry_type=SupplierLedgerEntry.EntryType.MANUAL_ADJUSTMENT,
+        credit=amount,
+        description=description,
+        entry_date=entry_date,
+        created_by=created_by,
+        reason=reason,
+        reference_type="payment_movement",
+        reference_id=reference_id,
+        reference_number=reference_number,
+    )
+
+
+@transaction.atomic
+def record_supplier_refund(*, supplier, amount, reference_id, reference_number,
+                           created_by=None, reason="", entry_date=None,
+                           description="Supplier refund", allow_negative_balance=False):
+    """Money received back from supplier (credit). Reduces payable or increases credit.
+
+  Blocks if refund would drive payable negative (supplier credit) unless override.
+    """
+    amount = Decimal(amount or 0)
+    if amount <= 0:
+        raise ValidationError({"amount": "Refund amount must be positive."})
+    if not reason or not reason.strip():
+        raise ValidationError({"reason": "Reason is required for supplier refund."})
+
+    prev = supplier.current_balance or ZERO
+    if prev - amount < ZERO and not allow_negative_balance:
+        raise ValidationError(
+            "Supplier refund would exceed payable balance (supplier credit)."
+        )
+
+    return _append_ledger(
+        supplier,
+        entry_type=SupplierLedgerEntry.EntryType.SUPPLIER_REFUND,
+        credit=amount,
+        description=description,
+        entry_date=entry_date,
+        created_by=created_by,
+        reason=reason,
+        reference_type="payment_movement",
+        reference_id=reference_id,
+        reference_number=reference_number,
+    )
+
+
+@transaction.atomic
+def reverse_supplier_refund(*, supplier, amount, reference_id, reference_number,
+                            created_by=None, reason="", entry_date=None,
+                            description="Supplier refund cancelled"):
+    amount = Decimal(amount or 0)
+    if amount <= 0:
+        return None
+    return _append_ledger(
+        supplier,
+        entry_type=SupplierLedgerEntry.EntryType.MANUAL_ADJUSTMENT,
+        debit=amount,
+        description=description,
+        entry_date=entry_date,
+        created_by=created_by,
+        reason=reason,
+        reference_type="payment_movement",
+        reference_id=reference_id,
+        reference_number=reference_number,
+    )
+
+
+@transaction.atomic
 def create_supplier_special_price(*, company, supplier, product, price, price_type,
                                   reason="", notes="", created_by=None,
                                   allow_override=False):

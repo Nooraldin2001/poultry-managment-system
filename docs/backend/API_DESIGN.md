@@ -140,36 +140,52 @@
 
 ---
 
-## 10. Sales endpoints  (`/api/v1/sales/`)
+## 10. Sales endpoints  (`/api/v1/tenant/sales/`)  — ✅ IMPLEMENTED (Phase 5)
 
-| Path | Method | Purpose | Request | Response | Perms | Side effects |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/sales/invoices/` | GET | List (→ `listSalesInvoices`) | `status,date_from,date_to,customer,search` | `ListResponse<SalesInvoice>` | `sales.view` | |
-| `/sales/invoices/` | POST | Create **draft** | `{customer_id, payment_method, lines[], vat_applied}` | `SalesInvoice` | `sales.add` | **no** stock/balance change |
-| `/sales/invoices/{id}/` | GET | Detail (→ `getSalesInvoiceById`) | — | `SalesInvoice` w/ lines | `sales.view` | |
-| `/sales/invoices/{id}/` | PATCH | Edit draft | partial | `SalesInvoice` | `sales.change` | price/kg override flags → **sensitive (reason)** |
-| `/sales/invoices/{id}/approve/` | POST | **Approve** | `{}` (or `{reason}` if forced) | `SalesInvoice` | `sales.approve` | **deduct inventory (FIFO), set COGS, update customer balance**; `409` if insufficient stock or credit-limit exceeded |
-| `/sales/invoices/{id}/cancel/` | POST | **Cancel** approved invoice | `{reason}` | `SalesInvoice` | `sales.cancel` | **return stock, reverse customer balance**; audit |
-| `/sales/invoices/{id}/collection-adjustment/` | POST | Post-approval monetary discount | `{amount, reason}` | adjustment | `sales.edit_price`/`payment.discount` | records collection adjustment (does NOT silently edit quantities); audit |
-| `/sales/invoices/{id}/print/` | GET | Generate/print PDF | — | PDF / FileAttachment | `sales.view` | |
+Base path is `/api/v1/tenant/sales/`. Permission codes use `sales.*` namespace.
 
-> **Line edits** that change price (`unit_price`), override KG, or change carton/pieces
-> **after draft** require permission + reason and write audit (see sensitive actions).
+| Path | Method | Purpose | Request | Perms | Side effects |
+| --- | --- | --- | --- | --- | --- |
+| `/sales/` | GET | List | filters: `customer,status,payment_status,date_from,date_to,invoice_number,search,has_balance,vat_enabled` | `sales.view` | |
+| `/sales/` | POST | Create **draft** (with `lines[]`, `adjustments[]`) | `{customer, invoice_date, lines[], adjustments[]?, payment_method?, vat_rate?, amount_paid?, due_date?, notes?}` | `sales.create` | **no** stock/ledger change |
+| `/sales/{id}/` | GET | Detail (lines + adjustments) | — | `sales.view` | cost/profit fields gated |
+| `/sales/{id}/` | PATCH | Edit **draft only** | partial | `sales.edit` | recompute totals |
+| `/sales/{id}/approve/` | POST | **Approve** | `{reason, credit_override?}` | `sales.approve` | FIFO deduct + customer receivable (`balance_due`); audit; reason required |
+| `/sales/{id}/cancel/` | POST | **Cancel** | `{reason}` | `sales.cancel` | return stock + reverse receivable; audit; reason required |
+| `/sales/{id}/collection-adjustment/` | POST | Post-approval balance reduction | `{amount, reason}` | `sales.collection_adjustment` | customer credit only; no line edits |
+| `/sales/summary/` | GET | KPIs | — | `sales.view` | |
+| `/sales/{id}/print-preview/` | GET | Print JSON template | — | `sales.print` | no PDF yet |
+| `/sales/price-preview/` | GET | Resolved price for customer/product | `customer,product,price_type` | `sales.view` | |
+| `/sales/stock-check/` | GET | Availability check | `product,cartons?,pieces?,kg?` | `sales.view` | |
+| `/sales/{id}/lines/` | GET/POST | List / add line (POST draft-only) | line payload | view / `sales.edit` | special/free pricing rules |
+| `/sales/{id}/lines/{line_id}/` | PATCH/DELETE | Edit / remove line (draft-only) | partial | `sales.edit` | |
+| `/sales/{id}/adjustments/` | GET/POST | Draft invoice discounts | adjustment payload | view / `sales.apply_discount` | |
+| `/customers/{id}/sales/` | GET | Customer sales history | — | `sales.view` | |
+
+> Manual price override requires `sales.override_price` + audit. Free products require
+> active agreement or `sales.sensitive`. Credit-limit override requires
+> `sales.credit_override` + reason on approve.
 
 ---
 
-## 11. Quotation endpoints  (`/api/v1/quotations/`)
+## 11. Quotation endpoints  (`/api/v1/tenant/quotations/`)  — ✅ IMPLEMENTED (Phase 7)
 
-| Path | Method | Purpose | Request | Response | Perms | Side effects |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/quotations/` | GET | List | `status,customer,search` | `ListResponse<Quotation>` | `quotation.view` | |
-| `/quotations/` | POST | Create | `{customer_id, expiry_date, lines[]}` | `Quotation` | `quotation.add` | **no** stock/balance change |
-| `/quotations/{id}/` | GET | Detail | — | quotation w/ lines | `quotation.view` | |
-| `/quotations/{id}/` | PATCH | Edit | partial | `Quotation` | `quotation.change` | |
-| `/quotations/{id}/status/` | POST | Set accepted/rejected/cancelled | `{status, reason?}` | `Quotation` | `quotation.change` | |
-| `/quotations/{id}/convert/` | POST | Convert → sales invoice **draft** | `{}` | `{quotation, sales_invoice}` | `sales.add` | creates draft sale; **stock re-checked at approval, not now**; sets quotation `converted` |
-
-> Expiry handled by a background job flipping `status=expired` past `expiry_date`.
+| Path | Method | Purpose | Perms | Side effects |
+| --- | --- | --- | --- | --- |
+| `/quotations/` | GET, POST | List / create draft | `quotations.view`, `quotations.create` | **none** |
+| `/quotations/summary/` | GET | KPIs | `quotations.view` | |
+| `/quotations/{id}/` | GET, PATCH | Detail / edit draft | view / `quotations.edit` | |
+| `/quotations/{id}/send/` | POST | Draft → sent | `quotations.send` | |
+| `/quotations/{id}/accept/` | POST | Sent → accepted | `quotations.accept` | |
+| `/quotations/{id}/reject/` | POST | Reject | `quotations.reject` | reason required |
+| `/quotations/{id}/cancel/` | POST | Cancel | `quotations.cancel` | reason required |
+| `/quotations/{id}/convert-to-sales/` | POST | → sales draft | `quotations.convert_to_sales` | creates draft only |
+| `/quotations/{id}/print-preview/` | GET | JSON preview | `quotations.print` | not tax invoice |
+| `/quotations/{id}/stock-warning/` | GET | Availability info | `quotations.view` | no stock movement |
+| `/quotations/price-preview/` | GET | Price resolution | `quotations.view` | |
+| `/quotations/expire-overdue/` | POST | Mark expired | `quotations.send` | draft/sent only |
+| `/quotations/{id}/lines/` | GET, POST | Lines | view / edit | draft only |
+| `/customers/{id}/quotations/` | GET | Customer history | `quotations.view` | |
 
 ---
 
@@ -223,16 +239,28 @@ cancellation reverses both (or is blocked if stock was consumed).
 
 ---
 
-## 14. Payment / receipt endpoints  (`/api/v1/payments/`)
+## 14. Payment / receipt endpoints  (`/api/v1/tenant/payments/`)  — ✅ IMPLEMENTED (Phase 6)
 
-| Path | Method | Purpose | Request | Response | Perms | Side effects |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/payments/movements/` | GET | List (→ `listPaymentMovements`) | `party_type,movement_type,date_*` | `ListResponse<PaymentMovement>` | `payment.view` | |
-| `/payments/collections/` | POST | Customer collection | `{customer_id, amount, method, allocations[], discount_amount?}` | `PaymentMovement` | `payment.add` | **updates invoice paid/remaining + customer balance**; discount is **sensitive** |
-| `/payments/supplier-payments/` | POST | Supplier payment | `{supplier_id, amount, method, allocations[]}` | `PaymentMovement` | `payment.add` | **updates purchase paid/remaining + supplier balance** |
-| `/payments/refunds/` | POST | Customer/supplier refund | `{party_type, party_id, amount, method}` | `PaymentMovement` | `payment.add` | reverses balance direction |
-| `/payments/movements/{id}/cancel/` | POST | **Cancel** receipt/movement | `{reason}` | `PaymentMovement` | `payment.cancel` | **reverses balance + invoice allocation effects**; **sensitive** |
-| `/payments/receipts/{id}/print/` | GET | Print/export receipt | — | PDF | `payment.view` | |
+Base path `/api/v1/tenant/payments/` and `/api/v1/tenant/receipts/`. Permission codes use `payments.*` and `receipts.*`.
+
+| Path | Method | Purpose | Perms | Side effects |
+| --- | --- | --- | --- | --- |
+| `/payments/summary/` | GET | Payment KPIs | `payments.view` | |
+| `/payments/movements/` | GET | List movements | `payments.view` | filters: movement_type, party_type, customer, supplier, status, dates, amounts |
+| `/payments/movements/{id}/` | GET | Detail + allocations | `payments.view` | |
+| `/payments/movements/{id}/cancel/` | POST | Cancel movement | `payments.cancel` | reverses ledger + invoice allocations; reason required |
+| `/payments/movements/{id}/print-preview/` | GET | Receipt JSON | `payments.print` | |
+| `/payments/customer-collections/` | POST | Customer collection | `payments.create_customer_collection` | credit customer ledger; optional sales allocations |
+| `/payments/supplier-payments/` | POST | Supplier payment | `payments.create_supplier_payment` | debit supplier ledger; optional purchase allocations |
+| `/payments/customer-refunds/` | POST | Customer refund | `payments.create_customer_refund` | reason required |
+| `/payments/supplier-refunds/` | POST | Supplier refund | `payments.create_supplier_refund` | reason required |
+| `/customers/{id}/collections/` | GET | Customer collection history | `payments.view` | |
+| `/suppliers/{id}/payments/` | GET | Supplier payment history | `payments.view` | |
+| `/payments/reconciliation/customers/{id}/` | GET | Balance reconciliation | `payments.reconcile` | |
+| `/payments/reconciliation/suppliers/{id}/` | GET | Balance reconciliation | `payments.reconcile` | |
+| `/receipts/` | GET | Receipt list | `receipts.view` | |
+| `/receipts/{id}/` | GET | Receipt detail | `receipts.view` | |
+| `/receipts/{id}/print-preview/` | GET | Receipt JSON | `receipts.print` | |
 
 ---
 

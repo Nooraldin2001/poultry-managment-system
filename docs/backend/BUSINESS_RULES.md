@@ -90,13 +90,22 @@ Inventory always tracks all three units: **cartons, pieces, KG**.
 - Editing sales price, overriding KG, or changing carton/pieces **after draft** are
   sensitive actions (reason + audit).
 
+> **Phase 5 implemented:** `apps.sales` — draft/approve/cancel APIs at
+> `/api/v1/tenant/sales/`. Approval posts customer ledger debit for unpaid `balance_due`
+> only; full collection receipts deferred to payments phase. Gross profit uses FIFO cost
+> consumed, not product default purchase price. See `PHASE_5_SALES_IMPLEMENTATION_NOTES.md`.
+
 ## 7. Quotation rules
 
 - A quotation **does not** deduct stock or update the customer balance.
 - Statuses: draft, sent, accepted, rejected, expired, cancelled, converted.
 - A quotation can **convert** to a sales invoice **draft**; stock is checked again only
   when the resulting sales invoice is approved (not at conversion).
-- A quotation can **expire** at `expiry_date` (background job flips status).
+- A quotation can **expire** at `valid_until` (draft/sent via `expire-overdue` endpoint).
+
+> **Phase 7 implemented:** `apps.quotations` — full lifecycle APIs, conversion with
+> preserved pricing, print-preview with “not a tax invoice” notice. See
+> `PHASE_7_QUOTATIONS_IMPLEMENTATION_NOTES.md`.
 
 ## 8. Purchase rules
 
@@ -180,6 +189,10 @@ Inventory always tracks all three units: **cartons, pieces, KG**.
 - Receipts must be printable/exportable.
 - Cancelling a receipt/payment reverses its balance + invoice-allocation effect and
   requires reason + audit. Collection discounts are sensitive.
+
+> **Phase 6 implemented:** `apps.payments` — collections, supplier payments, refunds,
+> invoice allocations, receipt numbering, cancellation reversal, print-preview JSON,
+> reconciliation. See `PHASE_6_PAYMENTS_RECEIPTS_IMPLEMENTATION_NOTES.md`.
 
 ## 13. Expense / profit rules
 

@@ -31,10 +31,10 @@
 | `listProducts()` | `products.mock.ts` (`S_PRODUCTS`) | `GET /api/v1/tenant/products/` ✅ | `Product`, `ProductCategory` | Tenant-scoped; `?product_type=&is_active=&category=&search=` |
 | `getProductById(id)` | `products.mock.ts` | `GET /api/v1/tenant/products/{id}/` ✅ | `Product` (+ `/prices/`, `/usage/`) | `disable`/`reactivate` actions |
 | `listInventoryItems()` | `inventory.mock.ts` | `GET /api/v1/tenant/inventory/` ✅ | `InventoryBalance`, `Product` | UI shows total stock; backend reads balances; `?product=&category=&status=&low_stock=&out_of_stock=&search=` |
-| `listSalesInvoices()` | `sales.mock.ts` (`S_INVOICES`) | `GET /api/v1/sales/invoices/` | `SalesInvoice`, `SalesInvoiceLine` | `?status=&date_*=&customer=` |
-| `getSalesInvoiceById(id)` | `sales.mock.ts` | `GET /api/v1/sales/invoices/{id}/` | `SalesInvoice`+lines | Detail includes lines |
+| `listSalesInvoices()` | `sales.mock.ts` (`S_INVOICES`) | `GET /api/v1/tenant/sales/` | `SalesInvoice`, `SalesInvoiceLine` | `?status=&date_*=&customer=` |
+| `getSalesInvoiceById(id)` | `sales.mock.ts` | `GET /api/v1/tenant/sales/{id}/` | `SalesInvoice`+lines | Detail includes lines |
 | `listPurchaseInvoices()` | `purchases.mock.ts` | `GET /api/v1/tenant/purchases/` ✅ | `PurchaseInvoice`, `PurchaseInvoiceLine` | `?supplier=&status=&payment_status=&date_from=&date_to=&supplier_invoice_number=&search=&has_balance=&vat_enabled=` |
-| `listPaymentMovements()` | `payments.mock.ts` | `GET /api/v1/payments/movements/` | `PaymentMovement`, `PaymentAllocation` | `?party_type=&movement_type=` |
+| `listPaymentMovements()` | `payments.mock.ts` | `GET /api/v1/tenant/payments/movements/` | `PaymentMovement`, `PaymentAllocation` | `?party_type=&movement_type=` |
 | `listExpenses()` | `expenses.mock.ts` | `GET /api/v1/expenses/` | `Expense`, `ExpenseCategory` | `?category=&date_*=` |
 | `getReportSummary()` | `reports.mock.ts` (`T_DAILY`,`T_MONTHLY_PROFIT`,`T_PAY_PIE`) | `GET /api/v1/reports/summary/` | aggregates over `SalesInvoice`/`PurchaseInvoice`/`Expense` (+ optional `ReportSnapshot`) | Returns `{daily, monthlyProfit, paymentSplit}` (`ReportSummaryData`) |
 | `getDashboardSummary()` | derived from `T_DAILY`,`T_INVOICES`,`T_CUSTOMERS` | `GET /api/v1/dashboard/summary/` | aggregates (sales today, open invoices, overdue customers) | Returns `DashboardSummary {totalSalesToday, openInvoices, overdueCustomers}` |
@@ -50,10 +50,10 @@ backend concepts"). Add them to `src/services/index.ts` with matching signatures
 | New frontend service (proposed) | Backend endpoint | Model(s) |
 | --- | --- | --- |
 | `login()/logout()/refresh()/me()` | `/api/v1/auth/*` | `User`, JWT |
-| `createSalesInvoice()/approveSalesInvoice()/cancelSalesInvoice()` | `POST /sales/invoices/`, `.../approve/`, `.../cancel/` | `SalesInvoice` + inventory side effects |
+| `createSalesInvoice()/approveSalesInvoice()/cancelSalesInvoice()` | `POST /api/v1/tenant/sales/`, `.../approve/`, `.../cancel/` | `SalesInvoice` + inventory side effects on approve |
 | `createPurchaseInvoice()/approve/cancel` | `/api/v1/tenant/purchases/*` ✅ (Phase 4) | `PurchaseInvoice` + inventory side effects |
-| `listQuotations()/convertQuotation()` | `/quotations/*` | `Quotation` |
-| `createCollection()/createSupplierPayment()/cancelPayment()` | `/payments/*` | `PaymentMovement` |
+| `listQuotations()/convertQuotation()` | `GET/POST /api/v1/tenant/quotations/` (+ send/accept/convert-to-sales) | `Quotation` |
+| `createCollection()/createSupplierPayment()/cancelPayment()` | `POST /api/v1/tenant/payments/customer-collections/`, `supplier-payments/`, `movements/{id}/cancel/` | `PaymentMovement` |
 | `createStockAdjustment()/stocktaking*` | `/api/v1/tenant/inventory/adjustments/`, `.../inventory/stocktaking/*` ✅ | `StockAdjustment`, `StocktakingSession` |
 | `listUsers()/createUser()/setUserPermissions()` | `/settings/users/*` | `User`, `UserPermissionOverride` |
 | `getCustomerStatement()/getSupplierStatement()` | `/customers/{id}/statement/`, `/suppliers/{id}/statement/` | statements |

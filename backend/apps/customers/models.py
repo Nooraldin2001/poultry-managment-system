@@ -128,6 +128,7 @@ class CustomerLedgerEntry(TenantOwnedModel):
         SALES_INVOICE = "sales_invoice", "Sales Invoice"
         COLLECTION = "collection", "Collection"
         COLLECTION_DISCOUNT = "collection_discount", "Collection Discount"
+        CUSTOMER_REFUND = "customer_refund", "Customer Refund"
         SALES_RETURN = "sales_return", "Sales Return"
         TAX_CREDIT_NOTE = "tax_credit_note", "Tax Credit Note"
         MANUAL_ADJUSTMENT = "manual_adjustment", "Manual Adjustment"

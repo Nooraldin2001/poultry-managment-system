@@ -31,14 +31,14 @@ TRIAL_DAYS = 14
 DEFAULT_PREFIXES = {
     DocumentType.SALES_INVOICE: "INV-",
     DocumentType.PURCHASE_INVOICE: "PINV-",
-    DocumentType.QUOTATION: "QT-",
-    DocumentType.CUSTOMER_RECEIPT: "RCV-",
+    DocumentType.QUOTATION: "QUO-",
+    DocumentType.CUSTOMER_RECEIPT: "REC-",
     DocumentType.SUPPLIER_PAYMENT_RECEIPT: "PAY-",
     DocumentType.EXPENSE_VOUCHER: "EXP-",
     DocumentType.COLLECTION_ADJUSTMENT: "ADJ-",
     DocumentType.STOCK_ADJUSTMENT: "STK-",
-    DocumentType.CUSTOMER_REFUND: "CRF-",
-    DocumentType.SUPPLIER_REFUND: "SRF-",
+    DocumentType.CUSTOMER_REFUND: "REF-C-",
+    DocumentType.SUPPLIER_REFUND: "REF-S-",
 }
 
 
