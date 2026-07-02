@@ -28,6 +28,14 @@ KNOWN_DEMO_SUBDOMAINS = {"primefresh", "demo"}
 # masters (products / customers / suppliers / categories) last, so PROTECT FKs
 # between tenant models never block the delete.
 TENANT_MODELS_IN_ORDER = [
+    ("tax", "TaxWarning"),
+    ("tax", "TaxAdjustment"),
+    ("tax", "TaxPeriod"),
+    ("expenses", "ExpenseStatusHistory"),
+    ("expenses", "ExpenseAttachment"),
+    ("expenses", "Expense"),
+    ("expenses", "RecurringExpense"),
+    ("expenses", "ExpenseCategory"),
     ("quotations", "QuotationStatusHistory"),
     ("quotations", "QuotationLine"),
     ("quotations", "Quotation"),

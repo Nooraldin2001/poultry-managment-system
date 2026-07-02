@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ReactNode, ElementType } from "react";
 import {
   LayoutDashboard, Building2, CreditCard, AlertCircle,
@@ -27,13 +27,30 @@ import type {
   Lang, AppMode, TenantRole, TenantScreen, SuperAdminScreen as Screen,
   Company, CompanyStatus, CompanyPlan,
   SProduct, SInvLine, SInvStatus, SInvoice,
+  CurrentUser,
 } from "@/shared/types";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { useAuth } from "@/state/authStore";
+import { useAdminCompanies } from "@/hooks/useAdminCompanies";
+import { useTenantDashboard, dashboardDateRange } from "@/hooks/useTenantDashboard";
+import { useSales, useSaleDetail } from "@/hooks/api/useTenantResources";
+import { parseAmount } from "@/services/reportsService";
+import { resolveTenantCompany, mapBackendRole } from "@/services/tenantService";
+import { buildAdminDashboardSummary } from "@/services/adminService";
+import { ApiError } from "@/services/api/errors";
 import { T_NAV } from "@/app/navigation/tenantNavigation";
+import { getFilteredTenantNav, canViewScreen } from "@/app/navigation/permissions";
+import { ScreenGuard } from "@/shared/components/ScreenGuard";
 import { SA_NAV } from "@/app/navigation/superAdminNavigation";
 import { TENANT_TITLES, SUPER_ADMIN_TITLES } from "@/app/navigation/screenTitles";
 import { ComingSoonPlaceholder } from "@/shared/components/ComingSoonPlaceholder";
 import { ProductionEmptyState, EMPTY_MESSAGES } from "@/shared/components/ProductionEmptyState";
 import { IS_MOCK_MODE } from "@/services/config";
+import { LiveDocumentReadOnly } from "@/features/documents/LiveDocumentReadOnly";
+import { LiveSalesInvoiceScreen } from "@/features/invoices/LiveSalesInvoiceScreen";
+import { getSalesPrintPreview, getSalesDetail, approveSale, cancelSale } from "@/services/salesService";
+import { LivePrintPreviewScreen } from "@/features/print/LivePrintPreviewScreen";
+import { getPurchasePrintPreview } from "@/services/purchaseService";
 import {
   ALL_MODULES, COMPANIES, REVENUE_DATA, STATUS_PIE, PAYMENTS_DATA, AUDIT_LOGS, PLANS_DATA, RECENT_ACTIVITY,
   T_PRODUCTS, T_CUSTOMERS, T_SUPPLIERS, T_INVOICES, T_PURCHASES, T_DAILY, T_MONTHLY_PROFIT, T_PAY_PIE, T_NOTIFS,
@@ -159,9 +176,10 @@ function ConfirmModal({ open, title, message, onConfirm, onCancel, danger = fals
   );
 }
 
-function Sidebar({ screen, onNavigate, lang, isOpen, onClose, onSwitchToTenant }: {
+function Sidebar({ screen, onNavigate, lang, isOpen, onClose, onSwitchToTenant, userName, onLogout }: {
   screen: Screen; onNavigate: (s: Screen) => void; lang: Lang;
   isOpen: boolean; onClose: () => void; onSwitchToTenant?: () => void;
+  userName?: string; onLogout?: () => void;
 }) {
   const isRTL = lang === "ar";
   const isCompanyRelated = screen === "company-detail" || screen === "create-company";
@@ -194,13 +212,19 @@ function Sidebar({ screen, onNavigate, lang, isOpen, onClose, onSwitchToTenant }
         </nav>
         <div className="px-4 py-4 border-t border-white/10">
           <div className="flex items-center gap-3 mb-3 px-1">
-            <div className="w-9 h-9 rounded-full bg-[#22C55E] flex items-center justify-center text-white font-black text-sm shrink-0">أ</div>
+            <div className="w-9 h-9 rounded-full bg-[#22C55E] flex items-center justify-center text-white font-black text-sm shrink-0">
+              {(userName || "?")[0]?.toUpperCase()}
+            </div>
             <div className="min-w-0">
-              <div className="text-white text-sm font-bold truncate">{isRTL ? "أحمد الإدارة" : "Ahmed Admin"}</div>
+              <div className="text-white text-sm font-bold truncate">{userName || (isRTL ? "مستخدم" : "User")}</div>
               <div className="text-white/40 text-xs">Super Admin</div>
             </div>
           </div>
-          <button className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-white/50 hover:text-white hover:bg-white/8 text-sm font-semibold transition-all">
+          <button
+            type="button"
+            onClick={() => onLogout?.()}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-white/50 hover:text-white hover:bg-white/8 text-sm font-semibold transition-all"
+          >
             <LogOut size={15} />{isRTL ? "تسجيل الخروج" : "Sign Out"}
           </button>
         </div>
@@ -230,9 +254,33 @@ function TopBar({ title, titleEn, onMenuClick, lang, onLangSwitch }: {
 }
 
 // ── SCREEN: LOGIN ──────────────────────────────────────────────────────────────
-function LoginScreen({ onLogin, lang, onLangSwitch }: { onLogin: () => void; lang: Lang; onLangSwitch: () => void }) {
-  const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
+function LoginScreen({ onLogin, lang, onLangSwitch }: { onLogin: (user: CurrentUser) => void; lang: Lang; onLangSwitch: () => void }) {
+  const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const isRTL = lang === "ar";
+  const handleSubmit = async () => {
+    if (!email || !password) {
+      toast.error(isRTL ? "يرجى إدخال البريد وكلمة المرور" : "Please fill in all fields");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const user = await login(email.trim(), password);
+      onLogin(user);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : isRTL
+            ? "بيانات الدخول غير صحيحة"
+            : "Invalid credentials";
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
   return (
     <div className="min-h-screen flex" dir={isRTL ? "rtl" : "ltr"}>
       <div className="hidden lg:flex w-1/2 bg-[#0F2C59] flex-col items-center justify-center p-16 relative overflow-hidden">
@@ -270,8 +318,8 @@ function LoginScreen({ onLogin, lang, onLangSwitch }: { onLogin: () => void; lan
             <div className={`flex ${isRTL ? "justify-start" : "justify-end"}`}>
               <button className="text-sm text-[#0F2C59] font-bold hover:underline">{isRTL ? "نسيت كلمة المرور؟" : "Forgot password?"}</button>
             </div>
-            <Btn size="lg" className="w-full justify-center" onClick={() => { if (!email || !password) { toast.error(isRTL ? "يرجى إدخال البريد وكلمة المرور" : "Please fill in all fields"); return; } onLogin(); }}>
-              <Lock size={16} />{isRTL ? "تسجيل الدخول" : "Sign In"}
+            <Btn size="lg" className="w-full justify-center" disabled={submitting} onClick={() => void handleSubmit()}>
+              <Lock size={16} />{submitting ? (isRTL ? "جارٍ الدخول..." : "Signing in...") : (isRTL ? "تسجيل الدخول" : "Sign In")}
             </Btn>
           </div>
           <div className="mt-8 text-center">
@@ -304,20 +352,32 @@ function KpiCard({ value, labelAr, labelEn, icon: Icon, iconBg, lang, sub }: {
 // ── SCREEN: DASHBOARD ──────────────────────────────────────────────────────────
 function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Screen) => void }) {
   const isRTL = lang === "ar";
-  const outstanding = COMPANIES.filter(c => c.outstandingAmount > 0);
-  const upcoming = COMPANIES.filter(c => { const d = Math.ceil((new Date(c.renewalDate).getTime() - Date.now()) / 86400000); return d > 0 && d <= 30; });
-  // All KPIs are derived from the (gated) COMPANIES list, so they show real
-  // counts in mock mode and 0 / empty in production until the backend is wired.
-  const totalCompanies = COMPANIES.length;
-  const activeCompanies = COMPANIES.filter(c => c.status === "active").length;
-  const trialCompanies = COMPANIES.filter(c => c.status === "trial").length;
-  const suspendedCompanies = COMPANIES.filter(c => c.status === "suspended").length;
-  const expectedMonthly = COMPANIES.filter(c => c.status !== "suspended").reduce((s, c) => s + c.monthlyPrice, 0);
-  const totalOutstanding = outstanding.reduce((s, c) => s + c.outstandingAmount, 0);
+  const { companies, loading, error, reload } = useAdminCompanies();
+  const source = IS_MOCK_MODE ? COMPANIES : companies;
+  const adminSummary = IS_MOCK_MODE ? null : buildAdminDashboardSummary(source);
+  const outstanding = source.filter(c => c.outstandingAmount > 0);
+  const upcoming = source.filter(c => { const d = Math.ceil((new Date(c.renewalDate).getTime() - Date.now()) / 86400000); return d > 0 && d <= 30; });
+  const totalCompanies = source.length;
+  const activeCompanies = source.filter(c => c.status === "active").length;
+  const trialCompanies = source.filter(c => c.status === "trial").length;
+  const suspendedCompanies = source.filter(c => c.status === "suspended").length;
+  const expectedMonthly = adminSummary?.expectedMonthly ?? source.filter(c => c.status !== "suspended").reduce((s, c) => s + c.monthlyPrice, 0);
+  const totalOutstanding = adminSummary?.totalOutstanding ?? outstanding.reduce((s, c) => s + c.outstandingAmount, 0);
   const collectedThisMonth = Math.max(0, expectedMonthly - totalOutstanding);
   const overdueCount = outstanding.filter(c => new Date(c.renewalDate) < new Date()).length;
   const hasData = totalCompanies > 0;
+  const statusPieData = IS_MOCK_MODE ? STATUS_PIE : (adminSummary?.statusPie ?? []);
+  const revenueData = IS_MOCK_MODE ? REVENUE_DATA : [];
+  const recentActivity = IS_MOCK_MODE ? RECENT_ACTIVITY : [];
   const actIcons: Record<string, ReactNode> = { create: <Plus size={13} className="text-emerald-500" />, payment: <DollarSign size={13} className="text-blue-500" />, suspend: <Ban size={13} className="text-red-500" />, renew: <RefreshCw size={13} className="text-amber-500" /> };
+
+  if (!IS_MOCK_MODE && loading) {
+    return <div className="p-8"><LoadingState lang={lang} /></div>;
+  }
+  if (!IS_MOCK_MODE && error) {
+    return <div className="p-8"><ErrorState lang={lang} error={error} onRetry={() => void reload()} /></div>;
+  }
+
   return (
     <div className="p-4 lg:p-8 space-y-6 max-w-screen-xl mx-auto">
       <Card className="p-5">
@@ -331,7 +391,7 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
       </Card>
       {!hasData && (
         <Card className="p-4 bg-slate-50 border-slate-200">
-          <p className="text-sm font-bold text-slate-500 text-center">{isRTL ? EMPTY_MESSAGES.pendingApi.ar : EMPTY_MESSAGES.pendingApi.en}</p>
+          <EmptyState lang={lang} messageAr={EMPTY_MESSAGES.noCompanies.ar} messageEn={EMPTY_MESSAGES.noCompanies.en} compact />
         </Card>
       )}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
@@ -351,9 +411,9 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Card className="p-5 lg:col-span-2">
           <h3 className="font-black text-[#0F2C59] mb-5 text-sm">{isRTL ? "الإيرادات الشهرية (AED)" : "Monthly Revenue (AED)"}</h3>
-          {REVENUE_DATA.length === 0 ? <ProductionEmptyState lang={lang} compact /> : (
+          {revenueData.length === 0 ? <ProductionEmptyState lang={lang} compact /> : (
           <ResponsiveContainer width="100%" height={210}>
-            <BarChart data={REVENUE_DATA} barSize={20} barGap={4}>
+            <BarChart data={revenueData} barSize={20} barGap={4}>
               <CartesianGrid key="sa-bar-grid" strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis key="sa-bar-x" dataKey={isRTL ? "month" : "monthEn"} tick={{ fontSize: 11, fill: "#94a3b8", fontFamily: "Cairo" }} axisLine={false} tickLine={false} />
               <YAxis key="sa-bar-y" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
@@ -366,17 +426,17 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
         </Card>
         <Card className="p-5">
           <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "توزيع حالة الشركات" : "Company Status"}</h3>
-          {STATUS_PIE.length === 0 ? <ProductionEmptyState lang={lang} compact /> : (<>
+          {statusPieData.length === 0 ? <ProductionEmptyState lang={lang} compact /> : (<>
           <ResponsiveContainer width="100%" height={160}>
             <PieChart>
-              <Pie key="sa-status-pie" data={STATUS_PIE} cx="50%" cy="50%" innerRadius={44} outerRadius={68} dataKey="value" paddingAngle={3}>
-                {STATUS_PIE.map((e, i) => <Cell key={`sa-pie-${i}`} fill={e.color} />)}
+              <Pie key="sa-status-pie" data={statusPieData} cx="50%" cy="50%" innerRadius={44} outerRadius={68} dataKey="value" paddingAngle={3}>
+                {statusPieData.map((e, i) => <Cell key={`sa-pie-${i}`} fill={e.color} />)}
               </Pie>
               <Tooltip key="sa-pie-tip" contentStyle={{ borderRadius: 10, border: "none", fontFamily: "Cairo" }} formatter={(v: number, _: string, p: { payload: { name: string; nameEn: string } }) => [v, isRTL ? p.payload.name : p.payload.nameEn]} />
             </PieChart>
           </ResponsiveContainer>
           <div className="space-y-2.5 mt-3">
-            {STATUS_PIE.map(s => (
+            {statusPieData.map(s => (
               <div key={s.name} className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2.5"><span className="w-3 h-3 rounded-full shrink-0" style={{ background: s.color }} /><span className="font-semibold text-slate-600">{isRTL ? s.name : s.nameEn}</span></div>
                 <span className="font-black text-slate-700 font-mono">{s.value}</span>
@@ -392,11 +452,11 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
             <h3 className="font-black text-[#0F2C59] text-sm">{isRTL ? "تجديدات قريبة" : "Upcoming Renewals"}</h3>
             <Btn variant="ghost" size="sm" onClick={() => onNavigate("companies")}><Eye size={13} />{isRTL ? "الكل" : "All"}</Btn>
           </div>
-          {COMPANIES.filter(c => c.status !== "suspended").length === 0 ? (
+          {source.filter(c => c.status !== "suspended").length === 0 ? (
             <ProductionEmptyState lang={lang} compact messageAr={EMPTY_MESSAGES.noRenewals.ar} messageEn={EMPTY_MESSAGES.noRenewals.en} />
           ) : (
           <div className="divide-y divide-slate-50">
-            {COMPANIES.filter(c => c.status !== "suspended").map(c => {
+            {source.filter(c => c.status !== "suspended").map(c => {
               const days = Math.ceil((new Date(c.renewalDate).getTime() - Date.now()) / 86400000);
               return (
                 <div key={c.id} className="px-5 py-3.5 flex items-center justify-between">
@@ -429,11 +489,11 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
       </div>
       <Card>
         <div className="px-5 py-4 border-b border-slate-100"><h3 className="font-black text-[#0F2C59] text-sm">{isRTL ? "النشاط الأخير" : "Recent Activity"}</h3></div>
-        {RECENT_ACTIVITY.length === 0 ? (
+        {recentActivity.length === 0 ? (
           <ProductionEmptyState lang={lang} compact />
         ) : (
         <div className="divide-y divide-slate-50">
-          {RECENT_ACTIVITY.map(a => (
+          {recentActivity.map(a => (
             <div key={a.id} className="px-5 py-3.5 flex items-center gap-4">
               <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">{actIcons[a.type]}</div>
               <div className="flex-1 min-w-0"><span className="text-sm font-bold text-slate-700">{isRTL ? a.ar : a.en} </span><span className="text-sm text-slate-400">— {a.company}</span></div>
@@ -453,15 +513,23 @@ function CompaniesScreen({ lang, onNavigate, onSelectCompany, onSwitchToTenant }
   onSwitchToTenant: (id: string) => void;
 }) {
   const isRTL = lang === "ar";
+  const { companies, loading, error, reload } = useAdminCompanies();
+  const source = IS_MOCK_MODE ? COMPANIES : companies;
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPlan, setFilterPlan] = useState("all");
   const [confirmId, setConfirmId] = useState<string | null>(null);
-  const filtered = COMPANIES.filter(c => {
+  const filtered = source.filter(c => {
     const s = search.toLowerCase();
     return (!s || c.nameAr.includes(search) || c.nameEn.toLowerCase().includes(s) || c.subdomain.includes(s)) &&
       (filterStatus === "all" || c.status === filterStatus) && (filterPlan === "all" || c.plan === filterPlan);
   });
+  if (!IS_MOCK_MODE && loading) {
+    return <div className="p-8"><LoadingState lang={lang} /></div>;
+  }
+  if (!IS_MOCK_MODE && error) {
+    return <div className="p-8"><ErrorState lang={lang} error={error} onRetry={() => void reload()} /></div>;
+  }
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
       <Card className="p-4">
@@ -487,7 +555,7 @@ function CompaniesScreen({ lang, onNavigate, onSelectCompany, onSwitchToTenant }
         </div>
       </Card>
       {filtered.length === 0 && (
-        <Card className="p-14 text-center"><Building2 size={48} className="text-slate-200 mx-auto mb-4" /><h3 className="text-lg font-black text-slate-500 mb-2">{isRTL ? "لا توجد شركات" : "No companies found"}</h3><p className="text-slate-400 mb-6 font-semibold">{isRTL ? "ابدأ بإضافة أول شركة" : "Start by adding the first company"}</p><Btn onClick={() => onNavigate("create-company")}><Plus size={15} />{isRTL ? "إضافة شركة جديدة" : "Add New Company"}</Btn></Card>
+        <Card className="p-14 text-center"><Building2 size={48} className="text-slate-200 mx-auto mb-4" /><h3 className="text-lg font-black text-slate-500 mb-2">{isRTL ? "لا توجد شركات" : "No companies found"}</h3><p className="text-slate-400 mb-6 font-semibold">{isRTL ? EMPTY_MESSAGES.noCompanies.ar : EMPTY_MESSAGES.noCompanies.en}</p><Btn onClick={() => onNavigate("create-company")}><Plus size={15} />{isRTL ? "إضافة شركة جديدة" : "Add New Company"}</Btn></Card>
       )}
       {filtered.length > 0 && (
         <Card className="hidden lg:block overflow-hidden">
@@ -1042,7 +1110,9 @@ function PrintTemplatePanel({ lang, onClose, role }: { lang: Lang; onClose: () =
 }
 
 // ── SCREEN: SALES LIST ─────────────────────────────────────────────────────────
-function SalesListScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; setSelectedSalesId?: (id: string) => void;
+}) {
   const isRTL = lang === "ar";
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -1050,11 +1120,70 @@ function SalesListScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantR
   const [showCancel, setShowCancel] = useState<string | null>(null);
   const [showNumbering, setShowNumbering] = useState(false);
 
-  const filtered = S_INVOICES.filter(inv => {
+  const { items: saleRows, loading, error, forbidden, reload } = useSales(
+    search ? { search } : undefined,
+    async () =>
+      S_INVOICES.map((inv) => ({
+        id: inv.id,
+        number: inv.id,
+        customer: inv.customer,
+        customerId: "",
+        date: inv.date,
+        status: inv.status,
+        paymentStatus: inv.status,
+        subtotal: inv.total ?? 0,
+        vat: 0,
+        total: inv.total ?? 0,
+        paid: inv.paid ?? 0,
+        balance: inv.remaining ?? 0,
+      })),
+  );
+
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+
+  const displayInvoices = saleRows.map((row) => {
+    const mock = S_INVOICES.find((i) => i.id === row.number || i.id === row.id);
+    if (mock && IS_MOCK_MODE) return { ...mock, recordId: row.id };
+    return {
+      id: row.number,
+      recordId: row.id,
+      customer: row.customer,
+      customerEn: row.customer,
+      customerId: row.customerId,
+      date: row.date,
+      cartons: 0,
+      kg: 0,
+      subtotal: row.subtotal,
+      vat: row.vat,
+      total: row.total,
+      paid: row.paid,
+      remaining: row.balance,
+      status: row.status as SInvStatus,
+      method: "credit",
+      user: "",
+    };
+  });
+
+  const filtered = displayInvoices.filter(inv => {
     const s = search.toLowerCase();
     return (!s || inv.id.toLowerCase().includes(s) || inv.customer.includes(search) || inv.customerEn.toLowerCase().includes(s)) &&
       (filterStatus === "all" || inv.status === filterStatus);
   });
+
+  const openDetail = (recordId: string) => {
+    setSelectedSalesId?.(recordId);
+    onNavigate("sales-detail");
+  };
+  const openEdit = (recordId: string) => {
+    setSelectedSalesId?.(recordId);
+    onNavigate("sales-new");
+  };
+  const openPreview = (recordId: string) => {
+    setSelectedSalesId?.(recordId);
+    onNavigate("sales-preview");
+  };
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -1062,7 +1191,7 @@ function SalesListScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantR
         <button onClick={() => setShowNumbering(true)} className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-[#0F2C59] transition-colors">
           <Settings size={13} />{isRTL ? "إعدادات ترقيم الفواتير" : "Invoice Numbering Settings"}
         </button>
-        <Btn variant="green" onClick={() => onNavigate("sales-new")}><Plus size={15} />{isRTL ? "فاتورة بيع جديدة" : "New Sales Invoice"}</Btn>
+        <Btn variant="green" onClick={() => { setSelectedSalesId?.(""); onNavigate("sales-new"); }}><Plus size={15} />{isRTL ? "فاتورة بيع جديدة" : "New Sales Invoice"}</Btn>
       </div>
 
       {/* Filters */}
@@ -1114,10 +1243,10 @@ function SalesListScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantR
                     <td className="px-4 py-3"><SInvStatusBadge status={inv.status} lang={lang} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
-                        {inv.status === "draft" && <button onClick={() => onNavigate("sales-new")} className="text-xs px-2 py-1 bg-[#0F2C59] text-white rounded-lg font-bold hover:bg-[#162f5f]">{isRTL ? "تعديل" : "Edit"}</button>}
+                        {inv.status === "draft" && <button onClick={() => openEdit((inv as { recordId?: string }).recordId ?? inv.id)} className="text-xs px-2 py-1 bg-[#0F2C59] text-white rounded-lg font-bold hover:bg-[#162f5f]">{isRTL ? "تعديل" : "Edit"}</button>}
                         {(inv.status === "approved" || inv.status === "partial") && <button onClick={() => setShowCollect(inv.id)} className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg font-bold hover:bg-emerald-600">{isRTL ? "تحصيل" : "Collect"}</button>}
-                        <button onClick={() => onNavigate("sales-detail")} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-[#0F2C59] transition-all" title={isRTL ? "عرض" : "View"}><Eye size={13} /></button>
-                        <button onClick={() => onNavigate("sales-preview")} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all" title={isRTL ? "طباعة" : "Print"}><Printer size={13} /></button>
+                        <button onClick={() => openDetail((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-[#0F2C59] transition-all" title={isRTL ? "عرض" : "View"}><Eye size={13} /></button>
+                        <button onClick={() => openPreview((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all" title={isRTL ? "طباعة" : "Print"}><Printer size={13} /></button>
                         {(inv.status === "approved" || inv.status === "partial") && role === "owner" && <button onClick={() => setShowCancel(inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all" title={isRTL ? "إلغاء" : "Cancel"}><Ban size={13} /></button>}
                       </div>
                     </td>
@@ -1144,10 +1273,10 @@ function SalesListScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantR
                 <div className={`rounded-xl p-2 ${inv.remaining > 0 ? "bg-red-50" : "bg-slate-50"}`}><div className={`font-mono font-black text-sm ${inv.remaining > 0 ? "text-red-500" : "text-slate-300"}`}>{inv.remaining > 0 ? inv.remaining.toLocaleString() : "—"}</div><div className="text-[10px] text-slate-400 font-bold">{isRTL ? "المتبقي" : "Remaining"}</div></div>
               </div>
               <div className="flex gap-2">
-                <Btn size="sm" variant="secondary" onClick={() => onNavigate("sales-detail")}><Eye size={13} />{isRTL ? "عرض" : "View"}</Btn>
-                {inv.status === "draft" && <Btn size="sm" variant="primary" onClick={() => onNavigate("sales-new")}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
+                <Btn size="sm" variant="secondary" onClick={() => openDetail((inv as { recordId?: string }).recordId ?? inv.id)}><Eye size={13} />{isRTL ? "عرض" : "View"}</Btn>
+                {inv.status === "draft" && <Btn size="sm" variant="primary" onClick={() => openEdit((inv as { recordId?: string }).recordId ?? inv.id)}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
                 {(inv.status === "approved" || inv.status === "partial") && <Btn size="sm" variant="green" onClick={() => setShowCollect(inv.id)}><Wallet size={13} />{isRTL ? "تحصيل" : "Collect"}</Btn>}
-                <Btn size="sm" variant="ghost" onClick={() => onNavigate("sales-preview")}><Printer size={13} /></Btn>
+                <Btn size="sm" variant="ghost" onClick={() => openPreview((inv as { recordId?: string }).recordId ?? inv.id)}><Printer size={13} /></Btn>
               </div>
             </Card>
           ))}
@@ -1157,7 +1286,7 @@ function SalesListScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantR
       {filtered.length === 0 && (
         <Card className="p-14 text-center">
           <FileText size={48} className="text-slate-200 mx-auto mb-4" />
-          <h3 className="text-lg font-black text-slate-500 mb-2">{isRTL ? "لا توجد فواتير" : "No invoices found"}</h3>
+          <h3 className="text-lg font-black text-slate-500 mb-2">{isRTL ? "لا توجد فواتير بيع بعد" : "No sales invoices yet"}</h3>
           <Btn variant="green" onClick={() => onNavigate("sales-new")}><Plus size={15} />{isRTL ? "فاتورة بيع جديدة" : "New Sales Invoice"}</Btn>
         </Card>
       )}
@@ -1170,7 +1299,20 @@ function SalesListScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantR
 }
 
 // ── SCREEN: NEW SALES INVOICE ─────────────────────────────────────────────────
-function SalesNewScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+function SalesNewScreen({ lang, role, onNavigate, salesId, onSaved }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; salesId?: string; onSaved?: (id: string) => void;
+}) {
+  if (!IS_MOCK_MODE) {
+    return (
+      <LiveSalesInvoiceScreen
+        lang={lang}
+        role={role}
+        onNavigate={onNavigate}
+        invoiceId={salesId ?? null}
+        onSaved={onSaved}
+      />
+    );
+  }
   const isRTL = lang === "ar";
   const canEditPrice = role === "owner";
   const canApprove = role === "owner" || role === "accountant";
@@ -1509,7 +1651,93 @@ function SalesNewScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRo
 }
 
 // ── SCREEN: INVOICE PREVIEW / PRINT ───────────────────────────────────────────
-function SalesPreviewScreen({ lang, onNavigate, role }: { lang: Lang; onNavigate: (s: TenantScreen) => void; role?: TenantRole }) {
+function SalesDetailLiveRouter({ lang, role, onNavigate, salesId, canApprove }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; salesId: string; canApprove: boolean;
+}) {
+  const [status, setStatus] = useState<string | null>(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setChecking(true);
+    void getSalesDetail(salesId)
+      .then((d) => {
+        if (!cancelled) setStatus(d?.invoice.status ?? "draft");
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false);
+      });
+    return () => { cancelled = true; };
+  }, [salesId]);
+
+  if (checking) return <LoadingState lang={lang} />;
+  if (status === "draft") {
+    return (
+      <LiveSalesInvoiceScreen
+        lang={lang}
+        role={role}
+        onNavigate={onNavigate}
+        invoiceId={salesId}
+      />
+    );
+  }
+
+  return (
+    <LiveDocumentReadOnly
+      lang={lang}
+      onNavigate={onNavigate}
+      backScreen="sales-list"
+      titleAr="فاتورة بيع"
+      titleEn="Sales Invoice"
+      printScreen="sales-preview"
+      canApprove={canApprove}
+      canCancel={canApprove}
+      loadDetail={async () => {
+        const detail = await getSalesDetail(salesId);
+        if (!detail) return null;
+        const inv = detail.invoice;
+        return {
+          id: inv.id,
+          number: inv.number,
+          status: inv.status,
+          date: inv.date,
+          partyName: inv.customer,
+          subtotal: inv.subtotal,
+          vat: inv.vat,
+          total: inv.total,
+          paid: inv.paid,
+          balance: inv.balance,
+          lines: detail.lines.map((l) => ({
+            id: l.id,
+            label: l.productName,
+            qty: l.qty,
+            unit: l.unit,
+            price: l.price,
+            total: l.total,
+          })),
+        };
+      }}
+      onApprove={async () => { await approveSale(salesId, ""); }}
+      onCancel={async (reason) => { await cancelSale(salesId, reason); }}
+    />
+  );
+}
+
+function SalesPreviewScreen({ lang, onNavigate, role, salesId }: {
+  lang: Lang; onNavigate: (s: TenantScreen) => void; role?: TenantRole; salesId?: string;
+}) {
+  if (!IS_MOCK_MODE && salesId) {
+    return (
+      <LivePrintPreviewScreen
+        lang={lang}
+        onNavigate={onNavigate}
+        backScreen="sales-list"
+        titleAr="فاتورة ضريبية"
+        titleEn="Tax Invoice"
+        loadPreview={() => getSalesPrintPreview(salesId)}
+      />
+    );
+  }
   const isRTL = lang === "ar";
   const [showTemplate, setShowTemplate] = useState(false);
   const sampleLines = [
@@ -1660,7 +1888,24 @@ function SalesPreviewScreen({ lang, onNavigate, role }: { lang: Lang; onNavigate
 }
 
 // ── SCREEN: INVOICE DETAIL ─────────────────────────────────────────────────────
-function SalesDetailScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+function SalesDetailScreen({ lang, role, onNavigate, salesId }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; salesId?: string;
+}) {
+  const canApprove = role === "owner" || role === "accountant";
+  if (!IS_MOCK_MODE) {
+    if (!salesId) {
+      return <EmptyState lang={lang} messageAr="اختر فاتورة من القائمة" messageEn="Select an invoice from the list" />;
+    }
+    return (
+      <SalesDetailLiveRouter
+        lang={lang}
+        role={role}
+        onNavigate={onNavigate}
+        salesId={salesId}
+        canApprove={canApprove}
+      />
+    );
+  }
   const isRTL = lang === "ar";
   const [tab, setTab] = useState("invoice");
   const [showCollect, setShowCollect] = useState(false);
@@ -2037,23 +2282,22 @@ import { CustomersListScreen, CreateCustomerScreen, CustomerProfileScreen, Custo
 import { SuppliersListScreen, CreateSupplierScreen, SupplierProfileScreen, SupplierStatementScreen } from "./SupplierModule";
 import { ExpensesOverviewScreen, ExpensesListScreen, RecurringExpensesScreen, ExpenseDetailScreen, ExpenseVoucherScreen, ExpensesReportScreen, AddExpenseModal } from "./ExpensesModule";
 import { ReportsHomeScreen, DailySummaryReport, SalesReportScreen, PurchaseReportScreen, InventoryReportScreen, CustomerReportScreen, SupplierReportScreen, TaxReportScreen, ProfitReportScreen, StatementsScreen, ReportBuilderScreen } from "./ReportsModule";
-import { SettingsHomeScreen, CompanyProfileScreen, UsersListScreen, CreateUserScreen, UserPermissionsScreen, RolePermissionsScreen, SensitiveActionsScreen, SettingsAuditScreen, NumberingSettingsScreen, VATSettingsScreen, TransactionSettingsScreen, PlanFeaturesScreen, SecuritySettingsScreen } from "./SettingsModule";
+import { SettingsHomeScreen, CompanyProfileScreen, UsersListScreen, CreateUserScreen, UserPermissionsScreen, RolePermissionsScreen, SensitiveActionsScreen, SettingsAuditScreen, NumberingSettingsScreen, VATSettingsScreen, PrintTemplatesScreen, TransactionSettingsScreen, PlanFeaturesScreen, SecuritySettingsScreen } from "./SettingsModule";
 import { QuotationsListScreen, NewQuotationScreen, QuotationDetailScreen, QuotationPreviewScreen, ConvertQuotationScreen, QuotationAnalyticsScreen } from "./QuotationsModule";
 import { ProductsListScreen, AddProductScreen, ProductDetailScreen, ProductCategoriesScreen, BulkProductSetupScreen, ByProductsSetupScreen, ProductImportExportScreen, ProductSettingsPanel } from "./ProductModule";
-import { PaymentsOverviewScreen, PaymentMovementsScreen, CustomerCollectionModal as PayCollectModal, SupplierPaymentModal as PaySupplierModal, CustomerRefundScreen, ReceiptPreviewScreen, PaymentMethodSummaryScreen, CashBankAccountsScreen, PaymentsReportScreen } from "./PaymentsModule";
+import { PaymentsOverviewScreen, PaymentMovementsScreen, CustomerCollectionModal as PayCollectModal, SupplierPaymentModal as PaySupplierModal, CustomerRefundScreen, SupplierRefundScreen, ReceiptPreviewScreen, PaymentMethodSummaryScreen, CashBankAccountsScreen, PaymentsReportScreen } from "./PaymentsModule";
 import { TaxDashboardScreen, SalesVATReportScreen, PurchaseVATReportScreen, NetVATScreen, TaxWarningsScreen, VATAuditScreen, TaxCreditNotesScreen, NonTaxableInvoicesScreen, TaxSettingsPanel, TaxExportPreviewScreen } from "./TaxModule";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TENANT DASHBOARD — PHASE 2
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function TenantSidebar({ screen, onNavigate, lang, isOpen, onClose, company, role }: {
+function TenantSidebar({ screen, onNavigate, lang, isOpen, onClose, company, role, permissions }: {
   screen: TenantScreen; onNavigate: (s: TenantScreen) => void; lang: Lang;
-  isOpen: boolean; onClose: () => void; company: Company; role: TenantRole;
+  isOpen: boolean; onClose: () => void; company: Company; role: TenantRole; permissions: string[];
 }) {
   const isRTL = lang === "ar";
-  const hiddenForCashier: TenantScreen[] = ["purchases","purchases-list","purchases-new","purchases-preview","purchases-detail","accounts","tax","tax-sales","tax-purchases","tax-net","tax-warnings","tax-audit","tax-credit-notes","tax-non-taxable","tax-settings","tax-export-preview","reports","users","products-new","product-categories","products-bulk-setup","products-byproducts","products-import-export"];
-  const visibleNav = role === "cashier" ? T_NAV.filter(n => !hiddenForCashier.includes(n.key)) : T_NAV;
+  const visibleNav = getFilteredTenantNav(permissions, role);
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={onClose} />}
@@ -2109,7 +2353,7 @@ function TenantSidebar({ screen, onNavigate, lang, isOpen, onClose, company, rol
 function TenantTopBar({ lang, onLangSwitch, onMenuClick, role, onRoleChange, onNotificationsClick, notifCount, company, onBack, onQAClick }: {
   lang: Lang; onLangSwitch: () => void; onMenuClick: () => void;
   role: TenantRole; onRoleChange: (r: TenantRole) => void;
-  onNotificationsClick: () => void; notifCount: number; company: Company; onBack: () => void;
+  onNotificationsClick: () => void; notifCount: number; company: Company; onBack?: () => void;
   onQAClick: () => void;
 }) {
   const isRTL = lang === "ar";
@@ -2126,17 +2370,21 @@ function TenantTopBar({ lang, onLangSwitch, onMenuClick, role, onRoleChange, onN
         </div>
       </div>
       <div className="flex-1" />
-      {/* Role switcher */}
+      {/* Role switcher (mock dev only) */}
+      {IS_MOCK_MODE && (
       <div className="hidden sm:flex items-center gap-1 bg-slate-100 rounded-xl p-1">
         {([["owner", isRTL ? "المالك" : "Owner"], ["accountant", isRTL ? "محاسب" : "Accountant"], ["cashier", isRTL ? "كاشير" : "Cashier"]] as [TenantRole, string][]).map(([r, l]) => (
           <button key={r} onClick={() => onRoleChange(r)} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${role === r ? "bg-[#0F2C59] text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>{l}</button>
         ))}
       </div>
+      )}
       {/* Back to admin */}
-      <button onClick={onBack} className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-500 hover:bg-slate-50 hover:text-[#0F2C59] transition-all">
+      {onBack && (
+      <button type="button" onClick={onBack} className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-500 hover:bg-slate-50 hover:text-[#0F2C59] transition-all">
         <ChevronLeft size={13} className={isRTL ? "rotate-180" : ""} />
         {isRTL ? "لوحة الأدمن" : "Admin Panel"}
       </button>
+      )}
       <button onClick={onLangSwitch} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">
         <Globe size={14} />{lang === "ar" ? "EN" : "ع"}
       </button>
@@ -2189,22 +2437,48 @@ function TKpi({ value, labelAr, labelEn, sub, icon: Icon, iconBg, lang, formula,
 // ── TENANT DASHBOARD SCREEN ────────────────────────────────────────────────────
 function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
-  const [dateFilter, setDateFilter] = useState<"today" | "yesterday" | "week" | "month">("today");
+  const [dateFilter, setDateFilter] = useState<"today" | "yesterday" | "week" | "month">("month");
+  const range = dashboardDateRange(dateFilter);
+  const { summary, loading, error, reload } = useTenantDashboard(range);
+  const live = !IS_MOCK_MODE && summary;
   const isOwner = role === "owner";
   const isAccountant = role === "accountant";
   const isCashier = role === "cashier";
   const showFinancials = !isCashier;
   const showProfit = isOwner;
 
-  const lowStock = T_PRODUCTS.filter(p => p.cartons < p.minStock);
-  const totalCustomer = T_CUSTOMERS.reduce((s, c) => s + c.balance, 0);
-  const totalSupplier = T_SUPPLIERS.reduce((s, c) => s + c.balance, 0);
-  const totalCartons = T_PRODUCTS.reduce((s, p) => s + p.cartons, 0);
-  const totalWeight = T_PRODUCTS.reduce((s, p) => s + p.weightKg, 0);
-  const todaySales = demoNum(18450); const todayPurchases = demoNum(11200); const todayExpenses = demoNum(850);
-  const todayProfit = todaySales - todayPurchases - todayExpenses;
+  const lowStock = IS_MOCK_MODE ? T_PRODUCTS.filter(p => p.cartons < p.minStock) : [];
+  const totalCustomer = live ? parseAmount(summary.customer_receivables) : T_CUSTOMERS.reduce((s, c) => s + c.balance, 0);
+  const totalSupplier = live ? parseAmount(summary.supplier_payables) : T_SUPPLIERS.reduce((s, c) => s + c.balance, 0);
+  const totalCartons = live ? parseAmount(summary.inventory_kg) : T_PRODUCTS.reduce((s, p) => s + p.cartons, 0);
+  const totalWeight = live ? parseAmount(summary.inventory_kg) : T_PRODUCTS.reduce((s, p) => s + p.weightKg, 0);
+  const lowStockCount = live ? (summary.low_stock_count ?? 0) : lowStock.length;
+  const todaySales = live ? parseAmount(summary.total_sales) : demoNum(18450);
+  const todayPurchases = live ? parseAmount(summary.total_purchases) : demoNum(11200);
+  const todayExpenses = live ? parseAmount(summary.total_expenses) : demoNum(850);
+  const monthlySales = live ? parseAmount(summary.total_sales) : demoNum(425000);
+  const monthlyPurchases = live ? parseAmount(summary.total_purchases) : demoNum(298000);
+  const monthlyExpenses = live ? parseAmount(summary.total_expenses) : demoNum(34000);
+  const monthlyProfit = live ? parseAmount(summary.net_profit_foundation) : demoNum(93000);
+  const todayProfit = live ? parseAmount(summary.net_profit_foundation) : (todaySales - todayPurchases - todayExpenses);
   const salesTarget = 20000;
-  const salesPct = Math.min(100, Math.round((todaySales / salesTarget) * 100));
+  const salesPct = salesTarget > 0 ? Math.min(100, Math.round((todaySales / salesTarget) * 100)) : 0;
+  const chartDaily = live && summary.sales_trend?.length
+    ? summary.sales_trend.map((p) => ({
+        day: p.date,
+        dayEn: p.date,
+        sales: parseAmount(p.sales),
+        purchases: 0,
+      }))
+    : IS_MOCK_MODE ? T_DAILY : [];
+  const chartProfit = live && summary.sales_trend?.length
+    ? summary.sales_trend.map((p) => ({
+        month: p.date,
+        monthEn: p.date,
+        profit: parseAmount(p.gross_profit),
+      }))
+    : IS_MOCK_MODE ? T_MONTHLY_PROFIT : [];
+  const payPie = IS_MOCK_MODE ? T_PAY_PIE : [];
 
   const quickActions: { ar: string; en: string; icon: ElementType; color: string; nav?: TenantScreen }[] = [
     { ar: "عرض سعر جديد",      en: "New Quotation",     icon: Tag,          color: "bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200", nav: "quotations-new" },
@@ -2233,6 +2507,11 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
   return (
     <div className="p-3 lg:p-6 space-y-5 max-w-screen-2xl mx-auto">
 
+      {!IS_MOCK_MODE && loading && <LoadingState lang={lang} compact />}
+      {!IS_MOCK_MODE && error && !loading && (
+        <Card className="p-4"><ErrorState lang={lang} error={error} onRetry={() => void reload()} compact /></Card>
+      )}
+
       {/* Date filter */}
       <div className="flex items-center gap-2 flex-wrap">
         {([["today", "اليوم", "Today"], ["yesterday", "أمس", "Yesterday"], ["week", "هذا الأسبوع", "This Week"], ["month", "هذا الشهر", "This Month"]] as [typeof dateFilter, string, string][]).map(([k, ar, en]) => (
@@ -2245,14 +2524,14 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
 
       {/* Alert banners */}
       <div className="space-y-2">
-        {lowStock.length > 0 && (
+        {lowStockCount > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-center gap-3">
             <AlertTriangle size={17} className="text-amber-500 shrink-0" />
-            <span className="text-sm font-bold text-amber-700 flex-1">{isRTL ? `تنبيه: ${lowStock.map(p => p.name).join("، ")} منخفض في المخزون` : `Alert: ${lowStock.map(p => p.nameEn).join(", ")} low in stock`}</span>
+            <span className="text-sm font-bold text-amber-700 flex-1">{isRTL ? `تنبيه: ${lowStockCount} منتجات منخفضة في المخزون` : `Alert: ${lowStockCount} products low in stock`}</span>
             <button onClick={() => onNavigate("inventory")} className="text-xs font-black text-amber-700 bg-amber-200 px-3 py-1 rounded-lg hover:bg-amber-300 transition-all shrink-0">{isRTL ? "عرض" : "View"}</button>
           </div>
         )}
-        {T_CUSTOMERS.filter(c => c.overdue).length > 0 && (
+        {IS_MOCK_MODE && T_CUSTOMERS.filter(c => c.overdue).length > 0 && (
           <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 flex items-center gap-3">
             <AlertCircle size={17} className="text-red-500 shrink-0" />
             <span className="text-sm font-bold text-red-700 flex-1">{isRTL ? `${T_CUSTOMERS.filter(c => c.overdue).length} عملاء لديهم مبالغ متأخرة` : `${T_CUSTOMERS.filter(c => c.overdue).length} customers have overdue balances`}</span>
@@ -2291,7 +2570,8 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
           {showFinancials && <TKpi value={`AED ${todayPurchases.toLocaleString()}`} labelAr="مشتريات اليوم" labelEn="Today's Purchases" icon={ShoppingCart} iconBg="bg-[#0F2C59]" lang={lang} />}
           {showFinancials && <div onClick={() => onNavigate("expenses")} className="cursor-pointer"><TKpi value={`AED ${todayExpenses.toLocaleString()}`} labelAr="مصروفات اليوم" labelEn="Today's Expenses" icon={Receipt} iconBg="bg-amber-500" lang={lang} warn={todayExpenses > 1000} /></div>}
           {showProfit && <TKpi value={`AED ${todayProfit.toLocaleString()}`} labelAr="صافي ربح اليوم" labelEn="Today's Net Profit" icon={Activity} iconBg="bg-emerald-600" lang={lang} formula={isRTL ? "صافي ربح اليوم = مبيعات اليوم - مشتريات اليوم - مصروفات اليوم" : "Net Profit = Sales - Purchases - Expenses"} />}
-          {isCashier && <TKpi value={`${demoNum(3)}`} labelAr="فواتير اليوم" labelEn="Today's Invoices" icon={FileText} iconBg="bg-violet-500" lang={lang} />}
+          {isCashier && !IS_MOCK_MODE && live && <TKpi value={`${summary.sales_trend?.length ?? 0}`} labelAr="فواتير الفترة" labelEn="Period Invoices" icon={FileText} iconBg="bg-violet-500" lang={lang} />}
+          {isCashier && IS_MOCK_MODE && <TKpi value={`${demoNum(3)}`} labelAr="فواتير اليوم" labelEn="Today's Invoices" icon={FileText} iconBg="bg-violet-500" lang={lang} />}
         </div>
       </div>
 
@@ -2300,20 +2580,20 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
         <div>
           <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">{isRTL ? "أرقام الشهر" : "Monthly Numbers"}</p>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <TKpi value={demoNum(425000).toLocaleString()} labelAr="مبيعات الشهر" labelEn="Monthly Sales" sub="AED" icon={TrendingUp} iconBg="bg-emerald-500" lang={lang} />
-            <TKpi value={demoNum(298000).toLocaleString()} labelAr="مشتريات الشهر" labelEn="Monthly Purchases" sub="AED" icon={ShoppingCart} iconBg="bg-[#0F2C59]" lang={lang} />
-            <TKpi value={demoNum(34000).toLocaleString()} labelAr="مصروفات الشهر" labelEn="Monthly Expenses" sub="AED" icon={Receipt} iconBg="bg-amber-500" lang={lang} />
-            {showProfit && <TKpi value={demoNum(93000).toLocaleString()} labelAr="صافي ربح الشهر" labelEn="Monthly Net Profit" sub="AED" icon={Activity} iconBg="bg-emerald-600" lang={lang} formula={isRTL ? "صافي ربح الشهر = مجموع أرباح الأيام - مصروفات الشهر" : "Monthly Profit = Daily profits sum - Monthly expenses"} />}
+            <TKpi value={monthlySales.toLocaleString()} labelAr="مبيعات الشهر" labelEn="Monthly Sales" sub="AED" icon={TrendingUp} iconBg="bg-emerald-500" lang={lang} />
+            <TKpi value={monthlyPurchases.toLocaleString()} labelAr="مشتريات الشهر" labelEn="Monthly Purchases" sub="AED" icon={ShoppingCart} iconBg="bg-[#0F2C59]" lang={lang} />
+            <TKpi value={monthlyExpenses.toLocaleString()} labelAr="مصروفات الشهر" labelEn="Monthly Expenses" sub="AED" icon={Receipt} iconBg="bg-amber-500" lang={lang} />
+            {showProfit && <TKpi value={monthlyProfit.toLocaleString()} labelAr="صافي ربح الشهر" labelEn="Monthly Net Profit" sub="AED" icon={Activity} iconBg="bg-emerald-600" lang={lang} formula={isRTL ? "صافي ربح الشهر = مجموع أرباح الأيام - مصروفات الشهر" : "Monthly Profit = Daily profits sum - Monthly expenses"} />}
           </div>
         </div>
       )}
 
       {/* Balance KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {showFinancials && <div onClick={() => onNavigate("customers")} className="cursor-pointer"><TKpi value={`AED ${totalCustomer.toLocaleString()}`} labelAr="العملاء المديونين" labelEn="Customer Receivables" sub={`${T_CUSTOMERS.length} ${isRTL ? "عميل" : "customers"}`} icon={Users} iconBg="bg-red-500" lang={lang} warn /></div>}
-        {showFinancials && <div onClick={() => onNavigate("suppliers")} className="cursor-pointer"><TKpi value={`AED ${totalSupplier.toLocaleString()}`} labelAr="مستحقات الموردين" labelEn="Supplier Payables" sub={`${T_SUPPLIERS.length} ${isRTL ? "مورد" : "suppliers"}`} icon={Truck} iconBg="bg-amber-500" lang={lang} warn /></div>}
+        {showFinancials && <div onClick={() => onNavigate("customers")} className="cursor-pointer"><TKpi value={`AED ${totalCustomer.toLocaleString()}`} labelAr="العملاء المديونين" labelEn="Customer Receivables" sub={IS_MOCK_MODE ? `${T_CUSTOMERS.length} ${isRTL ? "عميل" : "customers"}` : undefined} icon={Users} iconBg="bg-red-500" lang={lang} warn /></div>}
+        {showFinancials && <div onClick={() => onNavigate("suppliers")} className="cursor-pointer"><TKpi value={`AED ${totalSupplier.toLocaleString()}`} labelAr="مستحقات الموردين" labelEn="Supplier Payables" sub={IS_MOCK_MODE ? `${T_SUPPLIERS.length} ${isRTL ? "مورد" : "suppliers"}` : undefined} icon={Truck} iconBg="bg-amber-500" lang={lang} warn /></div>}
         <TKpi value={`${totalCartons.toLocaleString()}`} labelAr="المخزون المتاح" labelEn="Available Stock" sub={isRTL ? "كرتونة" : "cartons"} icon={Package} iconBg="bg-violet-500" lang={lang} />
-        <TKpi value={`${lowStock.length}`} labelAr="منتجات منخفضة" labelEn="Low Stock Products" sub={isRTL ? "تحتاج تجديد" : "need restocking"} icon={AlertTriangle} iconBg="bg-red-400" lang={lang} warn={lowStock.length > 0} />
+        <TKpi value={`${lowStockCount}`} labelAr="منتجات منخفضة" labelEn="Low Stock Products" sub={isRTL ? "تحتاج تجديد" : "need restocking"} icon={AlertTriangle} iconBg="bg-red-400" lang={lang} warn={lowStockCount > 0} />
       </div>
 
       {/* Charts */}
@@ -2324,7 +2604,7 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
             <h3 className="font-black text-[#0F2C59] mb-1 text-sm">{isRTL ? "المبيعات والمشتريات — آخر 7 أيام" : "Sales vs Purchases — Last 7 Days"}</h3>
             <p className="text-xs text-slate-400 mb-4">{isRTL ? "بالدرهم الإماراتي" : "in AED"}</p>
             <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={T_DAILY}>
+              <LineChart data={chartDaily}>
                 <CartesianGrid key="t-line-grid" strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis key="t-line-x" dataKey={isRTL ? "day" : "dayEn"} tick={{ fontSize: 11, fill: "#94a3b8", fontFamily: "Cairo" }} axisLine={false} tickLine={false} />
                 <YAxis key="t-line-y" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
@@ -2340,21 +2620,27 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
             <h3 className="font-black text-[#0F2C59] mb-1 text-sm">{isRTL ? "طرق الدفع" : "Payment Methods"}</h3>
             <p className="text-xs text-slate-400 mb-3">{isRTL ? "مبيعات اليوم" : "Today's sales"}</p>
             <ResponsiveContainer width="100%" height={140}>
+              {payPie.length === 0 ? (
+                <ProductionEmptyState lang={lang} compact />
+              ) : (
               <PieChart>
-                <Pie key="t-pay-pie" data={T_PAY_PIE} cx="50%" cy="50%" innerRadius={38} outerRadius={62} dataKey="value" paddingAngle={3}>
-                  {T_PAY_PIE.map((e, i) => <Cell key={`t-pie-${i}`} fill={e.color} />)}
+                <Pie key="t-pay-pie" data={payPie} cx="50%" cy="50%" innerRadius={38} outerRadius={62} dataKey="value" paddingAngle={3}>
+                  {payPie.map((e, i) => <Cell key={`t-pie-${i}`} fill={e.color} />)}
                 </Pie>
                 <Tooltip key="t-pay-tip" contentStyle={{ borderRadius: 10, border: "none", fontFamily: "Cairo" }} formatter={(v: number, _: string, p: { payload: { name: string; nameEn: string } }) => [`${v}%`, isRTL ? p.payload.name : p.payload.nameEn]} />
               </PieChart>
+              )}
             </ResponsiveContainer>
+            {payPie.length > 0 && (
             <div className="space-y-2 mt-1">
-              {T_PAY_PIE.map(s => (
+              {payPie.map(s => (
                 <div key={s.name} className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} /><span className="font-semibold text-slate-600">{isRTL ? s.name : s.nameEn}</span></div>
                   <span className="font-black text-slate-700">{s.value}%</span>
                 </div>
               ))}
             </div>
+            )}
           </Card>
         </div>
       )}
@@ -2364,7 +2650,7 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
         <Card className="p-5">
           <h3 className="font-black text-[#0F2C59] mb-5 text-sm">{isRTL ? "صافي الربح الشهري (AED)" : "Monthly Net Profit (AED)"}</h3>
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={T_MONTHLY_PROFIT} barSize={32}>
+            <BarChart data={chartProfit} barSize={32}>
               <CartesianGrid key="t-prof-grid" strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis key="t-prof-x" dataKey={isRTL ? "month" : "monthEn"} tick={{ fontSize: 11, fill: "#94a3b8", fontFamily: "Cairo" }} axisLine={false} tickLine={false} />
               <YAxis key="t-prof-y" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
@@ -2395,9 +2681,9 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
             <div className={`text-xs font-bold mt-1 flex items-center gap-1 ${todayProfit > 0 ? "text-emerald-600" : "text-red-600"}`}>{todayProfit > 0 ? <><ArrowUpRight size={12} />{isRTL ? "ربح إيجابي" : "Positive profit"}</> : <><ArrowDownRight size={12} />{isRTL ? "خسارة" : "Loss"}</>}</div>
           </div>}
           {/* Inventory */}
-          <div className={`rounded-2xl p-4 ${lowStock.length === 0 ? "bg-emerald-50 border border-emerald-200" : "bg-amber-50 border border-amber-200"}`}>
+          <div className={`rounded-2xl p-4 ${lowStockCount === 0 ? "bg-emerald-50 border border-emerald-200" : "bg-amber-50 border border-amber-200"}`}>
             <div className="text-xs font-bold text-slate-500 mb-1">{isRTL ? "حالة المخزون" : "Inventory Status"}</div>
-            <div className={`text-lg font-black ${lowStock.length === 0 ? "text-emerald-700" : "text-amber-700"}`}>{lowStock.length === 0 ? (isRTL ? "جيدة ✓" : "Good ✓") : `${lowStock.length} ${isRTL ? "منخفض" : "Low"}`}</div>
+            <div className={`text-lg font-black ${lowStockCount === 0 ? "text-emerald-700" : "text-amber-700"}`}>{lowStockCount === 0 ? (isRTL ? "جيدة ✓" : "Good ✓") : `${lowStockCount} ${isRTL ? "منخفض" : "Low"}`}</div>
             <div className="text-xs text-slate-500 mt-1">{isRTL ? `${totalCartons.toLocaleString()} كرتونة متوفرة` : `${totalCartons.toLocaleString()} cartons available`}</div>
           </div>
           {/* Customer overdue */}
@@ -2408,8 +2694,10 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
           </div>}
           {/* Tax */}
           {showFinancials && <div className="bg-slate-50 rounded-2xl p-4">
-            <div className="text-xs font-bold text-slate-500 mb-1">{isRTL ? "ضريبة الشهر" : "Tax This Month"}</div>
-            <div className="text-lg font-black text-[#0F2C59] font-mono">AED {demoNum(2125).toLocaleString()}</div>
+            <div className="text-xs font-bold text-slate-500 mb-1">{isRTL ? "ضريبة الفترة" : "VAT (period)"}</div>
+            <div className="text-lg font-black text-[#0F2C59] font-mono">
+              AED {live && summary.tax_net_vat_estimate != null ? parseAmount(summary.tax_net_vat_estimate).toLocaleString() : demoNum(2125).toLocaleString()}
+            </div>
             <div className="text-xs text-slate-400 mt-1">{isRTL ? `مبيعات: ${demoNum(2975).toLocaleString()} | مشتريات: ${demoNum(850).toLocaleString()}` : `Sales: ${demoNum(2975).toLocaleString()} | Purchases: ${demoNum(850).toLocaleString()}`}</div>
           </div>}
         </div>
@@ -2847,25 +3135,33 @@ function NotificationsPanel({ lang, isOpen, onClose }: { lang: Lang; isOpen: boo
 
 // ── TENANT APP SHELL ───────────────────────────────────────────────────────────
 function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
-  companyId: string; lang: Lang; onLangSwitch: () => void; onBack: () => void;
+  companyId: string; lang: Lang; onLangSwitch: () => void; onBack?: () => void;
 }) {
+  const { user, isSuperAdmin, permissions } = useAuth();
+  const { companies } = useAdminCompanies();
   const [tScreen, setTScreen] = useState<TenantScreen>("dashboard");
-  const [role, setRole] = useState<TenantRole>("owner");
+  const [role, setRole] = useState<TenantRole>(user ? mapBackendRole(user.role) : "owner");
+  useEffect(() => {
+    if (user) setRole(mapBackendRole(user.role));
+  }, [user]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotif, setShowNotif] = useState(false);
-  const [invProductId, setInvProductId] = useState("ip900");
-  const [selectedCustomerId, setSelectedCustomerId] = useState("cu1");
-  const [selectedSupplierId, setSelectedSupplierId] = useState("sp1");
-  const [selectedExpenseId, setSelectedExpenseId] = useState("EXP-001");
-  const [selectedSettingsUserId, setSelectedSettingsUserId] = useState("u2");
-  const [selectedQuotId, setSelectedQuotId] = useState("QUO-2026-00016");
-  const [selectedProductId, setSelectedProductId] = useState("pr1");
-  const [showProductSettings, setShowProductSettings] = useState(false);
-  const [selectedReceiptId, setSelectedReceiptId] = useState("M001");
+  const [invProductId, setInvProductId] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  const [selectedExpenseId, setSelectedExpenseId] = useState("");
+  const [selectedSettingsUserId, setSelectedSettingsUserId] = useState("");
+  const [selectedQuotId, setSelectedQuotId] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [selectedSalesId, setSelectedSalesId] = useState("");
+  const [selectedPurchaseId, setSelectedPurchaseId] = useState("");
+  const [selectedReceiptId, setSelectedReceiptId] = useState("");
   const [showCollectModal, setShowCollectModal] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
   const isRTL = lang === "ar";
-  const company = COMPANIES.find(c => c.id === companyId) ?? null;
+  const company = IS_MOCK_MODE
+    ? (COMPANIES.find(c => c.id === companyId) ?? null)
+    : resolveTenantCompany(user, companyId, companies);
   // Tenant navigation boundary: screens declare `onNavigate: (s: string) => void`,
   // so wrap the typed setter once here instead of casting at every call site.
   const navTenant = (s: string) => setTScreen(s as TenantScreen);
@@ -2875,7 +3171,9 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
   if (!company) return (
     <div dir={isRTL ? "rtl" : "ltr"} className="min-h-screen bg-[#F8FAFC] p-6 flex items-center justify-center">
       <div className="max-w-md w-full">
-        <button onClick={onBack} className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-[#0F2C59] hover:underline">{isRTL ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}{isRTL ? "العودة" : "Back"}</button>
+        {onBack && (
+        <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-[#0F2C59] hover:underline">{isRTL ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}{isRTL ? "العودة" : "Back"}</button>
+        )}
         <Card className="p-10"><ProductionEmptyState lang={lang} messageAr={EMPTY_MESSAGES.noData.ar} messageEn={EMPTY_MESSAGES.noData.en} /></Card>
       </div>
     </div>
@@ -2883,19 +3181,36 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
 
   return (
     <div dir={isRTL ? "rtl" : "ltr"} className={`flex h-screen overflow-hidden bg-[#F8FAFC] ${isRTL ? "flex-row-reverse" : ""}`}>
-      <TenantSidebar screen={tScreen} onNavigate={navTenant} lang={lang} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} company={company} role={role} />
+      <TenantSidebar screen={tScreen} onNavigate={navTenant} lang={lang} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} company={company} role={role} permissions={permissions} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <TenantTopBar lang={lang} onLangSwitch={onLangSwitch} onMenuClick={() => setSidebarOpen(true)} role={role} onRoleChange={setRole} onNotificationsClick={() => setShowNotif(v => !v)} notifCount={T_NOTIFS.length} company={company} onBack={onBack} onQAClick={() => setTScreen("qa-summary")} />
         <main className="flex-1 overflow-y-auto relative">
+          {!canViewScreen(tScreen, permissions, role) ? (
+            <PermissionDeniedState lang={lang} />
+          ) : (
+          <>
           {tScreen === "dashboard"    && <TenantDashboardScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {(tScreen === "sales" || tScreen === "sales-list") && <SalesListScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {tScreen === "sales-new"    && <SalesNewScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {tScreen === "sales-preview"&& <SalesPreviewScreen lang={lang} onNavigate={navTenant} role={role} />}
-          {tScreen === "sales-detail" && <SalesDetailScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {(tScreen === "purchases" || tScreen === "purchases-list") && <PurchListScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {tScreen === "purchases-new"     && <PurchNewScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {tScreen === "purchases-preview" && <PurchPreviewScreen lang={lang} onNavigate={navTenant} role={role} />}
-          {tScreen === "purchases-detail"  && <PurchDetailScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {(tScreen === "sales" || tScreen === "sales-list") && <SalesListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedSalesId={setSelectedSalesId} />}
+          {tScreen === "sales-new"    && <SalesNewScreen lang={lang} role={role} onNavigate={navTenant} salesId={selectedSalesId || undefined} onSaved={setSelectedSalesId} />}
+          {tScreen === "sales-preview"&& <SalesPreviewScreen lang={lang} onNavigate={navTenant} role={role} salesId={selectedSalesId || undefined} />}
+          {tScreen === "sales-detail" && <SalesDetailScreen lang={lang} role={role} onNavigate={navTenant} salesId={selectedSalesId || undefined} />}
+          {(tScreen === "purchases" || tScreen === "purchases-list") && <PurchListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedPurchaseId={setSelectedPurchaseId} />}
+          {tScreen === "purchases-new"     && <PurchNewScreen lang={lang} role={role} onNavigate={navTenant} purchaseId={selectedPurchaseId || undefined} onSaved={setSelectedPurchaseId} />}
+          {tScreen === "purchases-preview" && (
+            !IS_MOCK_MODE && selectedPurchaseId ? (
+              <LivePrintPreviewScreen
+                lang={lang}
+                onNavigate={navTenant}
+                backScreen="purchases-list"
+                titleAr="فاتورة شراء"
+                titleEn="Purchase Invoice"
+                loadPreview={() => getPurchasePrintPreview(selectedPurchaseId)}
+              />
+            ) : (
+              <PurchPreviewScreen lang={lang} onNavigate={navTenant} role={role} />
+            )
+          )}
+          {tScreen === "purchases-detail"  && <PurchDetailScreen lang={lang} role={role} onNavigate={navTenant} purchaseId={selectedPurchaseId || undefined} />}
           {tScreen === "customers"          && <CustomersListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedCustomer={setSelectedCustomerId} />}
           {tScreen === "customers-create"  && <CreateCustomerScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "customers-profile" && <CustomerProfileScreen lang={lang} role={role} onNavigate={navTenant} customerId={selectedCustomerId} />}
@@ -2903,6 +3218,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "payments"                  && <PaymentsOverviewScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "payments-movements"       && <PaymentMovementsScreen lang={lang} role={role} onNavigate={navTenant} setSelectedReceiptId={setSelectedReceiptId} />}
           {tScreen === "payments-customer-refund" && <CustomerRefundScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "payments-supplier-refund" && <SupplierRefundScreen lang={lang} onNavigate={navTenant} />}
           {tScreen === "payment-receipt-detail"   && <ReceiptPreviewScreen lang={lang} onNavigate={navTenant} receiptId={selectedReceiptId} />}
           {tScreen === "payment-receipt-preview"  && <ReceiptPreviewScreen lang={lang} onNavigate={navTenant} receiptId={selectedReceiptId} />}
           {tScreen === "payments-method-summary"  && <PaymentMethodSummaryScreen lang={lang} role={role} onNavigate={navTenant} />}
@@ -2922,14 +3238,15 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "qa-summary"             && <QASummaryScreen lang={lang} onNavigate={navTenant} />}
           {tScreen === "products"               && <ProductsListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedProductId={setSelectedProductId} />}
           {tScreen === "products-new"           && <AddProductScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "products-edit"          && <AddProductScreen lang={lang} role={role} onNavigate={navTenant} productId={selectedProductId} />}
           {tScreen === "product-detail"         && <ProductDetailScreen lang={lang} role={role} onNavigate={navTenant} productId={selectedProductId} />}
           {tScreen === "product-categories"     && <ProductCategoriesScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "products-bulk-setup"    && <BulkProductSetupScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "products-byproducts"    && <ByProductsSetupScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "products-import-export" && <ProductImportExportScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "quotations"          && <QuotationsListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedQuotId={setSelectedQuotId} />}
-          {tScreen === "quotations-new"      && <NewQuotationScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {tScreen === "quotation-detail"    && <QuotationDetailScreen lang={lang} role={role} onNavigate={navTenant} quotId={selectedQuotId} />}
+          {tScreen === "quotations-new"      && <NewQuotationScreen lang={lang} role={role} onNavigate={navTenant} onConvertedToSales={(id) => { setSelectedSalesId(id); setTScreen("sales-detail"); }} />}
+          {tScreen === "quotation-detail"    && <QuotationDetailScreen lang={lang} role={role} onNavigate={navTenant} quotId={selectedQuotId} onConvertedToSales={(id) => { setSelectedSalesId(id); setTScreen("sales-detail"); }} />}
           {tScreen === "quotation-preview"   && <QuotationPreviewScreen lang={lang} onNavigate={navTenant} quotId={selectedQuotId} />}
           {tScreen === "quotation-convert"   && <ConvertQuotationScreen lang={lang} role={role} onNavigate={navTenant} quotId={selectedQuotId} />}
           {tScreen === "quotation-analytics" && <QuotationAnalyticsScreen lang={lang} role={role} onNavigate={navTenant} />}
@@ -2944,6 +3261,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "settings-audit"              && <SettingsAuditScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "settings-numbering"          && <NumberingSettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "settings-vat"                && <VATSettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-print-templates"    && <PrintTemplatesScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "settings-transactions"       && <TransactionSettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "settings-plan"               && <PlanFeaturesScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "settings-security"           && <SecuritySettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
@@ -2974,8 +3292,10 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "inventory-alerts"     && <LowStockScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "inventory-movement"   && <MovementScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "inventory-valuation"  && <ValuationScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {!["dashboard","sales","sales-list","sales-new","sales-preview","sales-detail","purchases","purchases-list","purchases-new","purchases-preview","purchases-detail","inventory","inventory-product","inventory-stocktaking","inventory-alerts","inventory-movement","inventory-valuation","customers","customers-create","customers-profile","customers-statement","suppliers","suppliers-new","supplier-profile","supplier-statement","expenses","expenses-list","expenses-recurring","expenses-report","expense-detail","expense-voucher","payments","payments-movements","payments-customer-collection","payments-supplier-payment","payments-customer-refund","payment-receipt-detail","payment-receipt-preview","payments-method-summary","payments-cash-bank","payments-report","tax","tax-sales","tax-purchases","tax-net","tax-warnings","tax-audit","tax-credit-notes","tax-non-taxable","tax-settings","tax-export-preview","accounts","qa-summary","products","products-new","product-detail","product-categories","products-bulk-setup","products-byproducts","products-import-export","quotations","quotations-new","quotation-detail","quotation-preview","quotation-convert","quotation-analytics","reports","reports-daily","reports-sales","reports-purchases","reports-inventory","reports-customers","reports-suppliers","reports-tax","reports-profit","reports-statements","reports-builder","settings","settings-company","settings-users","settings-user-new","settings-user-permissions","settings-roles","settings-sensitive-actions","settings-audit","settings-numbering","settings-vat","settings-transactions","settings-plan","settings-security","users"].includes(tScreen) && (
+          {!["dashboard","sales","sales-list","sales-new","sales-preview","sales-detail","purchases","purchases-list","purchases-new","purchases-preview","purchases-detail","inventory","inventory-product","inventory-stocktaking","inventory-alerts","inventory-movement","inventory-valuation","customers","customers-create","customers-profile","customers-statement","suppliers","suppliers-new","supplier-profile","supplier-statement","expenses","expenses-list","expenses-recurring","expenses-report","expense-detail","expense-voucher","payments","payments-movements","payments-customer-collection","payments-supplier-payment","payments-customer-refund","payment-receipt-detail","payment-receipt-preview","payments-method-summary","payments-cash-bank","payments-report","tax","tax-sales","tax-purchases","tax-net","tax-warnings","tax-audit","tax-credit-notes","tax-non-taxable","tax-settings","tax-export-preview","accounts","qa-summary","products","products-new","product-detail","product-categories","products-bulk-setup","products-byproducts","products-import-export","quotations","quotations-new","quotation-detail","quotation-preview","quotation-convert","quotation-analytics","reports","reports-daily","reports-sales","reports-purchases","reports-inventory","reports-customers","reports-suppliers","reports-tax","reports-profit","reports-statements","reports-builder","settings","settings-company","settings-users","settings-user-new","settings-user-permissions","settings-roles","settings-sensitive-actions","settings-audit","settings-numbering","settings-vat","settings-print-templates","settings-transactions","settings-plan","settings-security","users"].includes(tScreen) && (
             <ComingSoonPlaceholder screen={tScreen} isRTL={isRTL} onBackToDashboard={() => setTScreen("dashboard")} />
+          )}
+          </>
           )}
         </main>
         {/* Mobile bottom nav */}
@@ -3000,6 +3320,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
 
 // ── MAIN APP ───────────────────────────────────────────────────────────────────
 export default function App() {
+  const { user, loading, isSuperAdmin, logout } = useAuth();
   const [mode, setMode] = useState<AppMode>("superadmin");
   const [screen, setScreen] = useState<Screen>("login");
   const [lang, setLang] = useState<Lang>("ar");
@@ -3012,28 +3333,83 @@ export default function App() {
   const navigate = (s: Screen) => { setScreen(s); setSidebarOpen(false); };
   const switchToTenant = (id: string) => { setTenantCompanyId(id); setMode("tenant"); };
 
-  if (mode === "tenant") return (
+  const handleLogin = (loggedIn: CurrentUser) => {
+    if (loggedIn.is_superuser) {
+      setMode("superadmin");
+      navigate("dashboard");
+    } else if (loggedIn.company) {
+      setTenantCompanyId(String(loggedIn.company.id));
+      setMode("tenant");
+    }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setMode("superadmin");
+    setScreen("login");
+  };
+
+  useEffect(() => {
+    if (IS_MOCK_MODE || loading) return;
+    if (!user) {
+      setScreen("login");
+      return;
+    }
+    if (!user.is_superuser && user.company) {
+      setTenantCompanyId(String(user.company.id));
+      setMode("tenant");
+    } else if (user.is_superuser && mode !== "tenant") {
+      setMode("superadmin");
+      if (screen === "login") setScreen("dashboard");
+    }
+  }, [user, loading, IS_MOCK_MODE]);
+
+  if (!IS_MOCK_MODE && loading) {
+    return (
+      <>
+        <Toaster position={isRTL ? "top-right" : "top-left"} richColors />
+        <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]" dir={isRTL ? "rtl" : "ltr"}>
+          <LoadingState lang={lang} />
+        </div>
+      </>
+    );
+  }
+
+  if (mode === "tenant" && (IS_MOCK_MODE || user)) return (
     <>
       <Toaster position={isRTL ? "top-right" : "top-left"} richColors />
-      <TenantApp companyId={tenantCompanyId} lang={lang} onLangSwitch={switchLang} onBack={() => setMode("superadmin")} />
+      <TenantApp
+        companyId={tenantCompanyId}
+        lang={lang}
+        onLangSwitch={switchLang}
+        onBack={isSuperAdmin ? () => setMode("superadmin") : undefined}
+      />
     </>
   );
 
-  if (screen === "login") return (
+  if (screen === "login" || (!IS_MOCK_MODE && !user)) return (
     <>
       <Toaster position={isRTL ? "top-right" : "top-left"} richColors />
-      <LoginScreen onLogin={() => navigate("dashboard")} lang={lang} onLangSwitch={switchLang} />
+      <LoginScreen onLogin={handleLogin} lang={lang} onLangSwitch={switchLang} />
     </>
   );
 
-  const titles = SUPER_ADMIN_TITLES; // extracted to src/app/navigation/screenTitles.ts
+  const titles = SUPER_ADMIN_TITLES;
   const [titleAr, titleEn] = titles[screen] || ["", ""];
 
   return (
     <>
       <Toaster position={isRTL ? "top-right" : "top-left"} richColors />
       <div dir={isRTL ? "rtl" : "ltr"} className={`flex h-screen overflow-hidden bg-[#F8FAFC] ${isRTL ? "flex-row-reverse" : ""}`}>
-        <Sidebar screen={screen} onNavigate={navigate} lang={lang} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <Sidebar
+          screen={screen}
+          onNavigate={navigate}
+          lang={lang}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          userName={user?.full_name}
+          onLogout={() => void handleLogout()}
+        />
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           <TopBar title={titleAr} titleEn={titleEn} onMenuClick={() => setSidebarOpen(true)} lang={lang} onLangSwitch={switchLang} />
           <main className="flex-1 overflow-y-auto">

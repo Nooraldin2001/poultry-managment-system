@@ -1,0 +1,175 @@
+import { IS_MOCK_MODE } from "@/services/config";
+import { parseAmount } from "@/services/crud/parse";
+import type { ApiListFilters } from "@/services/crud/types";
+import { request } from "./api/client";
+import { ENDPOINTS } from "./api/endpoints";
+import type { InventoryBalanceRow, StockMovementRow } from "@/shared/types/entities";
+import * as inventoryMock from "./mock/inventoryService.mock";
+
+interface ApiInventoryRow {
+  id?: number;
+  product?: number;
+  product_id?: number;
+  product_name?: string;
+  product_name_ar?: string;
+  product_name_en?: string;
+  total_cartons?: string | number;
+  total_pieces?: string | number;
+  total_weight_kg?: string | number;
+  minimum_stock_cartons?: string | number;
+  average_cost_per_kg?: string | number;
+  stock_status?: string;
+}
+
+function mapInventoryRow(row: ApiInventoryRow, index: number): InventoryBalanceRow {
+  const cartons = parseAmount(row.total_cartons);
+  const pieces = parseAmount(row.total_pieces);
+  const weightKg = parseAmount(row.total_weight_kg);
+  const minStock = parseAmount(row.minimum_stock_cartons);
+  const statusRaw = (row.stock_status ?? "").toLowerCase();
+  let status: InventoryBalanceRow["status"] = "ok";
+  if (statusRaw.includes("out") || (cartons === 0 && weightKg === 0)) status = "out";
+  else if (statusRaw.includes("low") || cartons < minStock) status = "low";
+  return {
+    id: String(row.id ?? row.product_id ?? row.product ?? index),
+    productId: String(row.product_id ?? row.product ?? ""),
+    name: row.product_name_ar ?? row.product_name ?? "",
+    nameEn: row.product_name_en ?? row.product_name,
+    cartons,
+    pieces,
+    weightKg,
+    minStock,
+    priceKg: parseAmount(row.average_cost_per_kg),
+    status,
+  };
+}
+
+export async function listInventoryRows(filters?: ApiListFilters): Promise<InventoryBalanceRow[]> {
+  if (IS_MOCK_MODE) {
+    const mock = await inventoryMock.listInventoryItems();
+    return (mock as InventoryBalanceRow[]).map((i) => ({
+      id: i.id,
+      productId: i.id,
+      name: i.name,
+      nameEn: i.nameEn,
+      cartons: i.cartons ?? 0,
+      pieces: i.pieces ?? 0,
+      weightKg: i.weightKg ?? 0,
+      minStock: i.minStock ?? 0,
+      priceKg: i.priceKg,
+      status: "ok",
+    }));
+  }
+  const data = await request<{ results?: ApiInventoryRow[] } | ApiInventoryRow[]>(
+    ENDPOINTS.tenant.inventory,
+    { query: filters as Record<string, string | number | boolean> },
+  );
+  const rows = Array.isArray(data) ? data : (data.results ?? []);
+  return rows.map(mapInventoryRow);
+}
+
+export async function getInventorySummary(): Promise<Record<string, number>> {
+  if (IS_MOCK_MODE) return {};
+  const data = await request<Record<string, string | number>>(ENDPOINTS.tenant.inventorySummary);
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(data)) {
+    out[k] = parseAmount(v);
+  }
+  return out;
+}
+
+export async function listLowStockRows(): Promise<InventoryBalanceRow[]> {
+  if (IS_MOCK_MODE) return [];
+  const data = await request<{ results?: ApiInventoryRow[] } | ApiInventoryRow[]>(
+    ENDPOINTS.tenant.inventoryLowStock,
+  );
+  const rows = Array.isArray(data) ? data : (data.results ?? []);
+  return rows.map(mapInventoryRow);
+}
+
+export async function listStockMovements(filters?: ApiListFilters): Promise<StockMovementRow[]> {
+  if (IS_MOCK_MODE) return [];
+  const data = await request<{ results?: unknown[] } | unknown[]>(ENDPOINTS.tenant.inventoryMovements, {
+    query: filters as Record<string, string | number | boolean>,
+  });
+  const rows = Array.isArray(data) ? data : (data.results ?? []);
+  return rows.map((r: Record<string, unknown>, i: number) => ({
+    id: String(r.id ?? i),
+    date: String(r.movement_date ?? r.date ?? "").slice(0, 10),
+    product: String(r.product_name ?? ""),
+    type: String(r.movement_type ?? r.type ?? ""),
+    cartons: parseAmount(r.cartons as string),
+    pieces: parseAmount(r.pieces as string),
+    weightKg: parseAmount((r.weight_kg ?? r.weightKg) as string),
+    reference: String(r.reference ?? r.document_number ?? ""),
+    balanceAfter: parseAmount(r.balance_after_kg as string),
+  }));
+}
+
+export async function createInventoryAdjustment(payload: Record<string, unknown>): Promise<unknown> {
+  return request(ENDPOINTS.tenant.inventoryAdjustments, { method: "POST", body: payload });
+}
+
+export async function createOpeningStock(payload: Record<string, unknown>): Promise<unknown> {
+  return request(ENDPOINTS.tenant.inventoryOpeningStock, { method: "POST", body: payload });
+}
+
+export async function getInventoryValuation(): Promise<Record<string, number>> {
+  if (IS_MOCK_MODE) return {};
+  const data = await request<Record<string, string | number>>(ENDPOINTS.tenant.inventoryValuation);
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(data)) {
+    out[k] = parseAmount(v);
+  }
+  return out;
+}
+
+export interface StocktakingLineDraft {
+  productId: string;
+  systemCartons: number;
+  systemKg: number;
+  actualCartons: number;
+  actualPieces: number;
+  actualKg: number;
+}
+
+export async function createStocktakingSession(notes?: string): Promise<{ id: string }> {
+  const row = await request<{ id: number }>(ENDPOINTS.tenant.inventoryStocktaking, {
+    method: "POST",
+    body: { notes: notes ?? "" },
+  });
+  return { id: String(row.id) };
+}
+
+export async function getStocktakingSession(id: string): Promise<Record<string, unknown>> {
+  return request(`${ENDPOINTS.tenant.inventoryStocktakingSession(id)}`);
+}
+
+export async function addStocktakingLine(
+  sessionId: string,
+  payload: Record<string, unknown>,
+): Promise<{ id: string }> {
+  const row = await request<{ id: number }>(`${ENDPOINTS.tenant.inventoryStocktakingSession(sessionId)}lines/`, {
+    method: "POST",
+    body: payload,
+  });
+  return { id: String(row.id) };
+}
+
+export async function updateStocktakingLine(
+  sessionId: string,
+  lineId: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  await request(`${ENDPOINTS.tenant.inventoryStocktakingSession(sessionId)}lines/${lineId}/`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function applyStocktaking(sessionId: string, reason: string): Promise<unknown> {
+  return request(`${ENDPOINTS.tenant.inventoryStocktakingSession(sessionId)}apply/`, {
+    method: "POST",
+    body: { apply_reason: reason },
+  });
+}

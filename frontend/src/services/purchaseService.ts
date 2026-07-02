@@ -1,0 +1,163 @@
+import { IS_MOCK_MODE } from "@/services/config";
+import { createCrudService } from "@/services/crud/createCrudService";
+import { parseAmount } from "@/services/crud/parse";
+import type { ApiListFilters } from "@/services/crud/types";
+import { request } from "./api/client";
+import { ENDPOINTS } from "./api/endpoints";
+import type { PurchaseInvoiceLineRow, PurchaseInvoiceRow } from "@/shared/types/entities";
+import * as purchaseMock from "./mock/purchaseService.mock";
+
+const crud = createCrudService<ApiPurchaseList, ApiPurchaseDetail>(ENDPOINTS.tenant.purchases);
+
+interface ApiPurchaseList {
+  id: number;
+  invoice_number: string;
+  supplier: number;
+  supplier_name_snapshot: string;
+  invoice_date: string;
+  due_date?: string | null;
+  status: string;
+  payment_status: string;
+  subtotal: string;
+  vat_amount: string;
+  total_amount: string;
+  amount_paid: string;
+  balance_due: string;
+}
+
+interface ApiPurchaseDetail extends ApiPurchaseList {
+  lines?: ApiPurchaseLine[];
+}
+
+interface ApiPurchaseLine {
+  id: number;
+  product: number;
+  product_name_snapshot?: string;
+  quantity?: string;
+  unit?: string;
+  unit_price?: string;
+  line_total?: string;
+}
+
+export function mapApiPurchaseToRow(row: ApiPurchaseList): PurchaseInvoiceRow {
+  return {
+    id: String(row.id),
+    number: row.invoice_number,
+    supplier: row.supplier_name_snapshot,
+    supplierId: String(row.supplier),
+    date: row.invoice_date,
+    dueDate: row.due_date ?? undefined,
+    status: row.status,
+    paymentStatus: row.payment_status,
+    subtotal: parseAmount(row.subtotal),
+    vat: parseAmount(row.vat_amount),
+    total: parseAmount(row.total_amount),
+    paid: parseAmount(row.amount_paid),
+    balance: parseAmount(row.balance_due),
+  };
+}
+
+function mapPurchaseLine(line: ApiPurchaseLine): PurchaseInvoiceLineRow {
+  return {
+    id: String(line.id),
+    productId: String(line.product),
+    productName: line.product_name_snapshot ?? "",
+    qty: parseAmount(line.quantity),
+    unit: line.unit ?? "kg",
+    price: parseAmount(line.unit_price),
+    total: parseAmount(line.line_total),
+  };
+}
+
+export async function listPurchaseRows(filters?: ApiListFilters): Promise<PurchaseInvoiceRow[]> {
+  if (IS_MOCK_MODE) {
+    const mock = await purchaseMock.listPurchaseInvoices();
+    return (mock as unknown as PurchaseInvoiceRow[]).map((p) => ({
+      id: p.id,
+      number: (p as { number?: string }).number ?? p.id,
+      supplier: (p as { supplier?: string }).supplier ?? "",
+      supplierId: "",
+      date: (p as { date?: string }).date ?? "",
+      status: (p as { status?: string }).status ?? "draft",
+      paymentStatus: "unpaid",
+      subtotal: 0,
+      vat: 0,
+      total: (p as { total?: number }).total ?? 0,
+      paid: 0,
+      balance: 0,
+    }));
+  }
+  const rows = await crud.listAll(filters);
+  return rows.map(mapApiPurchaseToRow);
+}
+
+export async function getPurchaseRow(id: string): Promise<PurchaseInvoiceRow | null> {
+  if (IS_MOCK_MODE) return null;
+  try {
+    const row = await crud.retrieve(id);
+    return mapApiPurchaseToRow(row);
+  } catch {
+    return null;
+  }
+}
+
+export async function getPurchaseDetail(id: string): Promise<{ invoice: PurchaseInvoiceRow; lines: PurchaseInvoiceLineRow[] } | null> {
+  if (IS_MOCK_MODE) return null;
+  try {
+    const row = (await crud.retrieve(id)) as ApiPurchaseDetail;
+    return {
+      invoice: mapApiPurchaseToRow(row),
+      lines: (row.lines ?? []).map(mapPurchaseLine),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function createPurchase(payload: Record<string, unknown>): Promise<PurchaseInvoiceRow> {
+  const row = await crud.create(payload as never);
+  return mapApiPurchaseToRow(row);
+}
+
+export async function updatePurchase(id: string, payload: Record<string, unknown>): Promise<PurchaseInvoiceRow> {
+  const row = await crud.patch(id, payload as never);
+  return mapApiPurchaseToRow(row);
+}
+
+export async function approvePurchase(id: string, reason?: string): Promise<PurchaseInvoiceRow> {
+  const row = await crud.action<ApiPurchaseList>(id, "approve/", { approval_reason: reason ?? "" });
+  return mapApiPurchaseToRow(row);
+}
+
+export async function cancelPurchase(id: string, reason: string): Promise<PurchaseInvoiceRow> {
+  const row = await crud.action<ApiPurchaseList>(id, "cancel/", { cancel_reason: reason });
+  return mapApiPurchaseToRow(row);
+}
+
+export async function getPurchasesSummary(filters?: ApiListFilters): Promise<Record<string, number>> {
+  if (IS_MOCK_MODE) return {};
+  const data = await request<Record<string, string | number>>(ENDPOINTS.tenant.purchasesSummary, {
+    query: filters as Record<string, string | number | boolean>,
+  });
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(data)) {
+    out[k] = parseAmount(v);
+  }
+  return out;
+}
+
+export async function addPurchaseLine(purchaseId: string, payload: Record<string, unknown>): Promise<PurchaseInvoiceLineRow> {
+  const line = await request<ApiPurchaseLine>(`${ENDPOINTS.tenant.purchase(purchaseId)}lines/`, {
+    method: "POST",
+    body: payload,
+  });
+  return mapPurchaseLine(line);
+}
+
+export async function deletePurchaseLine(purchaseId: string, lineId: string): Promise<void> {
+  await request(`${ENDPOINTS.tenant.purchase(purchaseId)}lines/${lineId}/`, { method: "DELETE" });
+}
+
+export async function getPurchasePrintPreview(id: string): Promise<unknown> {
+  return request(`${ENDPOINTS.tenant.purchase(id)}print-preview/`);
+}

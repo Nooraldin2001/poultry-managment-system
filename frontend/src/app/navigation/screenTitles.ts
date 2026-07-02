@@ -18,7 +18,7 @@ export const TENANT_TITLES: Record<TenantScreen, [string, string]> = {
   "payments-supplier-refund": ["استرداد مبلغ من المورد", "Supplier Refund"], "payment-receipt-detail": ["تفاصيل الإيصال", "Receipt Detail"],
   "payment-receipt-preview": ["طباعة الإيصال", "Print Receipt"], "payments-method-summary": ["ملخص طرق الدفع", "Payment Methods"],
   "payments-cash-bank": ["الخزنة والحسابات البنكية", "Cash & Bank Accounts"], "payments-report": ["تقرير المدفوعات", "Payments Report"],
-  products: ["المنتجات", "Products"], "products-new": ["إضافة منتج", "Add Product"],
+  products: ["المنتجات", "Products"], "products-new": ["إضافة منتج", "Add Product"], "products-edit": ["تعديل منتج", "Edit Product"],
   "product-detail": ["تفاصيل المنتج", "Product Detail"], "product-categories": ["تصنيفات المنتجات", "Categories"],
   "products-bulk-setup": ["إعداد دفعة واحدة", "Bulk Setup"], "products-byproducts": ["المنتجات الجانبية", "By-products"],
   "products-import-export": ["استيراد / تصدير", "Import / Export"],

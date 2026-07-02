@@ -14,6 +14,13 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell
 } from "recharts";
 import { toast } from "sonner";
+import { useQuotations, useQuotationDetail } from "@/hooks/api/useTenantResources";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { toModuleQuotation } from "./moduleMappers";
+import { IS_MOCK_MODE } from "@/services/config";
+import { LiveQuotationScreen } from "@/features/invoices/LiveQuotationScreen";
+import { LivePrintPreviewScreen } from "@/features/print/LivePrintPreviewScreen";
+import { getQuotationPrintPreview } from "@/services/quotationService";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -100,7 +107,7 @@ interface Quotation {
   ct: number; kg: number; sub: number; vat: number; total: number;
   status: QuotStatus; user: string; convertedInv: string | null;
 }
-const QUOTATIONS: Quotation[] = [
+const MOCK_QUOTATIONS: Quotation[] = [
   { id: "QUO-2026-00016", date: "2026-01-28", customer: "مطعم الخليج",         expiry: "2026-02-04", ct: 8,  kg: 83,  sub: 1244.25, vat: 59.71, total: 1253.96, status: "sent",      user: "محمد (كاشير)", convertedInv: null },
   { id: "QUO-2026-00015", date: "2026-01-25", customer: "سوبر ماركت المدينة", expiry: "2026-02-01", ct: 15, kg: 145, sub: 2150,    vat: 107.5, total: 2257.5,  status: "accepted",  user: "أحمد (مالك)",  convertedInv: null },
   { id: "QUO-2026-00014", date: "2026-01-20", customer: "مطبخ الإمارات",       expiry: "2026-01-27", ct: 6,  kg: 72,  sub: 1050,    vat: 0,     total: 1050,    status: "expired",   user: "محمد (كاشير)", convertedInv: null },
@@ -179,6 +186,28 @@ function ExpiryBadge({ expiry, lang }: { expiry: string; lang: Lang }) {
   return <span className="text-[10px] font-semibold text-slate-400">{expiry}</span>;
 }
 
+function quotationRowFromMock(q: Quotation) {
+  return { id: q.id, number: q.id, customer: q.customer, customerId: "", date: q.date, validUntil: q.expiry, status: q.status, subtotal: q.sub, vat: q.vat, total: q.total };
+}
+
+function enrichQuotation(row: import("@/shared/types/entities").QuotationRow, mock?: Quotation): Quotation {
+  const m = toModuleQuotation(row);
+  return {
+    id: m.number || m.id,
+    date: m.date,
+    customer: m.customer,
+    expiry: mock?.expiry ?? m.validUntil,
+    ct: mock?.ct ?? 0,
+    kg: mock?.kg ?? 0,
+    sub: m.subtotal,
+    vat: m.vat,
+    total: m.total,
+    status: m.status as QuotStatus,
+    user: mock?.user ?? "",
+    convertedInv: mock?.convertedInv ?? null,
+  };
+}
+
 // ── SCREEN: QUOTATIONS LIST ────────────────────────────────────────────────────
 export function QuotationsListScreen({ lang, role, onNavigate, setSelectedQuotId }: {
   lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void;
@@ -188,6 +217,16 @@ export function QuotationsListScreen({ lang, role, onNavigate, setSelectedQuotId
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const canCreate = true;
+
+  const { items: quotationRows, loading, error, forbidden, reload } = useQuotations(
+    search ? { search } : undefined,
+    async () => MOCK_QUOTATIONS.map(quotationRowFromMock),
+  );
+  const QUOTATIONS = quotationRows.map((row) => enrichQuotation(row, MOCK_QUOTATIONS.find((m) => m.id === row.id || m.id === row.number)));
+
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
 
   const filtered = QUOTATIONS.filter(q => {
     const s = search.toLowerCase();
@@ -327,14 +366,19 @@ export function QuotationsListScreen({ lang, role, onNavigate, setSelectedQuotId
       )}
 
       {filtered.length === 0 && (
-        <Card className="p-14 text-center"><FileText size={48} className="text-slate-200 mx-auto mb-4" /><h3 className="text-lg font-black text-slate-500 mb-2">{isRTL ? "لا توجد عروض أسعار حالياً" : "No quotations yet"}</h3><Btn onClick={() => onNavigate("quotations-new")}><Plus size={15} />{isRTL ? "إنشاء أول عرض سعر" : "Create First Quotation"}</Btn></Card>
+        <EmptyState lang={lang} messageAr="لا توجد عروض أسعار بعد" messageEn="No quotations yet" />
       )}
     </div>
   );
 }
 
 // ── SCREEN: NEW QUOTATION ──────────────────────────────────────────────────────
-export function NewQuotationScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+export function NewQuotationScreen({ lang, role, onNavigate, onConvertedToSales }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; onConvertedToSales?: (salesId: string) => void;
+}) {
+  if (!IS_MOCK_MODE) {
+    return <LiveQuotationScreen lang={lang} role={role} onNavigate={onNavigate} onConvertedToSales={onConvertedToSales} />;
+  }
   const isRTL = lang === "ar";
   const canEditPrice = role === "owner";
   const canApplyDiscount = role === "owner" || role === "accountant";
@@ -627,8 +671,20 @@ export function NewQuotationScreen({ lang, role, onNavigate }: { lang: Lang; rol
 
 // ── SCREEN: QUOTATION PREVIEW ──────────────────────────────────────────────────
 export function QuotationPreviewScreen({ lang, onNavigate, quotId }: { lang: Lang; onNavigate: (s: TenantScreen) => void; quotId: string }) {
+  if (!IS_MOCK_MODE && quotId) {
+    return (
+      <LivePrintPreviewScreen
+        lang={lang}
+        onNavigate={onNavigate}
+        backScreen="quotation-detail"
+        titleAr="عرض سعر"
+        titleEn="Quotation"
+        loadPreview={() => getQuotationPrintPreview(quotId)}
+      />
+    );
+  }
   const isRTL = lang === "ar";
-  const q = QUOTATIONS.find(x => x.id === quotId) || QUOTATIONS[0];
+  const q = MOCK_QUOTATIONS.find(x => x.id === quotId) || MOCK_QUOTATIONS[0];
 
   return (
     <div className="p-4 lg:p-8 max-w-screen-lg mx-auto">
@@ -721,14 +777,39 @@ export function QuotationPreviewScreen({ lang, onNavigate, quotId }: { lang: Lan
 }
 
 // ── SCREEN: QUOTATION DETAIL ───────────────────────────────────────────────────
-export function QuotationDetailScreen({ lang, role, onNavigate, quotId }: {
-  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; quotId: string;
+export function QuotationDetailScreen({ lang, role, onNavigate, quotId, onConvertedToSales }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; quotId: string; onConvertedToSales?: (salesId: string) => void;
 }) {
+  if (!IS_MOCK_MODE) {
+    if (!quotId) {
+      return <EmptyState lang={lang} messageAr="اختر عرض سعر من القائمة" messageEn="Select a quotation from the list" />;
+    }
+    return (
+      <LiveQuotationScreen
+        lang={lang}
+        role={role}
+        onNavigate={onNavigate}
+        quotationId={quotId}
+        onConvertedToSales={onConvertedToSales}
+      />
+    );
+  }
   const isRTL = lang === "ar";
   const [tab, setTab] = useState("overview");
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
-  const q = QUOTATIONS.find(x => x.id === quotId) || QUOTATIONS[0];
+  const { item: row, loading, error, forbidden, reload } = useQuotationDetail(
+    quotId,
+    async (id) => {
+      const m = MOCK_QUOTATIONS.find((x) => x.id === id);
+      return m ? quotationRowFromMock(m) : null;
+    },
+  );
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+  const q = row ? enrichQuotation(row, MOCK_QUOTATIONS.find((m) => m.id === row.id || m.id === row.number)) : null;
+  if (!q) return <EmptyState lang={lang} messageAr="لا توجد عروض أسعار بعد" messageEn="No quotations yet" />;
   const daysLeft = Math.ceil((new Date(q.expiry).getTime() - Date.now()) / 86400000);
   const isExpired = daysLeft < 0;
 
@@ -841,7 +922,7 @@ export function ConvertQuotationScreen({ lang, role, onNavigate, quotId }: {
   lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; quotId: string;
 }) {
   const isRTL = lang === "ar";
-  const q = QUOTATIONS.find(x => x.id === quotId) || QUOTATIONS[0];
+  const q = MOCK_QUOTATIONS.find(x => x.id === quotId) || MOCK_QUOTATIONS[0];
   const [keepPrices, setKeepPrices] = useState(true);
   const [copyNotes, setCopyNotes] = useState(true);
   const [createAndApprove, setCreateAndApprove] = useState(false);
@@ -991,7 +1072,7 @@ export function QuotationAnalyticsScreen({ lang, role, onNavigate }: { lang: Lan
           <table className="w-full text-sm">
             <thead><tr className="bg-slate-50/80 border-b border-slate-200">{[isRTL?"رقم العرض":"Quote #",isRTL?"التاريخ":"Date",isRTL?"العميل":"Customer",isRTL?"الانتهاء":"Expiry",isRTL?"الإجمالي":"Total",isRTL?"الحالة":"Status",isRTL?"فاتورة البيع":"Invoice"].map((h,i)=><th key={i} className={`px-4 py-2.5 font-black text-xs text-slate-400 ${isRTL?"text-right":"text-left"}`}>{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {QUOTATIONS.map(q=>(
+              {MOCK_QUOTATIONS.map(q=>(
                 <tr key={q.id} className="hover:bg-slate-50/60">
                   <td className="px-4 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{q.id}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{q.date}</td>

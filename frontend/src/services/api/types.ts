@@ -10,9 +10,23 @@ export type ItemResponse<T> = Promise<T | null>;
 /** A generic object response. */
 export type ObjectResponse<T> = Promise<T>;
 
-/** Pagination params the API will eventually accept. */
+/** Pagination params the API accepts. */
 export interface ListParams {
   search?: string;
   page?: number;
   pageSize?: number;
+}
+
+/** Django REST Framework paginated list response. */
+export interface PaginatedResponse<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
+export interface SelectOption {
+  value: string;
+  label: string;
+  labelAr?: string;
 }

@@ -82,7 +82,7 @@
 | Path | Method | Purpose | Response | Perms |
 | --- | --- | --- | --- | --- |
 | `/dashboard/summary/` | GET | KPI bundle (→ `getDashboardSummary`) | `{kpis, recentActivity, alerts}` | `dashboard.view` |
-| `/reports/summary/` | GET | Charts bundle (→ `getReportSummary`) | `{revenue[], statusPie[], dailyProfit[], ...}` | `reports.view` |
+| `/tenant/reports/dashboard/` | GET | Phase 10 KPI + trend bundle | KPI cards + `sales_trend[]` | `reports.view_dashboard` |
 
 ---
 
@@ -264,40 +264,74 @@ Base path `/api/v1/tenant/payments/` and `/api/v1/tenant/receipts/`. Permission 
 
 ---
 
-## 15. Expense endpoints  (`/api/v1/expenses/`)
+## 15. Expense endpoints  (`/api/v1/tenant/`)
 
-| Path | Method | Purpose | Request | Response | Perms | Side effects |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/expenses/` | GET | List (→ `listExpenses`) | `category,date_*,kind` | `ListResponse<Expense>` | `expense.view` | |
-| `/expenses/` | POST | Create | `{category_id, amount, date, method, expense_kind, purchase_invoice_id?, purchase_effect?}` | `Expense` | `expense.add` | purchase-linked may add to inventory cost / deduct supplier payable |
-| `/expenses/{id}/cancel/` | POST | **Cancel** | `{reason}` | `Expense` | `expense.cancel` | reverses any purchase/supplier effect; **sensitive** |
-| `/expenses/categories/` | GET/POST | Categories | | | `expense.view`/`add` | |
-| `/expenses/recurring/` | GET/POST | Recurring templates | | | `expense.add` | background job generates expenses |
-
----
-
-## 16. Tax / VAT endpoints  (`/api/v1/tax/`)
-
-| Path | Method | Purpose | Request | Response | Perms | Side effects |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/tax/summary/` | GET | VAT summary (→ `getTaxSummary`): sales VAT, purchase VAT, net VAT | `date_from,date_to` | `TaxSummary` | `tax.view` | |
-| `/tax/records/` | GET | VAT records ledger | `source_type,date_*` | `ListResponse<VatRecord>` | `tax.view` | |
-| `/tax/settings/` | GET/PUT | VAT rate + enabled + company TRN | `{vat_rate, vat_enabled, company_trn}` | `VatSettings` | `tax.change_rate` | **changing rate / disabling VAT is sensitive (reason + audit)** |
-| `/tax/credit-notes/` | GET/POST | Credit notes (placeholder) | | | `tax.view` | schema seam; minimal now |
+| Path | Method | Purpose | Perms | Notes |
+| --- | --- | --- | --- | --- |
+| `/expense-categories/` | GET/POST | List/create categories | `expenses.view` / `manage_categories` | |
+| `/expense-categories/{id}/` | GET/PATCH | Detail/update | `expenses.view` / `manage_categories` | |
+| `/expenses/` | GET/POST | List/create expenses | `expenses.view` / `create` | purchase-linked on draft purchase only |
+| `/expenses/{id}/` | GET/PATCH | Detail / notes-only edit | `expenses.view` / `edit` | posted: notes fields only |
+| `/expenses/{id}/cancel/` | POST | Cancel (reason required) | `expenses.cancel` | sensitive |
+| `/expenses/{id}/voucher-preview/` | GET | Voucher JSON | `expenses.print` | bilingual, no PDF |
+| `/expenses/{id}/attachments/` | GET/POST | Receipt uploads | `view` / `upload_attachment` | |
+| `/expenses/summary/` | GET | Dashboard summary | `expenses.view` | |
+| `/expenses/profit-impact/` | GET | Profit foundation | `expenses.view_profit_impact` | `date_from`, `date_to` required |
+| `/recurring-expenses/` | GET/POST | Recurring templates | `view` / `manage_recurring` | |
+| `/recurring-expenses/{id}/generate/` | POST | Manual generate | `manage_recurring` | advances next_due_date |
 
 ---
 
-## 17. Report endpoints  (`/api/v1/reports/`)
+## 16. Tax / VAT endpoints  (`/api/v1/tenant/tax/`)
+
+| Path | Method | Purpose | Perms | Notes |
+| --- | --- | --- | --- | --- |
+| `/tax/summary/` | GET | Overview (sales/purchase/expense/net VAT) | `tax.view` | `date_from`, `date_to` |
+| `/tax/sales-vat/` | GET | Sales VAT report | `tax.view_sales_vat` | approved/paid only |
+| `/tax/purchase-vat/` | GET | Purchase VAT report | `tax.view_purchase_vat` | approved/paid only |
+| `/tax/expense-vat/` | GET | Expense VAT report | `tax.view_expense_vat` | posted only |
+| `/tax/net-vat/` | GET | Net VAT estimate | `tax.view_net_vat` | internal estimate |
+| `/tax/export-payload/` | GET | Export-ready JSON | `tax.export` | audited |
+| `/tax/warnings/` | GET | List warnings | `tax.view` | |
+| `/tax/warnings/generate/` | POST | Generate warnings | `tax.generate_warnings` | idempotent |
+| `/tax/warnings/{id}/dismiss/` | POST | Dismiss (reason) | `tax.dismiss_warnings` | sensitive |
+| `/tax/warnings/{id}/resolve/` | POST | Resolve | `tax.dismiss_warnings` | |
+| `/tax/adjustments/` | GET/POST | Manual VAT adjustments | `view` / `tax.adjust` | |
+| `/tax/adjustments/{id}/cancel/` | POST | Cancel adjustment | `tax.cancel_adjustment` | sensitive |
+| `/tax/periods/` | GET/POST | Tax periods | `tax.view` | |
+| `/tax/periods/{id}/review/` | POST | Mark reviewed | `tax.view` | |
+| `/tax/periods/{id}/close/` | POST | Close period | `tax.view` | blocks adjustments |
+| `/tax/disabled-vat-documents/` | GET | VAT-disabled docs review | `tax.view` | |
+| `/tax/audit/` | GET | Tax audit log entries | `tax.view_audit` | |
+
+VAT settings remain at `/api/v1/tenant/settings/vat/` (Phase 0–1).
+
+---
+
+## 17. Report endpoints  (`/api/v1/tenant/reports/`)
 
 | Path | Method | Purpose | Response | Perms |
 | --- | --- | --- | --- | --- |
-| `/reports/summary/` | GET | Charts bundle for reports module | `{revenue, profit, statusPie, paymentPie, ...}` | `reports.view` |
-| `/reports/sales/` | GET | Sales report (filters) | rows + totals | `reports.view` |
-| `/reports/purchases/` | GET | Purchase report | rows + totals | `reports.view` |
-| `/reports/inventory/` | GET | Inventory valuation (FIFO) | rows | `reports.view` |
-| `/reports/profit/` | GET | Daily/monthly profit, gross/net | series | `reports.view` |
-| `/reports/customers/`, `/reports/suppliers/` | GET | Aging / statements rollups | rows | `reports.view` |
-| `/reports/export/` | GET | Export sensitive financial report | file | `reports.export` (**sensitive** — audit) |
+| `/reports/dashboard/` | GET | KPI cards + sales trend | totals + `sales_trend[]` | `reports.view_dashboard` |
+| `/reports/sales/` | GET | Sales report (filters) | rows + totals + breakdowns | `reports.view_sales` |
+| `/reports/purchases/` | GET | Purchase report | rows + totals + breakdowns | `reports.view_purchases` |
+| `/reports/inventory/` | GET | Stock balances + FIFO value | balances + chart status | `reports.view_inventory` |
+| `/reports/inventory-valuation/` | GET | Same as inventory (audited) | balances + FIFO totals | `reports.view_inventory_valuation` |
+| `/reports/inventory-movements/` | GET | Movement history report | rows + inbound/outbound totals | `reports.view_inventory` |
+| `/reports/customers/{id}/statement/` | GET | Customer statement | ledger + aging | `reports.view_customer_statement` |
+| `/reports/customers/aging/` | GET | All-customer aging | rows | `reports.view_customer_statement` |
+| `/reports/suppliers/{id}/statement/` | GET | Supplier statement | ledger + aging | `reports.view_supplier_statement` |
+| `/reports/suppliers/aging/` | GET | All-supplier aging | rows | `reports.view_supplier_statement` |
+| `/reports/payments/` | GET | Payment movements report | rows + totals | `reports.view_payments` |
+| `/reports/expenses/` | GET | Expense report | rows + category chart | `reports.view_expenses` |
+| `/reports/profit/` | GET | Gross/net profit foundation | margins + by-day/product | `reports.view_profit` (**audited**) |
+| `/reports/tax-summary/` | GET | Bridge to Phase 9 net VAT | net VAT estimate | `reports.view_tax_summary` |
+| `/reports/export-payload/` | GET | Export-ready JSON (no file) | metadata + report | `reports.export` (**audited**) |
+
+Query: `date_from`, `date_to`, `customer`, `supplier`, `product`, `category`, `payment_status`,
+`include_cancelled`, `include_drafts`, `group_by`, etc.
+
+Legacy `reports.view` / `reports.export` codes remain; granular `reports.view_*` codes are preferred.
 
 ---
 

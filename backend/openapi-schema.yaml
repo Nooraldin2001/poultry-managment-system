@@ -1156,6 +1156,425 @@ paths:
               schema:
                 $ref: '#/components/schemas/CustomerDetail'
           description: ''
+  /api/v1/tenant/expense-categories/:
+    get:
+      operationId: tenant_expense_categories_list
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedExpenseCategoryList'
+          description: ''
+    post:
+      operationId: tenant_expense_categories_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseCategory'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExpenseCategory'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExpenseCategory'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseCategory'
+          description: ''
+  /api/v1/tenant/expense-categories/{id}/:
+    get:
+      operationId: tenant_expense_categories_retrieve
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this expense category.
+        required: true
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseCategory'
+          description: ''
+    patch:
+      operationId: tenant_expense_categories_partial_update
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this expense category.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedExpenseCategory'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedExpenseCategory'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedExpenseCategory'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseCategory'
+          description: ''
+  /api/v1/tenant/expenses/:
+    get:
+      operationId: tenant_expenses_list
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedExpenseListList'
+          description: ''
+    post:
+      operationId: tenant_expenses_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseDetail'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExpenseDetail'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExpenseDetail'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseDetail'
+          description: ''
+  /api/v1/tenant/expenses/{id}/:
+    get:
+      operationId: tenant_expenses_retrieve
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this expense.
+        required: true
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseDetail'
+          description: ''
+    patch:
+      operationId: tenant_expenses_partial_update
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this expense.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedExpenseDetail'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedExpenseDetail'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedExpenseDetail'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseDetail'
+          description: ''
+  /api/v1/tenant/expenses/{id}/attachments/:
+    get:
+      operationId: tenant_expenses_attachments_retrieve
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this expense.
+        required: true
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseDetail'
+          description: ''
+    post:
+      operationId: tenant_expenses_attachments_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this expense.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseDetail'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExpenseDetail'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExpenseDetail'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseDetail'
+          description: ''
+  /api/v1/tenant/expenses/{id}/cancel/:
+    post:
+      operationId: tenant_expenses_cancel_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this expense.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseDetail'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExpenseDetail'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExpenseDetail'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseDetail'
+          description: ''
+  /api/v1/tenant/expenses/{id}/voucher-preview/:
+    get:
+      operationId: tenant_expenses_voucher_preview_retrieve
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this expense.
+        required: true
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseDetail'
+          description: ''
+  /api/v1/tenant/expenses/profit-impact/:
+    get:
+      operationId: tenant_expenses_profit_impact_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/expenses/summary/:
+    get:
+      operationId: tenant_expenses_summary_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
   /api/v1/tenant/inventory/:
     get:
       operationId: tenant_inventory_retrieve
@@ -3408,6 +3827,343 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/v1/tenant/recurring-expenses/:
+    get:
+      operationId: tenant_recurring_expenses_list
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRecurringExpenseListList'
+          description: ''
+    post:
+      operationId: tenant_recurring_expenses_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecurringExpenseDetail'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RecurringExpenseDetail'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RecurringExpenseDetail'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurringExpenseDetail'
+          description: ''
+  /api/v1/tenant/recurring-expenses/{id}/:
+    get:
+      operationId: tenant_recurring_expenses_retrieve
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this recurring expense.
+        required: true
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurringExpenseDetail'
+          description: ''
+    patch:
+      operationId: tenant_recurring_expenses_partial_update
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this recurring expense.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedRecurringExpenseDetail'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedRecurringExpenseDetail'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedRecurringExpenseDetail'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurringExpenseDetail'
+          description: ''
+  /api/v1/tenant/recurring-expenses/{id}/generate/:
+    post:
+      operationId: tenant_recurring_expenses_generate_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this recurring expense.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecurringExpenseDetail'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RecurringExpenseDetail'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RecurringExpenseDetail'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurringExpenseDetail'
+          description: ''
+  /api/v1/tenant/reports/customers/{customer_id}/statement/:
+    get:
+      operationId: tenant_reports_customers_statement_retrieve
+      parameters:
+      - in: path
+        name: customer_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/customers/aging/:
+    get:
+      operationId: tenant_reports_customers_aging_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/dashboard/:
+    get:
+      operationId: tenant_reports_dashboard_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/expenses/:
+    get:
+      operationId: tenant_reports_expenses_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/export-payload/:
+    get:
+      operationId: tenant_reports_export_payload_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/inventory/:
+    get:
+      operationId: tenant_reports_inventory_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/inventory-movements/:
+    get:
+      operationId: tenant_reports_inventory_movements_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/inventory-valuation/:
+    get:
+      operationId: tenant_reports_inventory_valuation_retrieve
+      description: Same inventory report payload; gated by valuation permission.
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/payments/:
+    get:
+      operationId: tenant_reports_payments_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/profit/:
+    get:
+      operationId: tenant_reports_profit_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/purchases/:
+    get:
+      operationId: tenant_reports_purchases_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/sales/:
+    get:
+      operationId: tenant_reports_sales_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/suppliers/{supplier_id}/statement/:
+    get:
+      operationId: tenant_reports_suppliers_statement_retrieve
+      parameters:
+      - in: path
+        name: supplier_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/suppliers/aging/:
+    get:
+      operationId: tenant_reports_suppliers_aging_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/reports/tax-summary/:
+    get:
+      operationId: tenant_reports_tax_summary_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
   /api/v1/tenant/sales/:
     get:
       operationId: tenant_sales_list
@@ -4891,6 +5647,637 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/v1/tenant/tax/adjustments/:
+    get:
+      operationId: tenant_tax_adjustments_list
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTaxAdjustmentList'
+          description: ''
+    post:
+      operationId: tenant_tax_adjustments_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxAdjustment'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaxAdjustment'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaxAdjustment'
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxAdjustment'
+          description: ''
+  /api/v1/tenant/tax/adjustments/{id}/:
+    get:
+      operationId: tenant_tax_adjustments_retrieve
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tax adjustment.
+        required: true
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxAdjustment'
+          description: ''
+  /api/v1/tenant/tax/adjustments/{id}/cancel/:
+    post:
+      operationId: tenant_tax_adjustments_cancel_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tax adjustment.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxAdjustment'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaxAdjustment'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaxAdjustment'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxAdjustment'
+          description: ''
+  /api/v1/tenant/tax/audit/:
+    get:
+      operationId: tenant_tax_audit_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/tax/disabled-vat-documents/:
+    get:
+      operationId: tenant_tax_disabled_vat_documents_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/tax/expense-vat/:
+    get:
+      operationId: tenant_tax_expense_vat_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/tax/export-payload/:
+    get:
+      operationId: tenant_tax_export_payload_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/tax/net-vat/:
+    get:
+      operationId: tenant_tax_net_vat_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/tax/periods/:
+    get:
+      operationId: tenant_tax_periods_list
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTaxPeriodList'
+          description: ''
+    post:
+      operationId: tenant_tax_periods_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxPeriod'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaxPeriod'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaxPeriod'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxPeriod'
+          description: ''
+  /api/v1/tenant/tax/periods/{id}/:
+    get:
+      operationId: tenant_tax_periods_retrieve
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tax period.
+        required: true
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxPeriod'
+          description: ''
+    patch:
+      operationId: tenant_tax_periods_partial_update
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tax period.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTaxPeriod'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTaxPeriod'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTaxPeriod'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxPeriod'
+          description: ''
+  /api/v1/tenant/tax/periods/{id}/close/:
+    post:
+      operationId: tenant_tax_periods_close_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tax period.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxPeriod'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaxPeriod'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaxPeriod'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxPeriod'
+          description: ''
+  /api/v1/tenant/tax/periods/{id}/review/:
+    post:
+      operationId: tenant_tax_periods_review_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tax period.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxPeriod'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaxPeriod'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaxPeriod'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxPeriod'
+          description: ''
+  /api/v1/tenant/tax/purchase-vat/:
+    get:
+      operationId: tenant_tax_purchase_vat_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/tax/sales-vat/:
+    get:
+      operationId: tenant_tax_sales_vat_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/tax/summary/:
+    get:
+      operationId: tenant_tax_summary_retrieve
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tenant/tax/warnings/:
+    get:
+      operationId: tenant_tax_warnings_list
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTaxWarningList'
+          description: ''
+    post:
+      operationId: tenant_tax_warnings_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxWarning'
+          description: ''
+  /api/v1/tenant/tax/warnings/{id}/:
+    get:
+      operationId: tenant_tax_warnings_retrieve
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tax warning.
+        required: true
+      tags:
+      - tenant
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxWarning'
+          description: ''
+  /api/v1/tenant/tax/warnings/{id}/dismiss/:
+    post:
+      operationId: tenant_tax_warnings_dismiss_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tax warning.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxWarning'
+          description: ''
+  /api/v1/tenant/tax/warnings/{id}/resolve/:
+    post:
+      operationId: tenant_tax_warnings_resolve_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tax warning.
+        required: true
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxWarning'
+          description: ''
+  /api/v1/tenant/tax/warnings/generate/:
+    post:
+      operationId: tenant_tax_warnings_generate_create
+      description: |-
+        Base viewset for tenant-owned resources.
+
+        Subclasses set ``queryset``, ``permission_map`` (``{action: "perm.code"}``)
+        and serializer(s). All rows are isolated by ``company_id``.
+      tags:
+      - tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaxWarning'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxWarning'
+          description: ''
   /api/v1/tenant/users/:
     get:
       operationId: tenant_users_list
@@ -5181,6 +6568,20 @@ components:
     BlankEnum:
       enum:
       - ''
+    CategoryTypeEnum:
+      enum:
+      - daily
+      - monthly
+      - recurring
+      - purchase_linked
+      - general
+      type: string
+      description: |-
+        * `daily` - Daily
+        * `monthly` - Monthly
+        * `recurring` - Recurring
+        * `purchase_linked` - Purchase Linked
+        * `general` - General
     CodeEnum:
       enum:
       - basic
@@ -5561,6 +6962,7 @@ components:
       - stock_adjustment
       - customer_refund
       - supplier_refund
+      - tax_adjustment
       type: string
       description: |-
         * `sales_invoice` - Sales Invoice
@@ -5573,18 +6975,255 @@ components:
         * `stock_adjustment` - Stock Adjustment
         * `customer_refund` - Customer Refund
         * `supplier_refund` - Supplier Refund
-    FileTypeEnum:
+        * `tax_adjustment` - Tax Adjustment
+    ExpenseAttachment:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        file:
+          type: string
+          format: uri
+        file_type:
+          $ref: '#/components/schemas/ExpenseAttachmentFileTypeEnum'
+        original_filename:
+          type: string
+          maxLength: 255
+        uploaded_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        uploaded_at:
+          type: string
+          format: date-time
+          readOnly: true
+        notes:
+          type: string
+      required:
+      - file
+      - id
+      - uploaded_at
+      - uploaded_by
+    ExpenseAttachmentFileTypeEnum:
       enum:
-      - supplier_invoice
-      - delivery_note
       - receipt
+      - invoice
+      - proof
       - other
       type: string
       description: |-
-        * `supplier_invoice` - Supplier Invoice
-        * `delivery_note` - Delivery Note
         * `receipt` - Receipt
+        * `invoice` - Invoice
+        * `proof` - Proof
         * `other` - Other
+    ExpenseCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name_ar:
+          type: string
+          maxLength: 255
+        name_en:
+          type: string
+          maxLength: 255
+        code:
+          type: string
+          maxLength: 32
+        description:
+          type: string
+        category_type:
+          $ref: '#/components/schemas/CategoryTypeEnum'
+        is_active:
+          type: boolean
+        sort_order:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - code
+      - created_at
+      - id
+      - name_ar
+      - updated_at
+    ExpenseDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        expense_number:
+          type: string
+          maxLength: 64
+        category:
+          type: integer
+        category_detail:
+          allOf:
+          - $ref: '#/components/schemas/ExpenseCategory'
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        expense_date:
+          type: string
+          format: date
+        expense_scope:
+          $ref: '#/components/schemas/ExpenseScopeEnum'
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        vat_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+        vat_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod7c4Enum'
+        reference_number:
+          type: string
+          maxLength: 64
+        vendor_name:
+          type: string
+          maxLength: 255
+        employee_name:
+          type: string
+          maxLength: 255
+        vehicle_number:
+          type: string
+          maxLength: 32
+        linked_purchase_invoice:
+          type: integer
+          nullable: true
+        purchase_link_behavior:
+          $ref: '#/components/schemas/PurchaseLinkBehaviorEnum'
+        related_purchase_adjustment:
+          type: integer
+          nullable: true
+        status:
+          $ref: '#/components/schemas/StatusF64Enum'
+        notes:
+          type: string
+        cancellation_reason:
+          type: string
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseAttachment'
+          readOnly: true
+        created_by:
+          type: integer
+          nullable: true
+        updated_by:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - amount
+      - attachments
+      - category
+      - category_detail
+      - created_at
+      - expense_date
+      - expense_number
+      - id
+      - title
+      - updated_at
+    ExpenseList:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        expense_number:
+          type: string
+          maxLength: 64
+        category:
+          type: integer
+        category_name:
+          type: string
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        expense_date:
+          type: string
+          format: date
+        expense_scope:
+          $ref: '#/components/schemas/ExpenseScopeEnum'
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod7c4Enum'
+        status:
+          $ref: '#/components/schemas/StatusF64Enum'
+        vendor_name:
+          type: string
+          maxLength: 255
+        linked_purchase_invoice:
+          type: integer
+          nullable: true
+        purchase_link_behavior:
+          $ref: '#/components/schemas/PurchaseLinkBehaviorEnum'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - category
+      - category_name
+      - created_at
+      - expense_date
+      - expense_number
+      - id
+      - title
+    ExpenseScopeEnum:
+      enum:
+      - daily
+      - monthly
+      - purchase_linked
+      - recurring_generated
+      - general
+      type: string
+      description: |-
+        * `daily` - Daily
+        * `monthly` - Monthly
+        * `purchase_linked` - Purchase Linked
+        * `recurring_generated` - Recurring Generated
+        * `general` - General
     LineTypeEnum:
       enum:
       - product
@@ -5773,6 +7412,52 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CustomerList'
+    PaginatedExpenseCategoryList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseCategory'
+    PaginatedExpenseListList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseList'
     PaginatedPaymentMovementListList:
       type: object
       required:
@@ -5888,6 +7573,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/QuotationList'
+    PaginatedRecurringExpenseListList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecurringExpenseList'
     PaginatedSalesInvoiceListList:
       type: object
       required:
@@ -6026,6 +7734,75 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SupplierList'
+    PaginatedTaxAdjustmentList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaxAdjustment'
+    PaginatedTaxPeriodList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaxPeriod'
+    PaginatedTaxWarningList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaxWarning'
     PaginatedTenantUserList:
       type: object
       required:
@@ -6249,6 +8026,132 @@ components:
           type: boolean
         inactive_reason:
           type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedExpenseCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name_ar:
+          type: string
+          maxLength: 255
+        name_en:
+          type: string
+          maxLength: 255
+        code:
+          type: string
+          maxLength: 32
+        description:
+          type: string
+        category_type:
+          $ref: '#/components/schemas/CategoryTypeEnum'
+        is_active:
+          type: boolean
+        sort_order:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedExpenseDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        expense_number:
+          type: string
+          maxLength: 64
+        category:
+          type: integer
+        category_detail:
+          allOf:
+          - $ref: '#/components/schemas/ExpenseCategory'
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        expense_date:
+          type: string
+          format: date
+        expense_scope:
+          $ref: '#/components/schemas/ExpenseScopeEnum'
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        vat_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+        vat_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod7c4Enum'
+        reference_number:
+          type: string
+          maxLength: 64
+        vendor_name:
+          type: string
+          maxLength: 255
+        employee_name:
+          type: string
+          maxLength: 255
+        vehicle_number:
+          type: string
+          maxLength: 32
+        linked_purchase_invoice:
+          type: integer
+          nullable: true
+        purchase_link_behavior:
+          $ref: '#/components/schemas/PurchaseLinkBehaviorEnum'
+        related_purchase_adjustment:
+          type: integer
+          nullable: true
+        status:
+          $ref: '#/components/schemas/StatusF64Enum'
+        notes:
+          type: string
+        cancellation_reason:
+          type: string
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseAttachment'
+          readOnly: true
+        created_by:
+          type: integer
+          nullable: true
+        updated_by:
+          type: integer
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -6663,6 +8566,76 @@ components:
           items:
             $ref: '#/components/schemas/QuotationStatusHistory'
           readOnly: true
+    PatchedRecurringExpenseDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        category:
+          type: integer
+        category_detail:
+          allOf:
+          - $ref: '#/components/schemas/ExpenseCategory'
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        vat_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+        vat_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        recurrence:
+          $ref: '#/components/schemas/RecurrenceEnum'
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        next_due_date:
+          type: string
+          format: date
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod7c4Enum'
+        vendor_name:
+          type: string
+          maxLength: 255
+        notes:
+          type: string
+        is_active:
+          type: boolean
+        auto_generate:
+          type: boolean
+        created_by:
+          type: integer
+          nullable: true
+        updated_by:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
     PatchedSalesInvoiceDetail:
       type: object
       properties:
@@ -6992,6 +8965,57 @@ components:
           type: boolean
         inactive_reason:
           type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedTaxPeriod:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 128
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        status:
+          allOf:
+          - $ref: '#/components/schemas/TaxPeriodStatusEnum'
+          readOnly: true
+        notes:
+          type: string
+        reviewed_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        reviewed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        closed_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        closed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_by:
+          type: integer
+          readOnly: true
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -7735,7 +9759,7 @@ components:
           type: string
           format: uri
         file_type:
-          $ref: '#/components/schemas/FileTypeEnum'
+          $ref: '#/components/schemas/PurchaseAttachmentFileTypeEnum'
         original_filename:
           type: string
           readOnly: true
@@ -7755,6 +9779,18 @@ components:
       - original_filename
       - uploaded_at
       - uploaded_by
+    PurchaseAttachmentFileTypeEnum:
+      enum:
+      - supplier_invoice
+      - delivery_note
+      - receipt
+      - other
+      type: string
+      description: |-
+        * `supplier_invoice` - Supplier Invoice
+        * `delivery_note` - Delivery Note
+        * `receipt` - Receipt
+        * `other` - Other
     PurchaseInvoiceDetail:
       type: object
       properties:
@@ -8025,6 +10061,18 @@ components:
       - invoice_date
       - invoice_number
       - supplier
+    PurchaseLinkBehaviorEnum:
+      enum:
+      - none
+      - expense_only
+      - reduce_supplier_payable
+      - increase_inventory_cost
+      type: string
+      description: |-
+        * `none` - None
+        * `expense_only` - Expense Only
+        * `reduce_supplier_payable` - Reduce Supplier Payable
+        * `increase_inventory_cost` - Increase Inventory Cost
     QuotationDetail:
       type: object
       properties:
@@ -8324,6 +10372,146 @@ components:
       - id
       - reason
       - to_status
+    RecurrenceEnum:
+      enum:
+      - weekly
+      - monthly
+      - yearly
+      type: string
+      description: |-
+        * `weekly` - Weekly
+        * `monthly` - Monthly
+        * `yearly` - Yearly
+    RecurringExpenseDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        category:
+          type: integer
+        category_detail:
+          allOf:
+          - $ref: '#/components/schemas/ExpenseCategory'
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        vat_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+        vat_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        recurrence:
+          $ref: '#/components/schemas/RecurrenceEnum'
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        next_due_date:
+          type: string
+          format: date
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod7c4Enum'
+        vendor_name:
+          type: string
+          maxLength: 255
+        notes:
+          type: string
+        is_active:
+          type: boolean
+        auto_generate:
+          type: boolean
+        created_by:
+          type: integer
+          nullable: true
+        updated_by:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - amount
+      - category
+      - category_detail
+      - created_at
+      - id
+      - next_due_date
+      - recurrence
+      - start_date
+      - title
+      - updated_at
+    RecurringExpenseList:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        category:
+          type: integer
+        category_name:
+          type: string
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        recurrence:
+          $ref: '#/components/schemas/RecurrenceEnum'
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        next_due_date:
+          type: string
+          format: date
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod7c4Enum'
+        is_active:
+          type: boolean
+        auto_generate:
+          type: boolean
+      required:
+      - amount
+      - category
+      - category_name
+      - id
+      - next_due_date
+      - recurrence
+      - start_date
+      - title
     ResetRuleEnum:
       enum:
       - none
@@ -8718,6 +10906,36 @@ components:
       - id
       - invoice_date
       - invoice_number
+    SeverityEnum:
+      enum:
+      - low
+      - medium
+      - high
+      type: string
+      description: |-
+        * `low` - Low
+        * `medium` - Medium
+        * `high` - High
+    SourceTypeEnum:
+      enum:
+      - sales_invoice
+      - purchase_invoice
+      - expense
+      - quotation
+      - company_settings
+      - customer
+      - supplier
+      - other
+      type: string
+      description: |-
+        * `sales_invoice` - Sales Invoice
+        * `purchase_invoice` - Purchase Invoice
+        * `expense` - Expense
+        * `quotation` - Quotation
+        * `company_settings` - Company Settings
+        * `customer` - Customer
+        * `supplier` - Supplier
+        * `other` - Other
     Status50fEnum:
       enum:
       - draft
@@ -9406,6 +11624,245 @@ components:
         * `cash` - Cash
         * `bank` - Bank
         * `credit` - Credit
+    TaxAdjustment:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        adjustment_number:
+          type: string
+          readOnly: true
+        adjustment_date:
+          type: string
+          format: date
+          readOnly: true
+        adjustment_type:
+          allOf:
+          - $ref: '#/components/schemas/TaxAdjustmentAdjustmentTypeEnum'
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          readOnly: true
+        reason:
+          type: string
+          readOnly: true
+        notes:
+          type: string
+          readOnly: true
+        related_source_type:
+          type: string
+          readOnly: true
+        related_source_id:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusF64Enum'
+          readOnly: true
+        posted_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        posted_at:
+          type: string
+          format: date-time
+          readOnly: true
+        cancelled_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        cancel_reason:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - adjustment_date
+      - adjustment_number
+      - adjustment_type
+      - amount
+      - cancel_reason
+      - cancelled_at
+      - created_at
+      - id
+      - notes
+      - posted_at
+      - posted_by
+      - reason
+      - related_source_id
+      - related_source_type
+      - status
+    TaxAdjustmentAdjustmentTypeEnum:
+      enum:
+      - output_vat_increase
+      - output_vat_decrease
+      - input_vat_increase
+      - input_vat_decrease
+      - rounding_adjustment
+      - other
+      type: string
+      description: |-
+        * `output_vat_increase` - Output VAT Increase
+        * `output_vat_decrease` - Output VAT Decrease
+        * `input_vat_increase` - Input VAT Increase
+        * `input_vat_decrease` - Input VAT Decrease
+        * `rounding_adjustment` - Rounding Adjustment
+        * `other` - Other
+    TaxPeriod:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 128
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        status:
+          allOf:
+          - $ref: '#/components/schemas/TaxPeriodStatusEnum'
+          readOnly: true
+        notes:
+          type: string
+        reviewed_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        reviewed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        closed_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        closed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - closed_at
+      - closed_by
+      - created_at
+      - created_by
+      - end_date
+      - id
+      - name
+      - reviewed_at
+      - reviewed_by
+      - start_date
+      - status
+      - updated_at
+    TaxPeriodStatusEnum:
+      enum:
+      - open
+      - reviewed
+      - closed
+      type: string
+      description: |-
+        * `open` - Open
+        * `reviewed` - Reviewed
+        * `closed` - Closed
+    TaxWarning:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        warning_type:
+          allOf:
+          - $ref: '#/components/schemas/WarningTypeEnum'
+          readOnly: true
+        severity:
+          allOf:
+          - $ref: '#/components/schemas/SeverityEnum'
+          readOnly: true
+        source_type:
+          allOf:
+          - $ref: '#/components/schemas/SourceTypeEnum'
+          readOnly: true
+        source_id:
+          type: string
+          readOnly: true
+        source_reference:
+          type: string
+          readOnly: true
+        party_name:
+          type: string
+          readOnly: true
+        message:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/TaxWarningStatusEnum'
+          readOnly: true
+        dismissed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        dismiss_reason:
+          type: string
+          readOnly: true
+        resolved_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - dismiss_reason
+      - dismissed_at
+      - id
+      - message
+      - party_name
+      - resolved_at
+      - severity
+      - source_id
+      - source_reference
+      - source_type
+      - status
+      - warning_type
+    TaxWarningStatusEnum:
+      enum:
+      - open
+      - dismissed
+      - resolved
+      type: string
+      description: |-
+        * `open` - Open
+        * `dismissed` - Dismissed
+        * `resolved` - Resolved
     TemplateTypeEnum:
       enum:
       - sales_tax_invoice
@@ -9531,6 +11988,38 @@ components:
       required:
       - access
       - refresh
+    WarningTypeEnum:
+      enum:
+      - company_trn_missing
+      - customer_trn_missing
+      - supplier_trn_missing
+      - vat_disabled_sales
+      - vat_disabled_purchase
+      - vat_disabled_expense
+      - vat_rate_changed
+      - vat_amount_mismatch
+      - sales_invoice_cancelled
+      - purchase_invoice_cancelled
+      - expense_cancelled
+      - quotation_not_tax_invoice
+      - missing_print_template_tax_fields
+      - other
+      type: string
+      description: |-
+        * `company_trn_missing` - Company TRN Missing
+        * `customer_trn_missing` - Customer TRN Missing
+        * `supplier_trn_missing` - Supplier TRN Missing
+        * `vat_disabled_sales` - VAT Disabled on Sales
+        * `vat_disabled_purchase` - VAT Disabled on Purchase
+        * `vat_disabled_expense` - VAT Disabled on Expense
+        * `vat_rate_changed` - VAT Rate Changed
+        * `vat_amount_mismatch` - VAT Amount Mismatch
+        * `sales_invoice_cancelled` - Sales Invoice Cancelled
+        * `purchase_invoice_cancelled` - Purchase Invoice Cancelled
+        * `expense_cancelled` - Expense Cancelled
+        * `quotation_not_tax_invoice` - Quotation Not Tax Invoice
+        * `missing_print_template_tax_fields` - Missing Print Template Tax Fields
+        * `other` - Other
   securitySchemes:
     jwtAuth:
       type: http

@@ -10,6 +10,14 @@ import {
   Clock, Calendar, Settings, Shield, Lock, Wallet, Tag, Star, BarChart2
 } from "lucide-react";
 import { toast } from "sonner";
+import { useCustomers, useCustomerDetail } from "@/hooks/api/useTenantResources";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { toModuleCustomer } from "./moduleMappers";
+import { IS_MOCK_MODE } from "@/services/config";
+import { useCustomerProfileTabs, type CustomerProfileTabKey } from "@/features/profiles/useCustomerProfileTabs";
+import { ProfileTabBody } from "@/features/profiles/ProfileTabState";
+import { LiveCustomerCollectionModal } from "@/features/payments/LivePaymentModals";
+import { ApiUnavailableState } from "@/shared/components/ApiStates";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -100,7 +108,7 @@ interface Customer {
   balance: number; creditLimit: number; creditStatus: CreditStatus;
   lastInvoice: string; lastCollection: string; active: boolean; openingBalance: number;
 }
-const CUSTOMERS: Customer[] = [
+const MOCK_CUSTOMERS: Customer[] = [
   { id: "cu1", nameAr: "مطعم الخليج",         nameEn: "Al Khalij Restaurant",  type: "credit", category: "restaurant", phone: "+971 50 123 4567", whatsapp: "+971 50 123 4567", email: "info@khalij.ae",   trn: "",                 emirate: "دبي",       balance: 12450,  creditLimit: 15000, creditStatus: "near",     lastInvoice: "2025-01-28", lastCollection: "2025-01-15", active: true,  openingBalance: 2000 },
   { id: "cu2", nameAr: "سوبر ماركت المدينة", nameEn: "Al Madina Supermarket",  type: "credit", category: "supermarket", phone: "+971 55 987 6543", whatsapp: "+971 55 987 6543", email: "orders@madina.ae", trn: "100123456700003",   emirate: "الشارقة",  balance: 18700,  creditLimit: 15000, creditStatus: "exceeded", lastInvoice: "2025-01-28", lastCollection: "2025-01-10", active: true,  openingBalance: 5000 },
   { id: "cu3", nameAr: "مطبخ الإمارات",       nameEn: "Emirates Kitchen",       type: "cash",   category: "kitchen",    phone: "+971 50 654 3210", whatsapp: "+971 50 654 3210", email: "",                trn: "",                 emirate: "أبوظبي",   balance: 0,      creditLimit: 0,     creditStatus: "clear",    lastInvoice: "2025-01-27", lastCollection: "2025-01-27", active: true,  openingBalance: 0 },
@@ -206,6 +214,29 @@ export function CustomersListScreen({ lang, role, onNavigate, setSelectedCustome
   const canCreate = role === "owner" || role === "accountant";
   const canCollect = role === "owner" || role === "accountant";
 
+  const { items: customerRows, loading, error, forbidden, reload } = useCustomers(
+    search ? { search } : undefined,
+    async () =>
+      MOCK_CUSTOMERS.map((c) => ({
+        id: c.id,
+        name: c.nameAr,
+        nameAr: c.nameAr,
+        nameEn: c.nameEn,
+        phone: c.phone,
+        balance: c.balance,
+        creditLimit: c.creditLimit,
+        overdue: c.creditStatus === "exceeded",
+        customerType: c.type,
+        isActive: c.active,
+        trn: c.trn,
+      })),
+  );
+  const CUSTOMERS = customerRows.map(toModuleCustomer);
+
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+
   const filtered = CUSTOMERS.filter(c => {
     const s = search.toLowerCase();
     return (!s || c.nameAr.includes(search) || c.nameEn.toLowerCase().includes(s) || c.phone.includes(s)) &&
@@ -222,7 +253,7 @@ export function CustomersListScreen({ lang, role, onNavigate, setSelectedCustome
     { v: CUSTOMERS.filter(c => c.creditStatus === "exceeded").length.toString(), ar: "تجاوزوا الحد الائتماني", en: "Credit Exceeded", bg: "bg-red-600" },
     { v: CUSTOMERS.filter(c => c.type === "cash").length.toString(),   ar: "عملاء نقدي",    en: "Cash Customers",       bg: "bg-emerald-600" },
     { v: CUSTOMERS.filter(c => c.type === "credit").length.toString(), ar: "عملاء آجل",     en: "Credit Customers",     bg: "bg-blue-500" },
-    { v: "AED 5,000",                                          ar: "تحصيلات اليوم",          en: "Today's Collections",  bg: "bg-violet-500" },
+    { v: IS_MOCK_MODE ? "AED 5,000" : "AED 0",                                          ar: "تحصيلات اليوم",          en: "Today's Collections",  bg: "bg-violet-500" },
   ];
 
   return (
@@ -479,8 +510,21 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
   const [showCreditOverride, setShowCreditOverride] = useState(false);
   const [showSpecialPriceModal, setShowSpecialPriceModal] = useState(false);
   const [showWhatsApp, setShowWhatsApp] = useState(false);
+  const profileTabs = useCustomerProfileTabs(customerId, tab as CustomerProfileTabKey);
 
-  const c = CUSTOMERS.find(x => x.id === customerId) || CUSTOMERS[0];
+  const { item: row, loading, error, forbidden, reload } = useCustomerDetail(
+    customerId,
+    async (id) => {
+      const m = MOCK_CUSTOMERS.find((x) => x.id === id);
+      if (!m) return null;
+      return { id: m.id, name: m.nameAr, nameAr: m.nameAr, nameEn: m.nameEn, phone: m.phone, balance: m.balance, creditLimit: m.creditLimit, overdue: m.creditStatus === "exceeded", customerType: m.type, isActive: m.active, trn: m.trn };
+    },
+  );
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+  const c = row ? toModuleCustomer(row) : null;
+  if (!c) return <EmptyState lang={lang} messageAr="لا يوجد عملاء بعد" messageEn="No customers yet" />;
   const canEdit = role === "owner" || role === "accountant";
   const canCollect = role === "owner" || role === "accountant";
   const canOverrideCredit = role === "owner";
@@ -562,15 +606,26 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
           {tab === "overview" && (
             <div className="space-y-5">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
+                {IS_MOCK_MODE ? [
                   { v: "AED 11,149", ar: "إجمالي المبيعات", en: "Total Sales", cls: "text-[#0F2C59]" },
                   { v: "AED 7,195", ar: "إجمالي التحصيلات", en: "Total Collections", cls: "text-emerald-600" },
                   { v: `AED ${c.balance.toLocaleString()}`, ar: "الرصيد المستحق", en: "Outstanding", cls: c.balance > 0 ? "text-red-500" : "text-emerald-600" },
                   { v: "3", ar: "فواتير غير مسددة", en: "Unpaid Invoices", cls: "text-amber-600" },
-                ].map(f => <Card key={f.ar} className="p-3 text-center"><div className={`text-base font-black font-mono ${f.cls}`}>{f.v}</div><div className="text-[10px] font-bold text-slate-400 mt-0.5">{isRTL ? f.ar : f.en}</div></Card>)}
+                ].map(f => <Card key={f.ar} className="p-3 text-center"><div className={`text-base font-black font-mono ${f.cls}`}>{f.v}</div><div className="text-[10px] font-bold text-slate-400 mt-0.5">{isRTL ? f.ar : f.en}</div></Card>) : (() => {
+                  const totalSales = profileTabs.invoices.data.reduce((s, i) => s + i.total, 0);
+                  const totalColl = profileTabs.collections.data.reduce((s, i) => s + i.amount, 0);
+                  const unpaid = profileTabs.invoices.data.filter((i) => i.remaining > 0).length;
+                  return [
+                    { v: `AED ${totalSales.toLocaleString()}`, ar: "إجمالي المبيعات", en: "Total Sales", cls: "text-[#0F2C59]" },
+                    { v: `AED ${totalColl.toLocaleString()}`, ar: "إجمالي التحصيلات", en: "Total Collections", cls: "text-emerald-600" },
+                    { v: `AED ${c.balance.toLocaleString()}`, ar: "الرصيد المستحق", en: "Outstanding", cls: c.balance > 0 ? "text-red-500" : "text-emerald-600" },
+                    { v: String(unpaid), ar: "فواتير غير مسددة", en: "Unpaid Invoices", cls: "text-amber-600" },
+                  ].map(f => <Card key={f.ar} className="p-3 text-center"><div className={`text-base font-black font-mono ${f.cls}`}>{f.v}</div><div className="text-[10px] font-bold text-slate-400 mt-0.5">{isRTL ? f.ar : f.en}</div></Card>);
+                })()}
               </div>
               <div className="bg-slate-50 rounded-2xl p-4">
                 <div className="text-xs font-black text-slate-400 uppercase tracking-wide mb-3">{isRTL ? "آخر النشاطات" : "Latest Activity"}</div>
+                {IS_MOCK_MODE ? (
                 <div className="space-y-2">
                   {[
                     [isRTL ? "فاتورة بيع" : "Sales Invoice", "INV-2025-0086", "2025-01-28", "text-red-500", "AED 2,001.56"],
@@ -583,6 +638,18 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
                     </div>
                   ))}
                 </div>
+                ) : (
+                  <ProfileTabBody lang={lang} loading={profileTabs.invoices.loading || profileTabs.collections.loading} error={profileTabs.invoices.error ?? profileTabs.collections.error} forbidden={profileTabs.invoices.forbidden || profileTabs.collections.forbidden} unavailable={profileTabs.invoices.unavailable && profileTabs.collections.unavailable} empty={profileTabs.invoices.data.length === 0 && profileTabs.collections.data.length === 0} emptyAr="لا يوجد نشاط بعد" emptyEn="No activity yet">
+                    <div className="space-y-2">
+                      {[...profileTabs.invoices.data.slice(0, 3).map((inv) => [isRTL ? "فاتورة بيع" : "Sales Invoice", inv.number, inv.date, "text-red-500", `AED ${inv.total.toLocaleString()}`] as const), ...profileTabs.collections.data.slice(0, 3).map((col) => [isRTL ? "تحصيل" : "Collection", col.number, col.date, "text-emerald-600", `AED ${col.amount.toLocaleString()}`] as const)].map(([type, ref, date, cls, amt]) => (
+                        <div key={`${type}-${ref}`} className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2"><span className={`font-bold ${cls}`}>{type}</span><span className="font-mono text-slate-400 text-xs">{ref}</span></div>
+                          <div className="flex items-center gap-3"><span className="font-mono text-xs text-slate-400">{date}</span><span className={`font-mono font-black text-sm ${cls}`}>{amt}</span></div>
+                        </div>
+                      ))}
+                    </div>
+                  </ProfileTabBody>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 <Btn size="sm" variant="secondary" onClick={() => setShowSpecialPriceModal(true)}><Tag size={13} />{isRTL ? "الأسعار الخاصة" : "Special Prices"}</Btn>
@@ -595,26 +662,26 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
           {tab === "invoices" && (
             <div className="space-y-3">
               <div className="flex justify-end"><Btn size="sm" variant="green" onClick={() => onNavigate("sales-new")}><Plus size={13} />{isRTL ? "إنشاء فاتورة بيع" : "New Invoice"}</Btn></div>
+              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.invoices.loading} error={profileTabs.invoices.error} forbidden={profileTabs.invoices.forbidden} unavailable={profileTabs.invoices.unavailable} empty={!IS_MOCK_MODE && profileTabs.invoices.data.length === 0} onRetry={profileTabs.reloadInvoices} emptyAr="لا توجد فواتير لهذا العميل" emptyEn="No invoices for this customer">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "رقم الفاتورة" : "Invoice #", isRTL ? "التاريخ" : "Date", isRTL ? "الكراتين" : "Ct", "KG", isRTL ? "الإجمالي" : "Total", isRTL ? "المدفوع" : "Paid", isRTL ? "المتبقي" : "Remaining", isRTL ? "الحالة" : "Status", isRTL ? "إجراءات" : "Actions"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
+                  <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "رقم الفاتورة" : "Invoice #", isRTL ? "التاريخ" : "Date", isRTL ? "الإجمالي" : "Total", isRTL ? "المدفوع" : "Paid", isRTL ? "المتبقي" : "Remaining", isRTL ? "الحالة" : "Status", isRTL ? "إجراءات" : "Actions"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
                   <tbody className="divide-y divide-slate-100">
-                    {CUST_INVOICES.map(inv => (
+                    {(IS_MOCK_MODE ? CUST_INVOICES.map(inv => ({ id: inv.id, number: inv.id, date: inv.date, total: inv.total, paid: inv.paid, remaining: inv.remaining, status: inv.status })) : profileTabs.invoices.data).map(inv => (
                       <tr key={inv.id} className="hover:bg-slate-50">
-                        <td className="px-3 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{inv.id}</td>
+                        <td className="px-3 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{inv.number}</td>
                         <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{inv.date}</td>
-                        <td className="px-3 py-2.5 font-mono text-slate-600">{inv.cartons}</td>
-                        <td className="px-3 py-2.5 font-mono text-slate-600">{inv.kg}</td>
                         <td className="px-3 py-2.5 font-mono font-bold text-[#0F2C59]">AED {inv.total.toLocaleString()}</td>
                         <td className="px-3 py-2.5 font-mono text-emerald-600">AED {inv.paid.toLocaleString()}</td>
                         <td className="px-3 py-2.5">{inv.remaining > 0 ? <span className="font-mono font-black text-red-500 text-xs">AED {inv.remaining.toLocaleString()}</span> : <span className="text-emerald-500 text-xs font-bold">✓</span>}</td>
                         <td className="px-3 py-2.5"><InvStatusBadge status={inv.status} lang={lang} /></td>
-                        <td className="px-3 py-2.5"><div className="flex gap-1"><button className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"><Eye size={12} /></button><button className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"><Printer size={12} /></button>{inv.remaining > 0 && <button onClick={() => setShowCollect(true)} className="p-1 rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"><Wallet size={12} /></button>}</div></td>
+                        <td className="px-3 py-2.5"><div className="flex gap-1"><button type="button" aria-label={isRTL ? "عرض" : "View"} className="p-1 rounded-lg text-slate-400 hover:bg-slate-100" onClick={() => onNavigate("sales-detail")}><Eye size={12} /></button>{inv.remaining > 0 && <button type="button" aria-label={isRTL ? "تحصيل" : "Collect"} onClick={() => setShowCollect(true)} className="p-1 rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"><Wallet size={12} /></button>}</div></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              </ProfileTabBody>
             </div>
           )}
 
@@ -622,26 +689,24 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
           {tab === "collections" && (
             <div className="space-y-3">
               <div className="flex justify-end">{canCollect ? <Btn size="sm" variant="primary" onClick={() => setShowCollect(true)}><Plus size={13} />{isRTL ? "تسجيل تحصيل" : "Record Collection"}</Btn> : <PermBtn lang={lang}><Plus size={13} />{isRTL ? "تسجيل تحصيل" : "Record Collection"}</PermBtn>}</div>
-              {CUST_COLLECTIONS.length === 0 ? <div className="text-center py-8 text-slate-400 font-semibold">{isRTL ? "لا توجد تحصيلات لهذا العميل" : "No collections for this customer"}</div> : (
+              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.collections.loading} error={profileTabs.collections.error} forbidden={profileTabs.collections.forbidden} unavailable={profileTabs.collections.unavailable} empty={IS_MOCK_MODE ? CUST_COLLECTIONS.length === 0 : profileTabs.collections.data.length === 0} onRetry={profileTabs.reloadCollections} emptyAr="لا توجد تحصيلات لهذا العميل" emptyEn="No collections for this customer">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "رقم الإيصال" : "Receipt #", isRTL ? "التاريخ" : "Date", isRTL ? "المبلغ" : "Amount", isRTL ? "الطريقة" : "Method", isRTL ? "الفاتورة" : "Invoice", isRTL ? "المرجع" : "Ref", isRTL ? "بواسطة" : "By"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
+                    <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "رقم الإيصال" : "Receipt #", isRTL ? "التاريخ" : "Date", isRTL ? "المبلغ" : "Amount", isRTL ? "الطريقة" : "Method", isRTL ? "المرجع" : "Ref"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
                     <tbody className="divide-y divide-slate-100">
-                      {CUST_COLLECTIONS.map(r => (
+                      {(IS_MOCK_MODE ? CUST_COLLECTIONS.map(r => ({ id: r.id, number: r.id, date: r.date, amount: r.amount, method: r.method, reference: r.ref })) : profileTabs.collections.data).map(r => (
                         <tr key={r.id} className="hover:bg-slate-50">
-                          <td className="px-3 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{r.id}</td>
+                          <td className="px-3 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{r.number}</td>
                           <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{r.date}</td>
                           <td className="px-3 py-2.5 font-mono font-black text-emerald-600">AED {r.amount.toLocaleString()}</td>
                           <td className="px-3 py-2.5 text-xs font-bold"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{r.method}</span></td>
-                          <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{r.linkedInv}</td>
-                          <td className="px-3 py-2.5 font-mono text-xs text-slate-400">{r.ref || "—"}</td>
-                          <td className="px-3 py-2.5 text-xs text-slate-500">{r.by}</td>
+                          <td className="px-3 py-2.5 font-mono text-xs text-slate-400">{r.reference || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              )}
+              </ProfileTabBody>
             </div>
           )}
 
@@ -649,15 +714,15 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
           {tab === "statement" && (
             <div className="space-y-3">
               <div className="flex items-center justify-between"><p className="text-xs text-slate-400 font-semibold">{isRTL ? "معاينة كشف الحساب — اضغط لفتح الكشف الكامل" : "Statement preview — click to open full statement"}</p><Btn size="sm" variant="primary" onClick={() => onNavigate("customers-statement")}><FileText size={13} />{isRTL ? "كشف الحساب الكامل" : "Full Statement"}</Btn></div>
+              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.ledger.loading} error={profileTabs.ledger.error} forbidden={profileTabs.ledger.forbidden} unavailable={profileTabs.ledger.unavailable} empty={IS_MOCK_MODE ? STMT_MOVEMENTS.length === 0 : profileTabs.ledger.data.length === 0} onRetry={profileTabs.reloadLedger} emptyAr="لا توجد حركات في كشف الحساب" emptyEn="No statement movements">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "التاريخ" : "Date", isRTL ? "النوع" : "Type", isRTL ? "المرجع" : "Ref", isRTL ? "مدين" : "Debit", isRTL ? "دائن" : "Credit", isRTL ? "الرصيد" : "Balance"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
+                  <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "التاريخ" : "Date", isRTL ? "الوصف" : "Description", isRTL ? "مدين" : "Debit", isRTL ? "دائن" : "Credit", isRTL ? "الرصيد" : "Balance"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
                   <tbody className="divide-y divide-slate-100">
-                    {STMT_MOVEMENTS.map(m => (
+                    {(IS_MOCK_MODE ? STMT_MOVEMENTS.map(m => ({ id: m.id, date: m.date, description: m.desc, debit: m.debit, credit: m.credit, balance: m.balance })) : profileTabs.ledger.data).map(m => (
                       <tr key={m.id} className="hover:bg-slate-50">
                         <td className="px-3 py-2 font-mono text-xs text-slate-500">{m.date}</td>
-                        <td className="px-3 py-2"><StmtTypeBadge type={m.type} lang={lang} /></td>
-                        <td className="px-3 py-2 font-mono text-xs text-slate-400">{m.ref}</td>
+                        <td className="px-3 py-2 text-xs text-slate-600">{m.description}</td>
                         <td className="px-3 py-2 font-mono text-xs">{m.debit > 0 ? <span className="text-red-500 font-bold">AED {m.debit.toFixed(2)}</span> : "—"}</td>
                         <td className="px-3 py-2 font-mono text-xs">{m.credit > 0 ? <span className="text-emerald-600 font-bold">AED {m.credit.toFixed(2)}</span> : "—"}</td>
                         <td className="px-3 py-2 font-mono font-black text-xs text-[#0F2C59]">AED {m.balance.toFixed(2)}</td>
@@ -666,6 +731,7 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
                   </tbody>
                 </table>
               </div>
+              </ProfileTabBody>
             </div>
           )}
 
@@ -676,26 +742,24 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
                 <p className="text-xs text-slate-400 font-semibold">{isRTL ? "سيتم استخدام السعر الخاص تلقائياً عند إنشاء فاتورة بيع لهذا العميل." : "Special prices are automatically applied when creating a sales invoice for this customer."}</p>
                 {canEdit ? <Btn size="sm" variant="primary" onClick={() => setShowSpecialPriceModal(true)}><Plus size={13} />{isRTL ? "إضافة سعر خاص" : "Add Special Price"}</Btn> : <PermBtn lang={lang}><Plus size={13} />{isRTL ? "إضافة سعر خاص" : "Add Special Price"}</PermBtn>}
               </div>
-              {SPECIAL_PRICES.length === 0 ? <div className="text-center py-8 text-slate-400 font-semibold">{isRTL ? "لا توجد أسعار خاصة. سيتم استخدام الأسعار الافتراضية." : "No special prices. Default prices will be used."}</div> : (
+              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.specialPrices.loading} error={profileTabs.specialPrices.error} forbidden={profileTabs.specialPrices.forbidden} unavailable={profileTabs.specialPrices.unavailable} empty={IS_MOCK_MODE ? SPECIAL_PRICES.length === 0 : profileTabs.specialPrices.data.length === 0} onRetry={profileTabs.reloadPrices} emptyAr="لا توجد أسعار خاصة" emptyEn="No special prices">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "المنتج" : "Product", isRTL ? "السعر الافتراضي" : "Default", isRTL ? "السعر الخاص" : "Special Price", isRTL ? "نوع السعر" : "Type", isRTL ? "آخر تعديل" : "Last Edit", isRTL ? "الحالة" : "Status", isRTL ? "إجراءات" : "Actions"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
+                    <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "المنتج" : "Product", isRTL ? "السعر الخاص" : "Special Price", isRTL ? "نوع السعر" : "Type", isRTL ? "آخر تعديل" : "Last Edit", isRTL ? "الحالة" : "Status"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
                     <tbody className="divide-y divide-slate-100">
-                      {SPECIAL_PRICES.map((sp, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-3 py-2.5 font-bold text-slate-800">{isRTL ? sp.productAr : sp.product}<span className="ms-2 text-[10px] font-black bg-[#0F2C59]/10 text-[#0F2C59] px-1.5 py-0.5 rounded-full">{isRTL ? "سعر خاص" : "Special"}</span></td>
-                          <td className="px-3 py-2.5 font-mono text-slate-500">AED {sp.defaultPrice}/KG</td>
-                          <td className="px-3 py-2.5 font-mono font-black text-[#0F2C59]">AED {sp.specialPrice}/KG{sp.specialPrice < sp.defaultPrice && <span className="ms-1 text-[10px] font-black bg-red-100 text-red-600 px-1 py-0.5 rounded">{isRTL ? "أقل" : "Lower"}</span>}</td>
-                          <td className="px-3 py-2.5 text-xs text-slate-500">{isRTL ? "سعر الكيلو" : "Per KG"}</td>
-                          <td className="px-3 py-2.5 text-xs text-slate-400">{sp.lastEdit}</td>
-                          <td className="px-3 py-2.5"><span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{isRTL ? "نشط" : "Active"}</span></td>
-                          <td className="px-3 py-2.5"><div className="flex gap-1"><button className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"><Pencil size={12} /></button></div></td>
+                      {(IS_MOCK_MODE ? SPECIAL_PRICES.map((sp, i) => ({ id: String(i), product: isRTL ? sp.productAr : sp.product, price: sp.specialPrice, pt: sp.priceType, updated: sp.lastEdit, active: sp.active })) : profileTabs.specialPrices.data).map((sp) => (
+                        <tr key={sp.id} className="hover:bg-slate-50">
+                          <td className="px-3 py-2.5 font-bold text-slate-800">{sp.product}</td>
+                          <td className="px-3 py-2.5 font-mono font-black text-[#0F2C59]">AED {sp.price}</td>
+                          <td className="px-3 py-2.5 text-xs text-slate-500">{sp.pt}</td>
+                          <td className="px-3 py-2.5 text-xs text-slate-400">{sp.updated}</td>
+                          <td className="px-3 py-2.5"><span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{sp.active ? (isRTL ? "نشط" : "Active") : (isRTL ? "موقوف" : "Inactive")}</span></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              )}
+              </ProfileTabBody>
             </div>
           )}
 
@@ -706,27 +770,24 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex-1 me-3 flex gap-2"><Info size={13} className="text-amber-500 shrink-0 mt-0.5" /><p className="text-xs font-bold text-amber-700">{isRTL ? "المنتج المجاني يظهر بسعر صفر في فاتورة البيع ويحتاج صلاحية إذا تم تعديله يدوياً." : "Free products appear at zero price on sales invoice and require permission if manually edited."}</p></div>
                 {canEdit && <Btn size="sm" variant="primary"><Plus size={13} />{isRTL ? "إضافة" : "Add"}</Btn>}
               </div>
-              {FREE_PRODUCTS.length === 0 ? <div className="text-center py-8 text-slate-400 font-semibold">{isRTL ? "لا توجد منتجات مجانية لهذا العميل." : "No free products for this customer."}</div> : (
+              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.freeProducts.loading} error={profileTabs.freeProducts.error} forbidden={profileTabs.freeProducts.forbidden} unavailable={profileTabs.freeProducts.unavailable} empty={IS_MOCK_MODE ? FREE_PRODUCTS.length === 0 : profileTabs.freeProducts.data.length === 0} onRetry={profileTabs.reloadFree} emptyAr="لا توجد منتجات مجانية" emptyEn="No free products">
                 <div className="space-y-2">
-                  {FREE_PRODUCTS.map((fp, i) => (
-                    <div key={i} className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                  {(IS_MOCK_MODE ? FREE_PRODUCTS.map((fp, i) => ({ id: String(i), product: isRTL ? fp.productAr : fp.product, active: fp.active, note: fp.agreement })) : profileTabs.freeProducts.data.map(fp => ({ ...fp, note: "" }))).map((fp) => (
+                    <div key={fp.id} className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
                       <div>
-                        <div className="font-bold text-slate-800 text-sm">{isRTL ? fp.productAr : fp.product}</div>
-                        <div className="text-xs text-slate-500 font-semibold">{fp.agreement}{fp.condition ? ` (${fp.condition})` : ""}</div>
+                        <div className="font-bold text-slate-800 text-sm">{fp.product}</div>
+                        {fp.note && <div className="text-xs text-slate-500 font-semibold">{fp.note}</div>}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${fp.active ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>{fp.active ? (isRTL ? "نشط" : "Active") : (isRTL ? "موقوف" : "Inactive")}</span>
-                        {canEdit && <button className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"><Pencil size={12} /></button>}
-                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${fp.active ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>{fp.active ? (isRTL ? "نشط" : "Active") : (isRTL ? "موقوف" : "Inactive")}</span>
                     </div>
                   ))}
                 </div>
-              )}
+              </ProfileTabBody>
             </div>
           )}
 
-          {/* DISCOUNTS TAB */}
           {tab === "discounts" && (
+            IS_MOCK_MODE ? (
             <div className="space-y-3">
               <div className="bg-[#0F2C59]/5 border border-[#0F2C59]/15 rounded-xl p-3 flex gap-2"><Info size={13} className="text-[#0F2C59]/60 shrink-0 mt-0.5" /><p className="text-xs font-semibold text-slate-500">{isRTL ? "خصم التحصيل يؤثر على رصيد العميل فقط ولا يغير المخزون. مرتجع المبيعات يؤثر على المخزون." : "Collection discounts affect customer balance only. Sales returns affect inventory."}</p></div>
               {DISCOUNTS.length === 0 ? <div className="text-center py-8 text-slate-400 font-semibold">{isRTL ? "لا توجد خصومات أو تسويات" : "No discounts or adjustments"}</div> : (
@@ -740,10 +801,11 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
                 </div>
               )}
             </div>
+            ) : <ApiUnavailableState lang={lang} compact />
           )}
 
-          {/* AUDIT TAB */}
           {tab === "audit" && (
+            IS_MOCK_MODE ? (
             <div className="space-y-2">
               {[
                 { t: "2025-01-28 14:30", a: isRTL ? "تسجيل تحصيل" : "Collection Recorded",    u: "محمد (كاشير)", detail: "AED 2,001.56 — REC-001", dot: "bg-emerald-500" },
@@ -761,12 +823,16 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
                 </div>
               ))}
             </div>
+            ) : <ApiUnavailableState lang={lang} compact />
           )}
         </div>
       </Card>
 
       {/* Modals */}
-      {showCollect && <CustomerCollectModal lang={lang} customerId={c.id} onClose={() => setShowCollect(false)} />}
+      {showCollect && !IS_MOCK_MODE && (
+        <LiveCustomerCollectionModal lang={lang} customerId={c.id} onClose={() => setShowCollect(false)} onSuccess={() => { setShowCollect(false); void profileTabs.reloadCollections(); void profileTabs.reloadInvoices(); }} />
+      )}
+      {showCollect && IS_MOCK_MODE && <CustomerCollectModal lang={lang} customerId={c.id} onClose={() => setShowCollect(false)} />}
       {showCreditOverride && <CreditOverrideModal lang={lang} customerId={c.id} role={role} onClose={() => setShowCreditOverride(false)} />}
       {showSpecialPriceModal && <SpecialPriceModal lang={lang} onClose={() => setShowSpecialPriceModal(false)} />}
     </div>
@@ -776,7 +842,12 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
 // ── MODAL: CUSTOMER COLLECTION ─────────────────────────────────────────────────
 export function CustomerCollectModal({ lang, customerId, onClose }: { lang: Lang; customerId: string; onClose: () => void }) {
   const isRTL = lang === "ar";
-  const c = CUSTOMERS.find(x => x.id === customerId) || CUSTOMERS[0];
+  const { item: row } = useCustomerDetail(customerId, async (id) => {
+    const m = MOCK_CUSTOMERS.find((x) => x.id === id);
+    return m ? { id: m.id, name: m.nameAr, nameAr: m.nameAr, nameEn: m.nameEn, phone: m.phone, balance: m.balance, creditLimit: m.creditLimit, overdue: m.creditStatus === "exceeded", customerType: m.type, isActive: m.active, trn: m.trn } : null;
+  });
+  const c = row ? toModuleCustomer(row) : null;
+  if (!c) return null;
   const [mode, setMode] = useState<"invoice" | "account">("invoice");
   const [selectedInv, setSelectedInv] = useState(CUST_INVOICES[0].id);
   const [amount, setAmount] = useState("");
@@ -881,7 +952,15 @@ export function CustomerCollectModal({ lang, customerId, onClose }: { lang: Lang
 // ── SCREEN: CUSTOMER STATEMENT ─────────────────────────────────────────────────
 export function CustomerStatementScreen({ lang, customerId, onNavigate }: { lang: Lang; customerId: string; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
-  const c = CUSTOMERS.find(x => x.id === customerId) || CUSTOMERS[0];
+  const { item: row, loading, error, forbidden, reload } = useCustomerDetail(customerId, async (id) => {
+    const m = MOCK_CUSTOMERS.find((x) => x.id === id);
+    return m ? { id: m.id, name: m.nameAr, nameAr: m.nameAr, nameEn: m.nameEn, phone: m.phone, balance: m.balance, creditLimit: m.creditLimit, overdue: m.creditStatus === "exceeded", customerType: m.type, isActive: m.active, trn: m.trn } : null;
+  });
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+  const c = row ? toModuleCustomer(row) : null;
+  if (!c) return <EmptyState lang={lang} messageAr="لا يوجد عملاء بعد" messageEn="No customers yet" />;
   const [dateFrom, setDateFrom] = useState("2025-01-01");
   const [dateTo, setDateTo] = useState("2025-01-31");
   const totalDebit = STMT_MOVEMENTS.reduce((s, m) => s + m.debit, 0);
@@ -982,7 +1061,12 @@ export function CustomerStatementScreen({ lang, customerId, onNavigate }: { lang
 // ── MODAL: CREDIT LIMIT OVERRIDE ───────────────────────────────────────────────
 export function CreditOverrideModal({ lang, customerId, role, onClose }: { lang: Lang; customerId: string; role: TenantRole; onClose: () => void }) {
   const isRTL = lang === "ar";
-  const c = CUSTOMERS.find(x => x.id === customerId) || CUSTOMERS[1];
+  const { item: row } = useCustomerDetail(customerId, async (id) => {
+    const m = MOCK_CUSTOMERS.find((x) => x.id === id);
+    return m ? { id: m.id, name: m.nameAr, nameAr: m.nameAr, nameEn: m.nameEn, phone: m.phone, balance: m.balance, creditLimit: m.creditLimit, overdue: m.creditStatus === "exceeded", customerType: m.type, isActive: m.active, trn: m.trn } : null;
+  });
+  const c = row ? toModuleCustomer(row) : null;
+  if (!c) return null;
   const [newLimit, setNewLimit] = useState(String(Math.ceil(c.creditLimit * 1.5 / 1000) * 1000));
   const [reason, setReason] = useState("");
   const [limitType, setLimitType] = useState<"permanent" | "temp">("permanent");

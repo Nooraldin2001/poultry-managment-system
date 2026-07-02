@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // POULTRY HERO — REPORTS & ANALYTICS MODULE (self-contained)
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import {
   X, Check, ChevronRight, ChevronLeft, ChevronDown,
@@ -14,6 +14,13 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend
 } from "recharts";
 import { toast } from "sonner";
+import { LoadingState, ErrorState, ApiUnavailableState } from "@/shared/components/ApiStates";
+import { IS_MOCK_MODE } from "@/services/config";
+import { getReportsExportPayload } from "@/services/reportsService";
+import { ExportPayloadModal } from "@/features/export/ExportPayloadModal";
+import {
+  getSalesReport, getPurchasesReport, getInventoryReport, getProfitReport, getTaxSummaryReport,
+} from "@/services/reportsService";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -84,18 +91,59 @@ function PermBtn({ children, lang }: { children: ReactNode; lang: Lang }) {
 }
 
 // Shared export bar used on every report
-function ExportBar({ lang, title, canExport }: { lang: Lang; title: string; canExport: boolean }) {
+function ExportBar({ lang, title, canExport, dateFrom, dateTo, customerId, supplierId, productId, reportType }: {
+  lang: Lang; title: string; canExport: boolean;
+  dateFrom?: string; dateTo?: string; customerId?: string; supplierId?: string; productId?: string; reportType?: string;
+}) {
   const isRTL = lang === "ar";
+  const [exportPayload, setExportPayload] = useState<unknown>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const loadExport = async () => {
+    if (IS_MOCK_MODE) {
+      toast.info(isRTL ? "معاينة JSON متاحة في وضع API الحي فقط" : "JSON preview available in live API mode only");
+      return;
+    }
+    setExporting(true);
+    try {
+      const payload = await getReportsExportPayload({
+        date_from: dateFrom,
+        date_to: dateTo,
+        customer_id: customerId,
+        supplier_id: supplierId,
+        product_id: productId,
+        report_type: reportType ?? title,
+      });
+      setExportPayload(payload);
+    } catch (err) {
+      toast.error(isRTL ? "فشل تحميل بيانات التصدير" : "Failed to load export payload");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="flex items-center gap-2 flex-wrap">
       {canExport ? (
         <>
           <Btn variant="primary" size="sm" onClick={() => window.print()}><Printer size={13} />{isRTL ? "طباعة" : "Print"}</Btn>
-          <Btn variant="secondary" size="sm" onClick={() => toast.success(isRTL ? "تم تجهيز التقرير بنجاح" : "Report ready")}><Download size={13} />PDF</Btn>
-          <Btn variant="outline" size="sm" onClick={() => toast.success(isRTL ? "تم تجهيز التقرير بنجاح" : "Report ready")}><Download size={13} />Excel</Btn>
+          <Btn variant="secondary" size="sm" disabled><Download size={13} />PDF {isRTL ? "(قريباً)" : "(soon)"}</Btn>
+          <Btn variant="outline" size="sm" disabled><Download size={13} />Excel {isRTL ? "(قريباً)" : "(soon)"}</Btn>
+          <Btn variant="outline" size="sm" disabled={exporting} onClick={() => void loadExport()}>
+            <Download size={13} />{isRTL ? "معاينة JSON" : "JSON preview"}
+          </Btn>
         </>
       ) : (
         <PermBtn lang={lang}><Download size={13} />{isRTL ? "تصدير التقرير" : "Export"}</PermBtn>
+      )}
+      {exportPayload != null && (
+        <ExportPayloadModal
+          lang={lang}
+          titleAr="معاينة تصدير التقرير"
+          titleEn="Report export preview"
+          payload={exportPayload}
+          onClose={() => setExportPayload(null)}
+        />
       )}
     </div>
   );
@@ -305,8 +353,9 @@ export function ReportsHomeScreen({ lang, role, onNavigate }: {
 export function DailySummaryReport({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
   const canExport = role !== "cashier";
+  const today = new Date().toISOString().slice(0, 10);
 
-  const kpis = [
+  const kpis = IS_MOCK_MODE ? [
     { v: "AED 18,450", ar: "إجمالي المبيعات",       en: "Total Sales",        cls: "text-emerald-600 bg-emerald-50" },
     { v: "AED 8,000",  ar: "مبيعات كاش",            en: "Cash Sales",         cls: "text-emerald-600 bg-emerald-50" },
     { v: "AED 6,000",  ar: "مبيعات بنكية",           en: "Bank Sales",         cls: "text-blue-600 bg-blue-50" },
@@ -316,7 +365,7 @@ export function DailySummaryReport({ lang, role, onNavigate }: { lang: Lang; rol
     { v: "AED 9,600",  ar: "دفعات للموردين",        en: "Supplier Payments",  cls: "text-[#0F2C59] bg-[#0F2C59]/5" },
     { v: "AED 850",    ar: "مصروفات اليوم",          en: "Daily Expenses",     cls: "text-red-500 bg-red-50" },
     { v: "AED 6,400",  ar: "صافي ربح اليوم",        en: "Net Profit",         cls: "text-emerald-700 bg-emerald-50 font-black text-xl" },
-  ];
+  ] : [];
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -324,11 +373,15 @@ export function DailySummaryReport({ lang, role, onNavigate }: { lang: Lang; rol
         <button onClick={() => onNavigate("reports")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <div className="flex-1">
           <h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "تقرير اليوم" : "Daily Summary Report"}</h2>
-          <p className="text-xs text-slate-400 font-semibold">2025-01-28</p>
+          <p className="text-xs text-slate-400 font-semibold">{today}</p>
         </div>
-        <ExportBar lang={lang} title="daily" canExport={canExport} />
+        <ExportBar lang={lang} title="daily" reportType="daily" canExport={canExport} dateFrom={today} dateTo={today} />
       </div>
 
+      {!IS_MOCK_MODE ? (
+        <ApiUnavailableState lang={lang} messageAr="تقرير اليوم يعرض بيانات API عند توفر نقطة التقرير اليومي" messageEn="Daily report shows API data when the daily report endpoint is available" />
+      ) : (
+      <>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {kpis.map((k, i) => (
           <Card key={i} className={`p-4 text-center ${k.cls.split(" ")[1]}`}>
@@ -375,6 +428,8 @@ export function DailySummaryReport({ lang, role, onNavigate }: { lang: Lang; rol
           </div>
         </Card>
       ))}
+      </>
+      )}
     </div>
   );
 }
@@ -385,9 +440,27 @@ export function SalesReportScreen({ lang, role, onNavigate }: { lang: Lang; role
   const [preset, setPreset] = useState("month");
   const [from, setFrom] = useState("2025-01-01"); const [to, setTo] = useState("2025-01-31");
   const [reportTab, setReportTab] = useState("total");
+  const [reportData, setReportData] = useState<Record<string, unknown>>({});
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
   const canExport = role !== "cashier";
 
-  const kpis = [
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoading(true);
+    getSalesReport({ date_from: from, date_to: to })
+      .then((data) => { if (!cancelled) setReportData(data); })
+      .catch((err) => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [from, to]);
+
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const totals = (reportData.totals ?? {}) as Record<string, number>;
+  const kpis = IS_MOCK_MODE ? [
     { v: "AED 425,000", ar: "إجمالي المبيعات",   en: "Total Sales",      cls: "text-emerald-600" },
     { v: "AED 21,250",  ar: "إجمالي الضريبة",    en: "Total VAT",        cls: "text-[#0F2C59]" },
     { v: "AED 389,600", ar: "إجمالي المدفوع",    en: "Total Paid",       cls: "text-emerald-600" },
@@ -396,6 +469,15 @@ export function SalesReportScreen({ lang, role, onNavigate }: { lang: Lang; role
     { v: "14,560",      ar: "إجمالي الحبات",     en: "Total Pieces",     cls: "text-slate-700" },
     { v: "14,530 KG",   ar: "إجمالي الكيلو",     en: "Total KG",         cls: "text-slate-700" },
     { v: "AED 2,125",   ar: "متوسط قيمة الفاتورة",en: "Avg Invoice",     cls: "text-violet-600" },
+  ] : [
+    { v: `AED ${Number(totals.total_sales ?? 0).toLocaleString()}`, ar: "إجمالي المبيعات", en: "Total Sales", cls: "text-emerald-600" },
+    { v: `AED ${Number(totals.total_vat ?? 0).toLocaleString()}`, ar: "إجمالي الضريبة", en: "Total VAT", cls: "text-[#0F2C59]" },
+    { v: `AED ${Number(totals.total_paid ?? 0).toLocaleString()}`, ar: "إجمالي المدفوع", en: "Total Paid", cls: "text-emerald-600" },
+    { v: `AED ${Number(totals.total_remaining ?? 0).toLocaleString()}`, ar: "إجمالي المتبقي", en: "Total Remaining", cls: "text-red-500" },
+    { v: String(totals.total_cartons ?? 0), ar: "إجمالي الكراتين", en: "Total Cartons", cls: "text-slate-700" },
+    { v: String(totals.total_pieces ?? 0), ar: "إجمالي الحبات", en: "Total Pieces", cls: "text-slate-700" },
+    { v: `${Number(totals.total_kg ?? 0).toLocaleString()} KG`, ar: "إجمالي الكيلو", en: "Total KG", cls: "text-slate-700" },
+    { v: `AED ${Number(totals.avg_invoice ?? 0).toLocaleString()}`, ar: "متوسط قيمة الفاتورة", en: "Avg Invoice", cls: "text-violet-600" },
   ];
 
   const TABS = [["total", isRTL?"إجمالي المبيعات":"Total Sales"], ["customer", isRTL?"حسب العميل":"By Customer"], ["product", isRTL?"حسب المنتج":"By Product"], ["unpaid", isRTL?"غير المدفوعة":"Unpaid"]];
@@ -405,7 +487,7 @@ export function SalesReportScreen({ lang, role, onNavigate }: { lang: Lang; role
       <div className="flex items-start gap-3 flex-wrap">
         <button onClick={() => onNavigate("reports")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <div className="flex-1"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "تقارير المبيعات" : "Sales Reports"}</h2></div>
-        <ExportBar lang={lang} title="sales" canExport={canExport} />
+        <ExportBar lang={lang} title="sales" canExport={canExport} dateFrom={from} dateTo={to} />
       </div>
 
       <DateFilterBar lang={lang} from={from} to={to} onFrom={setFrom} onTo={setTo} preset={preset} onPreset={setPreset} />
@@ -481,9 +563,27 @@ export function PurchaseReportScreen({ lang, role, onNavigate }: { lang: Lang; r
   const isRTL = lang === "ar";
   const [preset, setPreset] = useState("month");
   const [from, setFrom] = useState("2025-01-01"); const [to, setTo] = useState("2025-01-31");
+  const [reportData, setReportData] = useState<Record<string, unknown>>({});
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
   const canExport = role !== "cashier";
 
-  const kpis = [
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoading(true);
+    getPurchasesReport({ date_from: from, date_to: to })
+      .then((data) => { if (!cancelled) setReportData(data); })
+      .catch((err) => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [from, to]);
+
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const totals = (reportData.totals ?? {}) as Record<string, number>;
+  const kpis = IS_MOCK_MODE ? [
     { v: "AED 298,000",  ar: "إجمالي المشتريات",       en: "Total Purchases",    cls: "text-[#0F2C59]" },
     { v: "AED 50,443",   ar: "مستحقات الموردين",       en: "Supplier Payables",  cls: "text-amber-600" },
     { v: "AED 247,557",  ar: "إجمالي المدفوع للموردين",en: "Total Paid",         cls: "text-emerald-600" },
@@ -492,6 +592,15 @@ export function PurchaseReportScreen({ lang, role, onNavigate }: { lang: Lang; r
     { v: "1,266",        ar: "إجمالي الكراتين",        en: "Total Cartons",      cls: "text-slate-700" },
     { v: "14,560 KG",    ar: "إجمالي الكيلو",          en: "Total KG",           cls: "text-slate-700" },
     { v: "AED 2,450",    ar: "إجمالي الخصومات",        en: "Total Deductions",   cls: "text-blue-600" },
+  ] : [
+    { v: `AED ${Number(totals.total_purchases ?? 0).toLocaleString()}`, ar: "إجمالي المشتريات", en: "Total Purchases", cls: "text-[#0F2C59]" },
+    { v: `AED ${Number(totals.supplier_payables ?? 0).toLocaleString()}`, ar: "مستحقات الموردين", en: "Supplier Payables", cls: "text-amber-600" },
+    { v: `AED ${Number(totals.total_paid ?? 0).toLocaleString()}`, ar: "إجمالي المدفوع للموردين", en: "Total Paid", cls: "text-emerald-600" },
+    { v: `AED ${Number(totals.remaining_balance ?? 0).toLocaleString()}`, ar: "الرصيد غير المسدد", en: "Remaining Balance", cls: "text-red-500" },
+    { v: `AED ${Number(totals.purchase_vat ?? 0).toLocaleString()}`, ar: "ضريبة المشتريات", en: "Purchase VAT", cls: "text-violet-600" },
+    { v: String(totals.total_cartons ?? 0), ar: "إجمالي الكراتين", en: "Total Cartons", cls: "text-slate-700" },
+    { v: `${Number(totals.total_kg ?? 0).toLocaleString()} KG`, ar: "إجمالي الكيلو", en: "Total KG", cls: "text-slate-700" },
+    { v: `AED ${Number(totals.total_deductions ?? 0).toLocaleString()}`, ar: "إجمالي الخصومات", en: "Total Deductions", cls: "text-blue-600" },
   ];
 
   return (
@@ -499,7 +608,7 @@ export function PurchaseReportScreen({ lang, role, onNavigate }: { lang: Lang; r
       <div className="flex items-start gap-3 flex-wrap">
         <button onClick={() => onNavigate("reports")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <div className="flex-1"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "تقارير المشتريات" : "Purchase Reports"}</h2></div>
-        <ExportBar lang={lang} title="purchases" canExport={canExport} />
+        <ExportBar lang={lang} title="purchases" canExport={canExport} dateFrom={from} dateTo={to} />
       </div>
       <DateFilterBar lang={lang} from={from} to={to} onFrom={setFrom} onTo={setTo} preset={preset} onPreset={setPreset} />
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -566,26 +675,48 @@ export function TaxReportScreen({ lang, role, onNavigate }: { lang: Lang; role: 
   const isRTL = lang === "ar";
   const [from, setFrom] = useState("2025-01-01"); const [to, setTo] = useState("2025-01-31");
   const [preset, setPreset] = useState("month");
+  const [reportData, setReportData] = useState<Record<string, unknown>>({});
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
   const canExport = role === "owner" || role === "accountant";
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoading(true);
+    getTaxSummaryReport({ date_from: from, date_to: to })
+      .then((data) => { if (!cancelled) setReportData(data); })
+      .catch((err) => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [from, to]);
+
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const totals = (reportData.totals ?? {}) as Record<string, number>;
+  const salesVat = IS_MOCK_MODE ? 21250 : Number(totals.sales_vat ?? 0);
+  const purchVat = IS_MOCK_MODE ? 14900 : Number(totals.purchase_vat ?? 0);
+  const netVat = salesVat - purchVat;
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
       <div className="flex items-start gap-3 flex-wrap">
         <button onClick={() => onNavigate("reports")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <div className="flex-1"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "تقرير الضريبة — الضريبة على القيمة المضافة" : "Tax Report — VAT"}</h2></div>
-        <ExportBar lang={lang} title="tax" canExport={canExport} />
+        <ExportBar lang={lang} title="tax" canExport={canExport} dateFrom={from} dateTo={to} />
       </div>
       <DateFilterBar lang={lang} from={from} to={to} onFrom={setFrom} onTo={setTo} preset={preset} onPreset={setPreset} />
 
       {/* VAT KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         {[
-          { v: "AED 21,250", ar: "ضريبة المبيعات",          en: "Sales VAT",           cls: "text-red-500 bg-red-50" },
-          { v: "AED 14,900", ar: "ضريبة المشتريات",         en: "Purchase VAT",        cls: "text-emerald-600 bg-emerald-50" },
-          { v: "AED 6,350",  ar: "صافي الضريبة المستحقة",  en: "Net VAT Payable",     cls: "text-[#0F2C59] bg-[#0F2C59]/5 font-black text-xl" },
-          { v: "2",           ar: "فواتير بدون TRN للعميل", en: "Invoices Missing TRN",cls: "text-amber-600 bg-amber-50" },
-          { v: "1",           ar: "مورد بدون TRN",          en: "Supplier Missing TRN",cls: "text-amber-600 bg-amber-50" },
-          { v: "12",          ar: "فواتير ضريبية",          en: "Tax Invoices",         cls: "text-blue-600 bg-blue-50" },
+          { v: `AED ${salesVat.toLocaleString()}`, ar: "ضريبة المبيعات", en: "Sales VAT", cls: "text-red-500 bg-red-50" },
+          { v: `AED ${purchVat.toLocaleString()}`, ar: "ضريبة المشتريات", en: "Purchase VAT", cls: "text-emerald-600 bg-emerald-50" },
+          { v: `AED ${netVat.toLocaleString()}`, ar: "صافي الضريبة المستحقة", en: "Net VAT Payable", cls: "text-[#0F2C59] bg-[#0F2C59]/5 font-black text-xl" },
+          { v: String(IS_MOCK_MODE ? 2 : totals.missing_customer_trn ?? 0), ar: "فواتير بدون TRN للعميل", en: "Invoices Missing TRN", cls: "text-amber-600 bg-amber-50" },
+          { v: String(IS_MOCK_MODE ? 1 : totals.missing_supplier_trn ?? 0), ar: "مورد بدون TRN", en: "Supplier Missing TRN", cls: "text-amber-600 bg-amber-50" },
+          { v: String(IS_MOCK_MODE ? 12 : totals.tax_invoices ?? 0), ar: "فواتير ضريبية", en: "Tax Invoices", cls: "text-blue-600 bg-blue-50" },
         ].map((k, i) => <Card key={i} className={`p-4 text-center ${k.cls.split(" ")[1]}`}><div className={`text-xl font-black font-mono ${k.cls.split(" ")[0]}`}>{k.v}</div><div className="text-[10px] font-bold text-slate-500 mt-0.5">{isRTL ? k.ar : k.en}</div></Card>)}
       </div>
 
@@ -594,7 +725,7 @@ export function TaxReportScreen({ lang, role, onNavigate }: { lang: Lang; role: 
         <Info size={16} className="text-[#0F2C59]/60 shrink-0 mt-0.5" />
         <div>
           <div className="font-black text-[#0F2C59] text-sm mb-1">{isRTL ? "المعادلة: صافي الضريبة = ضريبة المبيعات − ضريبة المشتريات" : "Formula: Net VAT = Sales VAT − Purchase VAT"}</div>
-          <div className="font-mono text-[#0F2C59] text-base">AED 21,250 − AED 14,900 = <strong>AED 6,350</strong></div>
+          <div className="font-mono text-[#0F2C59] text-base">AED {salesVat.toLocaleString()} − AED {purchVat.toLocaleString()} = <strong>AED {netVat.toLocaleString()}</strong></div>
         </div>
       </div>
 
@@ -660,8 +791,22 @@ export function ProfitReportScreen({ lang, role, onNavigate }: { lang: Lang; rol
   const isRTL = lang === "ar";
   const [preset, setPreset] = useState("month");
   const [from, setFrom] = useState("2025-01-01"); const [to, setTo] = useState("2025-01-31");
+  const [reportData, setReportData] = useState<Record<string, unknown>>({});
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
   const canView = role === "owner" || role === "accountant";
   const canExport = role === "owner" || role === "accountant";
+
+  useEffect(() => {
+    if (!canView || IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoading(true);
+    getProfitReport({ date_from: from, date_to: to })
+      .then((data) => { if (!cancelled) setReportData(data); })
+      .catch((err) => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [from, to, canView]);
 
   if (!canView) return (
     <div className="p-8 flex items-center justify-center min-h-[60vh]">
@@ -674,7 +819,11 @@ export function ProfitReportScreen({ lang, role, onNavigate }: { lang: Lang; rol
     </div>
   );
 
-  const kpis = [
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const totals = (reportData.totals ?? {}) as Record<string, number>;
+  const kpis = IS_MOCK_MODE ? [
     { v: "AED 425,000", ar: "إجمالي المبيعات",              en: "Total Sales",            cls: "text-emerald-600 bg-emerald-50" },
     { v: "AED 298,000", ar: "تكلفة البضاعة المباعة (FIFO)", en: "FIFO COGS",               cls: "text-red-500 bg-red-50" },
     { v: "AED 127,000", ar: "إجمالي الربح",                 en: "Gross Profit",            cls: "text-[#0F2C59] bg-[#0F2C59]/5" },
@@ -684,6 +833,16 @@ export function ProfitReportScreen({ lang, role, onNavigate }: { lang: Lang; rol
     { v: "AED 300",     ar: "خصومات التحصيل",                en: "Collection Discounts",    cls: "text-red-400 bg-red-50" },
     { v: "AED 87,950",  ar: "صافي الربح",                    en: "Net Profit",              cls: "text-emerald-700 bg-emerald-50 text-xl" },
     { v: "20.7%",       ar: "هامش الربح",                    en: "Profit Margin",           cls: "text-emerald-600 bg-emerald-50" },
+  ] : [
+    { v: `AED ${Number(totals.total_sales ?? 0).toLocaleString()}`, ar: "إجمالي المبيعات", en: "Total Sales", cls: "text-emerald-600 bg-emerald-50" },
+    { v: `AED ${Number(totals.cogs ?? 0).toLocaleString()}`, ar: "تكلفة البضاعة المباعة (FIFO)", en: "FIFO COGS", cls: "text-red-500 bg-red-50" },
+    { v: `AED ${Number(totals.gross_profit ?? 0).toLocaleString()}`, ar: "إجمالي الربح", en: "Gross Profit", cls: "text-[#0F2C59] bg-[#0F2C59]/5" },
+    { v: `AED ${Number(totals.daily_expenses ?? 0).toLocaleString()}`, ar: "المصروفات اليومية", en: "Daily Expenses", cls: "text-amber-600 bg-amber-50" },
+    { v: `AED ${Number(totals.monthly_expenses ?? 0).toLocaleString()}`, ar: "المصروفات الشهرية", en: "Monthly Expenses", cls: "text-amber-600 bg-amber-50" },
+    { v: `AED ${Number(totals.purchase_expenses ?? 0).toLocaleString()}`, ar: "مصروفات مرتبطة بالمشتريات", en: "Purchase-Linked Exp.", cls: "text-amber-600 bg-amber-50" },
+    { v: `AED ${Number(totals.collection_discounts ?? 0).toLocaleString()}`, ar: "خصومات التحصيل", en: "Collection Discounts", cls: "text-red-400 bg-red-50" },
+    { v: `AED ${Number(totals.net_profit ?? 0).toLocaleString()}`, ar: "صافي الربح", en: "Net Profit", cls: "text-emerald-700 bg-emerald-50 text-xl" },
+    { v: `${Number(totals.profit_margin ?? 0).toFixed(1)}%`, ar: "هامش الربح", en: "Profit Margin", cls: "text-emerald-600 bg-emerald-50" },
   ];
 
   return (
@@ -691,7 +850,7 @@ export function ProfitReportScreen({ lang, role, onNavigate }: { lang: Lang; rol
       <div className="flex items-start gap-3 flex-wrap">
         <button onClick={() => onNavigate("reports")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <div className="flex-1"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "تقرير صافي الربح" : "Net Profit Report"}</h2></div>
-        <ExportBar lang={lang} title="profit" canExport={canExport} />
+        <ExportBar lang={lang} title="profit" canExport={canExport} dateFrom={from} dateTo={to} />
       </div>
       <DateFilterBar lang={lang} from={from} to={to} onFrom={setFrom} onTo={setTo} preset={preset} onPreset={setPreset} />
 
@@ -792,7 +951,7 @@ export function CustomerReportScreen({ lang, role, onNavigate }: { lang: Lang; r
       <div className="flex items-start gap-3 flex-wrap">
         <button onClick={() => onNavigate("reports")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <div className="flex-1"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "تقارير العملاء" : "Customer Reports"}</h2></div>
-        <ExportBar lang={lang} title="customers" canExport={canExport} />
+        <ExportBar lang={lang} title="customers" canExport={canExport} dateFrom={from} dateTo={to} />
       </div>
       <DateFilterBar lang={lang} from={from} to={to} onFrom={setFrom} onTo={setTo} preset={preset} onPreset={setPreset} />
 
@@ -837,7 +996,7 @@ export function SupplierReportScreen({ lang, role, onNavigate }: { lang: Lang; r
       <div className="flex items-start gap-3 flex-wrap">
         <button onClick={() => onNavigate("reports")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <div className="flex-1"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "تقارير الموردين" : "Supplier Reports"}</h2></div>
-        <ExportBar lang={lang} title="suppliers" canExport={canExport} />
+        <ExportBar lang={lang} title="suppliers" canExport={canExport} dateFrom={from} dateTo={to} />
       </div>
       <DateFilterBar lang={lang} from={from} to={to} onFrom={setFrom} onTo={setTo} preset={preset} onPreset={setPreset} />
 
@@ -950,7 +1109,38 @@ export function InventoryReportScreen({ lang, role, onNavigate }: { lang: Lang; 
   const isRTL = lang === "ar";
   const [preset, setPreset] = useState("month");
   const [from, setFrom] = useState("2025-01-01"); const [to, setTo] = useState("2025-01-31");
+  const [reportData, setReportData] = useState<Record<string, unknown>>({});
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
   const canExport = role !== "cashier";
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoading(true);
+    getInventoryReport({ date_from: from, date_to: to })
+      .then((data) => { if (!cancelled) setReportData(data); })
+      .catch((err) => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [from, to]);
+
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const totals = (reportData.totals ?? {}) as Record<string, number>;
+  const inventoryKpis = IS_MOCK_MODE
+    ? [["103 كرتونة",isRTL?"الكراتين المتاحة":"Available Cartons","text-[#0F2C59] bg-[#0F2C59]/5"],["1,123 KG",isRTL?"الكيلو المتاح":"Available KG","text-[#0F2C59] bg-[#0F2C59]/5"],["AED 128,450",isRTL?"قيمة المخزون التقديرية":"Est. Inventory Value","text-emerald-600 bg-emerald-50"],["2",isRTL?"منتجات منخفضة":"Low Stock","text-amber-600 bg-amber-50"],["1",isRTL?"نفدت من المخزون":"Out of Stock","text-red-500 bg-red-50"],["4,200 KG",isRTL?"مضاف خلال الفترة":"Added This Period","text-emerald-600 bg-emerald-50"],["836 KG",isRTL?"مخصوم خلال الفترة":"Deducted This Period","text-red-500 bg-red-50"],["11",isRTL?"منتجات في الكتالوج":"Products in Catalog","text-slate-600 bg-slate-100"]]
+    : [
+      [String(totals.available_cartons ?? 0), isRTL ? "الكراتين المتاحة" : "Available Cartons", "text-[#0F2C59] bg-[#0F2C59]/5"],
+      [`${Number(totals.available_kg ?? 0).toLocaleString()} KG`, isRTL ? "الكيلو المتاح" : "Available KG", "text-[#0F2C59] bg-[#0F2C59]/5"],
+      [`AED ${Number(totals.inventory_value ?? 0).toLocaleString()}`, isRTL ? "قيمة المخزون التقديرية" : "Est. Inventory Value", "text-emerald-600 bg-emerald-50"],
+      [String(totals.low_stock_count ?? 0), isRTL ? "منتجات منخفضة" : "Low Stock", "text-amber-600 bg-amber-50"],
+      [String(totals.out_of_stock_count ?? 0), isRTL ? "نفدت من المخزون" : "Out of Stock", "text-red-500 bg-red-50"],
+      [`${Number(totals.added_kg ?? 0).toLocaleString()} KG`, isRTL ? "مضاف خلال الفترة" : "Added This Period", "text-emerald-600 bg-emerald-50"],
+      [`${Number(totals.deducted_kg ?? 0).toLocaleString()} KG`, isRTL ? "مخصوم خلال الفترة" : "Deducted This Period", "text-red-500 bg-red-50"],
+      [String(totals.product_count ?? 0), isRTL ? "منتجات في الكتالوج" : "Products in Catalog", "text-slate-600 bg-slate-100"],
+    ];
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -958,14 +1148,14 @@ export function InventoryReportScreen({ lang, role, onNavigate }: { lang: Lang; 
         <button onClick={() => onNavigate("reports")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <div className="flex-1"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "تقارير المخزون" : "Inventory Reports"}</h2></div>
         <div className="flex gap-2">
-          <ExportBar lang={lang} title="inventory" canExport={canExport} />
+          <ExportBar lang={lang} title="inventory" canExport={canExport} dateFrom={from} dateTo={to} />
           <Btn variant="outline" size="sm" onClick={() => onNavigate("inventory-valuation")}><BarChart2 size={13} />{isRTL ? "تقييم FIFO" : "FIFO Valuation"}</Btn>
         </div>
       </div>
       <DateFilterBar lang={lang} from={from} to={to} onFrom={setFrom} onTo={setTo} preset={preset} onPreset={setPreset} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[["103 كرتونة",isRTL?"الكراتين المتاحة":"Available Cartons","text-[#0F2C59] bg-[#0F2C59]/5"],["1,123 KG",isRTL?"الكيلو المتاح":"Available KG","text-[#0F2C59] bg-[#0F2C59]/5"],["AED 128,450",isRTL?"قيمة المخزون التقديرية":"Est. Inventory Value","text-emerald-600 bg-emerald-50"],["2",isRTL?"منتجات منخفضة":"Low Stock","text-amber-600 bg-amber-50"],["1",isRTL?"نفدت من المخزون":"Out of Stock","text-red-500 bg-red-50"],["4,200 KG",isRTL?"مضاف خلال الفترة":"Added This Period","text-emerald-600 bg-emerald-50"],["836 KG",isRTL?"مخصوم خلال الفترة":"Deducted This Period","text-red-500 bg-red-50"],["11",isRTL?"منتجات في الكتالوج":"Products in Catalog","text-slate-600 bg-slate-100"]].map(([v,l,c],i)=><Card key={i} className={`p-4 text-center ${c.split(" ")[1]}`}><div className={`text-xl font-black font-mono ${c.split(" ")[0]}`}>{v}</div><div className="text-[10px] font-bold text-slate-500 mt-0.5">{l}</div></Card>)}
+        {inventoryKpis.map(([v,l,c],i)=><Card key={i} className={`p-4 text-center ${c.split(" ")[1]}`}><div className={`text-xl font-black font-mono ${c.split(" ")[0]}`}>{v}</div><div className="text-[10px] font-bold text-slate-500 mt-0.5">{l}</div></Card>)}
       </div>
 
       <Card>

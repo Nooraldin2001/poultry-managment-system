@@ -260,6 +260,24 @@ receipt · cancel expense.
 - **Moving-weight product** → KG entered directly; cartons/pieces optional.
 - **Rounding** → define rounding policy for KG×price and VAT (see OPEN_QUESTIONS).
 
+## 19. Reporting rules (Phase 10)
+
+- All reports are **tenant-scoped** (`company_id`); cross-tenant filter IDs rejected.
+- **Draft** documents excluded from financial totals by default; **cancelled** excluded unless
+  `include_cancelled=true`.
+- **Quotations** are pipeline data only — never counted as revenue.
+- Sales revenue totals: `approved`, `partially_paid`, `paid` sales invoices.
+- Purchase totals: `approved`, `partially_paid`, `paid` purchase invoices.
+- Customer receivables: positive `current_balance` / open sales invoice `balance_due`.
+- Supplier payables: positive supplier balance / open purchase `balance_due`.
+- Inventory valuation: Σ remaining FIFO layer kg × unit cost.
+- Gross profit: approved sales `gross_profit` (FIFO COGS).
+- Net profit foundation: gross profit − posted operational expenses (purchase-linked payable/cost
+  expenses excluded, same as Phase 8).
+- VAT summary bridge reuses `apps.tax` net VAT estimate when available.
+- Export APIs return structured JSON only (no PDF/Excel); `reports.export` is audited.
+- Empty tenant returns zeros and empty arrays — no mock/fake production data.
+
 ---
 
 ## Formulas (reference)

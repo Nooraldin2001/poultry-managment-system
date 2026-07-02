@@ -10,6 +10,11 @@ import {
   CheckCircle, AlertCircle, Wallet, Pencil
 } from "lucide-react";
 import { toast } from "sonner";
+import { usePurchases, usePurchaseDetail } from "@/hooks/api/useTenantResources";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { toModulePurchase } from "./moduleMappers";
+import { IS_MOCK_MODE } from "@/services/config";
+import { LivePurchaseInvoiceScreen } from "@/features/invoices/LivePurchaseInvoiceScreen";
 
 // ── LOCAL TYPE ALIASES (mirrors App.tsx — no circular import) ──────────────────
 type Lang = "ar" | "en";
@@ -115,7 +120,7 @@ const P_SUPPLIERS = [
   { id: "ps4", name: "شركة الإمارات للدواجن",           nameAr: "شركة الإمارات للدواجن",      phone: "+971 2 654 3210",  balance: 8400,  creditType: "credit", trn: "100444555600009" },
 ];
 
-const P_INVOICES = [
+const MOCK_P_INVOICES = [
   { id: "PUR-2025-0042", date: "2025-01-28", supplierId: "ps1", supplier: "WESTLAND FOODSTUFF",   supplierInvNo: "WST-2025-1234", cartons: 146, pieces: 1460, kg: 1310, goodsTotal: 3305.55, deductions: 0,    vat: 165.28, netPayable: 3470.83, paid: 3470.83, remaining: 0,    method: "bank",   status: "paid"    as PurchStatus, user: "أحمد (مالك)"  },
   { id: "PUR-2025-0041", date: "2025-01-27", supplierId: "ps4", supplier: "الإمارات للدواجن",    supplierInvNo: "EMR-0041-2025", cartons: 400, pieces: 4000, kg: 4200, goodsTotal: 10000,   deductions: 1000, vat: 450,    netPayable: 9450,    paid: 5000,    remaining: 4450, method: "credit", status: "partial" as PurchStatus, user: "محمد (كاشير)" },
   { id: "PUR-2025-0040", date: "2025-01-26", supplierId: "ps2", supplier: "MNM Foodstuff",        supplierInvNo: "MNM-501",       cartons: 0,   pieces: 0,    kg: 0,    goodsTotal: 0,       deductions: 0,    vat: 0,      netPayable: 0,       paid: 0,       remaining: 0,    method: "cash",   status: "draft"   as PurchStatus, user: "محمد (كاشير)" },
@@ -208,19 +213,85 @@ function PurchStatusBadge({ status, lang }: { status: PurchStatus; lang: Lang })
   return <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.t}`}>{lang === "ar" ? cfg.ar : cfg.en}</span>;
 }
 
+type PurchListItem = (typeof MOCK_P_INVOICES)[number];
+
+function purchaseRowFromMock(inv: PurchListItem) {
+  return {
+    id: inv.id,
+    number: inv.id,
+    supplier: inv.supplier,
+    supplierId: inv.supplierId,
+    date: inv.date,
+    dueDate: inv.date,
+    status: inv.status,
+    paymentStatus: inv.method,
+    subtotal: inv.goodsTotal,
+    vat: inv.vat,
+    total: inv.netPayable,
+    paid: inv.paid,
+    balance: inv.remaining,
+  };
+}
+
+function mergePurchaseListItem(row: import("@/shared/types/entities").PurchaseInvoiceRow): PurchListItem & { recordId: string } {
+  const m = toModulePurchase(row);
+  const mock = IS_MOCK_MODE ? MOCK_P_INVOICES.find((x) => x.id === row.id || x.id === row.number) : undefined;
+  return {
+    id: m.number || m.id,
+    recordId: row.id,
+    date: m.date,
+    supplierId: m.supplierId,
+    supplier: m.supplier,
+    supplierInvNo: mock?.supplierInvNo ?? "",
+    cartons: mock?.cartons ?? 0,
+    pieces: mock?.pieces ?? 0,
+    kg: mock?.kg ?? 0,
+    goodsTotal: mock?.goodsTotal ?? m.subtotal,
+    deductions: mock?.deductions ?? 0,
+    vat: m.vat,
+    netPayable: m.total,
+    paid: m.paid,
+    remaining: m.balance,
+    method: mock?.method ?? m.paymentStatus,
+    status: m.status as PurchStatus,
+    user: mock?.user ?? "",
+  };
+}
+
 // ── SCREEN: PURCHASE LIST ──────────────────────────────────────────────────────
-export function PurchListScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; setSelectedPurchaseId?: (id: string) => void;
+}) {
   const isRTL = lang === "ar";
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [showPay, setShowPay] = useState<string | null>(null);
   const [showCancel, setShowCancel] = useState<string | null>(null);
 
+  const { items: purchaseRows, loading, error, forbidden, reload } = usePurchases(
+    search ? { search } : undefined,
+    async () => MOCK_P_INVOICES.map(purchaseRowFromMock),
+  );
+  const P_INVOICES = purchaseRows.map(mergePurchaseListItem);
+
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+
   const filtered = P_INVOICES.filter(inv => {
     const s = search.toLowerCase();
     return (!s || inv.id.toLowerCase().includes(s) || inv.supplier.toLowerCase().includes(s) || inv.supplierInvNo.toLowerCase().includes(s)) &&
       (filterStatus === "all" || inv.status === filterStatus);
   });
+
+  const openDetail = (recordId: string) => {
+    setSelectedPurchaseId?.(recordId);
+    onNavigate("purchases-detail");
+  };
+  const openEdit = (recordId: string) => {
+    setSelectedPurchaseId?.(recordId);
+    onNavigate("purchases-new");
+  };
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -281,9 +352,9 @@ export function PurchListScreen({ lang, role, onNavigate }: { lang: Lang; role: 
                     <td className="px-3 py-3"><PurchStatusBadge status={inv.status} lang={lang} /></td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1">
-                        {inv.status === "draft" && <button onClick={() => onNavigate("purchases-new")} className="text-xs px-2 py-1 bg-[#0F2C59] text-white rounded-lg font-bold">{isRTL ? "تعديل" : "Edit"}</button>}
+                        {inv.status === "draft" && <button onClick={() => openEdit(inv.recordId)} className="text-xs px-2 py-1 bg-[#0F2C59] text-white rounded-lg font-bold">{isRTL ? "تعديل" : "Edit"}</button>}
                         {(inv.status === "approved" || inv.status === "partial" || inv.status === "credit") && <button onClick={() => setShowPay(inv.id)} className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg font-bold">{isRTL ? "دفعة" : "Pay"}</button>}
-                        <button onClick={() => onNavigate("purchases-detail")} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#0F2C59] hover:text-white transition-all"><Eye size={13} /></button>
+                        <button onClick={() => openDetail(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#0F2C59] hover:text-white transition-all"><Eye size={13} /></button>
                         <button onClick={() => onNavigate("purchases-preview")} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all"><Printer size={13} /></button>
                         {inv.status !== "cancelled" && inv.status !== "draft" && role === "owner" && <button onClick={() => setShowCancel(inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all"><Ban size={13} /></button>}
                       </div>
@@ -310,7 +381,7 @@ export function PurchListScreen({ lang, role, onNavigate }: { lang: Lang; role: 
                 <div className={`rounded-xl p-2 ${inv.remaining > 0 ? "bg-red-50" : "bg-slate-50"}`}><div className={`font-mono font-black text-sm ${inv.remaining > 0 ? "text-red-500" : "text-slate-300"}`}>{inv.remaining > 0 ? inv.remaining.toLocaleString() : "—"}</div><div className="text-[10px] text-slate-400 font-bold">{isRTL ? "المتبقي" : "Remaining"}</div></div>
               </div>
               <div className="flex gap-2">
-                <Btn size="sm" variant="secondary" onClick={() => onNavigate("purchases-detail")}><Eye size={13} />{isRTL ? "عرض" : "View"}</Btn>
+                <Btn size="sm" variant="secondary" onClick={() => openDetail(inv.recordId)}><Eye size={13} />{isRTL ? "عرض" : "View"}</Btn>
                 {(inv.status === "approved" || inv.status === "partial" || inv.status === "credit") && <Btn size="sm" variant="green" onClick={() => setShowPay(inv.id)}><DollarSign size={13} />{isRTL ? "دفعة للمورد" : "Pay Supplier"}</Btn>}
               </div>
             </Card>
@@ -319,7 +390,7 @@ export function PurchListScreen({ lang, role, onNavigate }: { lang: Lang; role: 
       )}
 
       {filtered.length === 0 && (
-        <Card className="p-14 text-center"><ShoppingCart size={48} className="text-slate-200 mx-auto mb-4" /><h3 className="text-lg font-black text-slate-500 mb-2">{isRTL ? "لا توجد فواتير شراء" : "No purchase invoices"}</h3><Btn variant="primary" onClick={() => onNavigate("purchases-new")}><Plus size={15} />{isRTL ? "فاتورة شراء جديدة" : "New Purchase Invoice"}</Btn></Card>
+        <EmptyState lang={lang} messageAr="لا توجد فواتير شراء بعد" messageEn="No purchase invoices yet" />
       )}
 
       {showPay && <SupplierPayModal lang={lang} invoiceId={showPay} onClose={() => setShowPay(null)} />}
@@ -329,7 +400,20 @@ export function PurchListScreen({ lang, role, onNavigate }: { lang: Lang; role: 
 }
 
 // ── SCREEN: NEW PURCHASE INVOICE ───────────────────────────────────────────────
-export function PurchNewScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+export function PurchNewScreen({ lang, role, onNavigate, purchaseId, onSaved }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; purchaseId?: string; onSaved?: (id: string) => void;
+}) {
+  if (!IS_MOCK_MODE) {
+    return (
+      <LivePurchaseInvoiceScreen
+        lang={lang}
+        role={role}
+        onNavigate={onNavigate}
+        invoiceId={purchaseId ?? null}
+        onSaved={onSaved}
+      />
+    );
+  }
   const isRTL = lang === "ar";
   const canEditPrice = role === "owner";
   const canApprove = role === "owner" || role === "accountant";
@@ -879,12 +963,39 @@ export function PurchNewScreen({ lang, role, onNavigate }: { lang: Lang; role: T
 }
 
 // ── SCREEN: PURCHASE INVOICE DETAIL ───────────────────────────────────────────
-export function PurchDetailScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+export function PurchDetailScreen({ lang, role, onNavigate, purchaseId }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; purchaseId?: string;
+}) {
+  if (!IS_MOCK_MODE) {
+    if (!purchaseId) {
+      return <EmptyState lang={lang} messageAr="اختر فاتورة شراء من القائمة" messageEn="Select a purchase invoice from the list" />;
+    }
+    return (
+      <LivePurchaseInvoiceScreen
+        lang={lang}
+        role={role}
+        onNavigate={onNavigate}
+        invoiceId={purchaseId}
+      />
+    );
+  }
   const isRTL = lang === "ar";
   const [tab, setTab] = useState("details");
   const [showPay, setShowPay] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
-  const inv = P_INVOICES[1];
+  const detailId = purchaseId ?? MOCK_P_INVOICES[1]?.id ?? null;
+  const { item: row, loading, error, forbidden, reload } = usePurchaseDetail(
+    detailId,
+    async (id) => {
+      const m = MOCK_P_INVOICES.find((x) => x.id === id);
+      return m ? purchaseRowFromMock(m) : null;
+    },
+  );
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+  const inv = row ? mergePurchaseListItem(row) : null;
+  if (!inv) return <EmptyState lang={lang} messageAr="لا توجد فواتير شراء بعد" messageEn="No purchase invoices yet" />;
 
   const canViewCosting = role === "owner" || role === "accountant";
   const detailTabs = [
@@ -1094,7 +1205,7 @@ export function PurchDetailScreen({ lang, role, onNavigate }: { lang: Lang; role
 // ── SCREEN: INTERNAL PURCHASE RECORD PREVIEW ──────────────────────────────────
 export function PurchPreviewScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: TenantScreen) => void; role?: TenantRole }) {
   const isRTL = lang === "ar";
-  const inv = P_INVOICES[0];
+  const inv = MOCK_P_INVOICES[0];
   const goodsTotal = 3305.55; const vat = 165.28; const total = 3470.83;
   const tCt = 146; const tPcs = 1460; const tKg = 1310;
 
@@ -1214,7 +1325,7 @@ export function PurchPreviewScreen({ lang, onNavigate }: { lang: Lang; onNavigat
 // ── MODAL: SUPPLIER PAYMENT ────────────────────────────────────────────────────
 export function SupplierPayModal({ lang, invoiceId, onClose }: { lang: Lang; invoiceId: string; onClose: () => void }) {
   const isRTL = lang === "ar";
-  const inv = P_INVOICES.find(i => i.id === invoiceId) || P_INVOICES[1];
+  const inv = MOCK_P_INVOICES.find(i => i.id === invoiceId) || MOCK_P_INVOICES[1];
   const [amount, setAmount] = useState(String(inv.remaining));
   const [method, setMethod] = useState("bank");
   const [date, setDate] = useState("2025-01-28");

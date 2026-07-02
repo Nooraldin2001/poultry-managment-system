@@ -39,6 +39,7 @@ DEFAULT_PREFIXES = {
     DocumentType.STOCK_ADJUSTMENT: "STK-",
     DocumentType.CUSTOMER_REFUND: "REF-C-",
     DocumentType.SUPPLIER_REFUND: "REF-S-",
+    DocumentType.TAX_ADJUSTMENT: "TAX-",
 }
 
 

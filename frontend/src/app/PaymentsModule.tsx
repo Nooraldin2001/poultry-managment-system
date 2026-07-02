@@ -15,6 +15,14 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line
 } from "recharts";
 import { toast } from "sonner";
+import { usePaymentMovements } from "@/hooks/api/useTenantResources";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { toModulePayment } from "./moduleMappers";
+import { IS_MOCK_MODE } from "@/services/config";
+import { LiveCustomerCollectionModal, LiveSupplierPaymentModal } from "@/features/payments/LivePaymentModals";
+import { LiveCustomerRefundScreen, LiveSupplierRefundScreen, LiveCancelPaymentModal } from "@/features/payments/LiveRefundScreens";
+import { LivePrintPreviewScreen } from "@/features/print/LivePrintPreviewScreen";
+import { getPaymentMovementPrintPreviewRaw } from "@/services/paymentService";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -113,7 +121,7 @@ interface PayMovement {
   party: string; amount: number; dir: MovDir; method: PayMethod | "";
   ref: string; receipt: string; invoice: string; user: string; status: "active" | "cancelled";
 }
-const PAY_MOVEMENTS: PayMovement[] = [
+const MOCK_PAY_MOVEMENTS: PayMovement[] = [
   { id:"M001", date:"2026-01-28 14:30", type:"collection",          typeAr:"تحصيل من عميل",             typeEn:"Customer Collection",  party:"مطعم الخليج",           amount:1000,  dir:"in",         method:"cash",   ref:"",        receipt:"REC-2026-00019", invoice:"INV-2026-00046",  user:"محمد (كاشير)",  status:"active"    },
   { id:"M002", date:"2026-01-28 13:00", type:"collection",          typeAr:"تحصيل من عميل",             typeEn:"Customer Collection",  party:"سوبر ماركت المدينة",   amount:3500,  dir:"in",         method:"bank",   ref:"TRF-001", receipt:"REC-2026-00020", invoice:"",               user:"أحمد (مالك)",   status:"active"    },
   { id:"M003", date:"2026-01-28 12:00", type:"supplier_payment",   typeAr:"دفعة لمورد",                typeEn:"Supplier Payment",     party:"WESTLAND FOODSTUFF",   amount:2000,  dir:"out",        method:"bank",   ref:"TRF-002", receipt:"PAY-2026-00008", invoice:"PUR-2026-00034",  user:"أحمد (مالك)",   status:"active"    },
@@ -200,6 +208,30 @@ function MethodBadge({ method, lang }: { method: PayMethod | ""; lang: Lang }) {
   return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${bg} ${t}`}>{isRTL ? ar : en}</span>;
 }
 
+function paymentRowFromMock(m: PayMovement) {
+  return { id: m.id, type: m.type, party: m.party, amount: m.amount, method: m.method || "cash", date: m.date.split(" ")[0], reference: m.ref, status: m.status === "active" ? "posted" : "cancelled" };
+}
+
+function enrichPayment(row: import("@/shared/types/entities").PaymentMovementRow, mock?: PayMovement): PayMovement {
+  const m = toModulePayment(row);
+  return {
+    id: m.id,
+    date: mock?.date ?? m.date,
+    type: (mock?.type ?? m.type) as MovType,
+    typeAr: mock?.typeAr ?? "",
+    typeEn: mock?.typeEn ?? "",
+    party: m.party,
+    amount: m.amount,
+    dir: mock?.dir ?? "in",
+    method: (mock?.method ?? m.method) as PayMethod | "",
+    ref: m.reference,
+    receipt: mock?.receipt ?? "",
+    invoice: mock?.invoice ?? "",
+    user: mock?.user ?? "",
+    status: (mock?.status ?? (m.status === "posted" ? "active" : "cancelled")) as "active" | "cancelled",
+  };
+}
+
 // ── SCREEN: PAYMENTS OVERVIEW ──────────────────────────────────────────────────
 export function PaymentsOverviewScreen({ lang, role, onNavigate }: {
   lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void;
@@ -211,15 +243,22 @@ export function PaymentsOverviewScreen({ lang, role, onNavigate }: {
   const canRecord = role !== "cashier" || true; // cashier can collect if permitted
   const canPay = role === "owner" || role === "accountant";
 
+  const { items: movementRows, loading, error, forbidden, reload } = usePaymentMovements(undefined, async () => MOCK_PAY_MOVEMENTS.map(paymentRowFromMock));
+  const PAY_MOVEMENTS = movementRows.map((row) => enrichPayment(row, MOCK_PAY_MOVEMENTS.find((m) => m.id === row.id)));
+
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+
   const primaryKpis = [
-    { v: "AED 4,500",  ar: "تحصيلات اليوم",          en: "Today's Collections",      bg: "bg-emerald-500", icon: ArrowUpRight },
-    { v: "AED 5,000",  ar: "دفعات الموردين اليوم",   en: "Supplier Payments Today",  bg: "bg-red-500",     icon: ArrowDownRight },
-    { v: "AED 5,500",  ar: "صافي النقد اليوم",        en: "Net Cash Today",           bg: "bg-[#0F2C59]",  icon: DollarSign },
-    { v: "AED 8,000",  ar: "كاش اليوم",               en: "Cash Today",               bg: "bg-emerald-600", icon: Wallet },
-    { v: "AED 9,500",  ar: "تحويلات بنكية اليوم",    en: "Bank Transfers Today",     bg: "bg-blue-500",    icon: CreditCard },
-    { v: "AED 3,000",  ar: "شيكات اليوم",             en: "Cheques Today",            bg: "bg-amber-500",   icon: FileText },
-    { v: "AED 35,400", ar: "مستحقات العملاء",         en: "Customer Receivables",     bg: "bg-red-600",     icon: Users },
-    { v: "AED 50,443", ar: "مستحقات الموردين",        en: "Supplier Payables",        bg: "bg-amber-600",   icon: Truck },
+    { v: IS_MOCK_MODE ? "AED 4,500" : "AED 0",  ar: "تحصيلات اليوم",          en: "Today's Collections",      bg: "bg-emerald-500", icon: ArrowUpRight },
+    { v: IS_MOCK_MODE ? "AED 5,000" : "AED 0",  ar: "دفعات الموردين اليوم",   en: "Supplier Payments Today",  bg: "bg-red-500",     icon: ArrowDownRight },
+    { v: IS_MOCK_MODE ? "AED 5,500" : "AED 0",  ar: "صافي النقد اليوم",        en: "Net Cash Today",           bg: "bg-[#0F2C59]",  icon: DollarSign },
+    { v: IS_MOCK_MODE ? "AED 8,000" : "AED 0",  ar: "كاش اليوم",               en: "Cash Today",               bg: "bg-emerald-600", icon: Wallet },
+    { v: IS_MOCK_MODE ? "AED 9,500" : "AED 0",  ar: "تحويلات بنكية اليوم",    en: "Bank Transfers Today",     bg: "bg-blue-500",    icon: CreditCard },
+    { v: IS_MOCK_MODE ? "AED 3,000" : "AED 0",  ar: "شيكات اليوم",             en: "Cheques Today",            bg: "bg-amber-500",   icon: FileText },
+    { v: IS_MOCK_MODE ? "AED 35,400" : "AED 0", ar: "مستحقات العملاء",         en: "Customer Receivables",     bg: "bg-red-600",     icon: Users },
+    { v: IS_MOCK_MODE ? "AED 50,443" : "AED 0", ar: "مستحقات الموردين",        en: "Supplier Payables",        bg: "bg-amber-600",   icon: Truck },
   ];
 
   return (
@@ -380,6 +419,13 @@ export function PaymentMovementsScreen({ lang, role, onNavigate, setSelectedRece
   const [showCancel, setShowCancel] = useState<string | null>(null);
   const canCancel = role === "owner" || role === "accountant";
 
+  const { items: movementRows, loading, error, forbidden, reload } = usePaymentMovements(undefined, async () => MOCK_PAY_MOVEMENTS.map(paymentRowFromMock));
+  const PAY_MOVEMENTS = movementRows.map((row) => enrichPayment(row, MOCK_PAY_MOVEMENTS.find((m) => m.id === row.id)));
+
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+
   const filtered = PAY_MOVEMENTS.filter(m =>
     (filterType === "all" || m.type === filterType) &&
     (filterDir === "all" || m.dir === filterDir)
@@ -483,6 +529,10 @@ export function PaymentMovementsScreen({ lang, role, onNavigate, setSelectedRece
         ))}
       </div>
 
+      {filtered.length === 0 && (
+        <EmptyState lang={lang} messageAr="لا توجد مدفوعات أو تحصيلات بعد" messageEn="No payments or collections yet" />
+      )}
+
       {showCancel && <CancelPaymentModal lang={lang} movementId={showCancel} onClose={() => setShowCancel(null)} />}
     </div>
   );
@@ -492,6 +542,9 @@ export function PaymentMovementsScreen({ lang, role, onNavigate, setSelectedRece
 export function CustomerCollectionModal({ lang, customerId = "", invoiceId = "", onClose }: {
   lang: Lang; customerId?: string; invoiceId?: string; onClose: () => void;
 }) {
+  if (!IS_MOCK_MODE) {
+    return <LiveCustomerCollectionModal lang={lang} customerId={customerId} invoiceId={invoiceId} onClose={onClose} />;
+  }
   const isRTL = lang === "ar";
   const [mode, setMode] = useState<"invoice" | "account">(invoiceId ? "invoice" : "invoice");
   const [custId, setCustId] = useState(customerId || "");
@@ -603,6 +656,9 @@ export function CustomerCollectionModal({ lang, customerId = "", invoiceId = "",
 export function SupplierPaymentModal({ lang, supplierId = "", invoiceId = "", onClose }: {
   lang: Lang; supplierId?: string; invoiceId?: string; onClose: () => void;
 }) {
+  if (!IS_MOCK_MODE) {
+    return <LiveSupplierPaymentModal lang={lang} supplierId={supplierId} onClose={onClose} />;
+  }
   const isRTL = lang === "ar";
   const [mode, setMode] = useState<"invoice" | "account">("invoice");
   const [suppId, setSuppId] = useState(supplierId || "");
@@ -684,6 +740,9 @@ export function SupplierPaymentModal({ lang, supplierId = "", invoiceId = "", on
 
 // ── SCREEN: CUSTOMER REFUND ────────────────────────────────────────────────────
 export function CustomerRefundScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+  if (!IS_MOCK_MODE) {
+    return <LiveCustomerRefundScreen lang={lang} onNavigate={onNavigate} Card={Card} Btn={Btn} FSelect={FSelect} FInput={FInput} />;
+  }
   const isRTL = lang === "ar";
   const [custId, setCustId] = useState("");
   const [amount, setAmount] = useState("");
@@ -750,10 +809,35 @@ export function CustomerRefundScreen({ lang, role, onNavigate }: { lang: Lang; r
   );
 }
 
+export function SupplierRefundScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: TenantScreen) => void }) {
+  if (!IS_MOCK_MODE) {
+    return <LiveSupplierRefundScreen lang={lang} onNavigate={onNavigate} Card={Card} Btn={Btn} FSelect={FSelect} FInput={FInput} />;
+  }
+  const isRTL = lang === "ar";
+  return (
+    <div className="p-8 text-center">
+      <p className="text-slate-500 font-bold">{isRTL ? "استرجاع المورد متاح في وضع API الحي" : "Supplier refund available in live API mode"}</p>
+      <Btn variant="outline" className="mt-4" onClick={() => onNavigate("payments")}>{isRTL ? "رجوع" : "Back"}</Btn>
+    </div>
+  );
+}
+
 // ── SCREEN: RECEIPT PREVIEW ────────────────────────────────────────────────────
 export function ReceiptPreviewScreen({ lang, onNavigate, receiptId }: { lang: Lang; onNavigate: (s: TenantScreen) => void; receiptId: string }) {
+  if (!IS_MOCK_MODE && receiptId) {
+    return (
+      <LivePrintPreviewScreen
+        lang={lang}
+        onNavigate={onNavigate}
+        backScreen="payments-movements"
+        titleAr="إيصال قبض / دفع"
+        titleEn="Payment Receipt"
+        loadPreview={() => getPaymentMovementPrintPreviewRaw(receiptId)}
+      />
+    );
+  }
   const isRTL = lang === "ar";
-  const m = PAY_MOVEMENTS.find(x => x.id === receiptId) || PAY_MOVEMENTS[0];
+  const m = MOCK_PAY_MOVEMENTS.find(x => x.id === receiptId) || MOCK_PAY_MOVEMENTS[0];
   const isCollection = m.type === "collection";
   const isSupplierPay = m.type === "supplier_payment";
   const isRefund = m.type === "customer_refund" || m.type === "supplier_refund";
@@ -834,9 +918,9 @@ export function PaymentMethodSummaryScreen({ lang, role, onNavigate }: { lang: L
     { v: "AED 3,000", ar: "الشيكات",                      en: "Cheques",            cls: "text-amber-600 bg-amber-50" },
   ];
   const sections: [string, string, string, PayMovement[]][] = [
-    ["كاش", "Cash", "bg-emerald-500", PAY_MOVEMENTS.filter(m => m.method === "cash")],
-    ["تحويل بنكي", "Bank Transfer", "bg-blue-500", PAY_MOVEMENTS.filter(m => m.method === "bank")],
-    ["شيك", "Cheque", "bg-amber-500", PAY_MOVEMENTS.filter(m => m.method === "cheque")],
+    ["كاش", "Cash", "bg-emerald-500", MOCK_PAY_MOVEMENTS.filter(m => m.method === "cash")],
+    ["تحويل بنكي", "Bank Transfer", "bg-blue-500", MOCK_PAY_MOVEMENTS.filter(m => m.method === "bank")],
+    ["شيك", "Cheque", "bg-amber-500", MOCK_PAY_MOVEMENTS.filter(m => m.method === "cheque")],
   ];
 
   return (
@@ -875,11 +959,11 @@ export function PaymentMethodSummaryScreen({ lang, role, onNavigate }: { lang: L
 // ── SCREEN: PAYMENTS REPORT ────────────────────────────────────────────────────
 export function PaymentsReportScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
-  const totalIn = PAY_MOVEMENTS.filter(m => m.dir === "in").reduce((s, m) => s + m.amount, 0);
-  const totalOut = PAY_MOVEMENTS.filter(m => m.dir === "out" && m.type === "supplier_payment").reduce((s, m) => s + m.amount, 0);
-  const totalColl = PAY_MOVEMENTS.filter(m => m.type === "collection").reduce((s, m) => s + m.amount, 0);
-  const totalRefCust = PAY_MOVEMENTS.filter(m => m.type === "customer_refund").reduce((s, m) => s + m.amount, 0);
-  const totalRefSupp = PAY_MOVEMENTS.filter(m => m.type === "supplier_refund").reduce((s, m) => s + m.amount, 0);
+  const totalIn = MOCK_PAY_MOVEMENTS.filter(m => m.dir === "in").reduce((s, m) => s + m.amount, 0);
+  const totalOut = MOCK_PAY_MOVEMENTS.filter(m => m.dir === "out" && m.type === "supplier_payment").reduce((s, m) => s + m.amount, 0);
+  const totalColl = MOCK_PAY_MOVEMENTS.filter(m => m.type === "collection").reduce((s, m) => s + m.amount, 0);
+  const totalRefCust = MOCK_PAY_MOVEMENTS.filter(m => m.type === "customer_refund").reduce((s, m) => s + m.amount, 0);
+  const totalRefSupp = MOCK_PAY_MOVEMENTS.filter(m => m.type === "supplier_refund").reduce((s, m) => s + m.amount, 0);
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -903,7 +987,7 @@ export function PaymentsReportScreen({ lang, role, onNavigate }: { lang: Lang; r
           <table className="w-full text-sm">
             <thead><tr className="bg-slate-50/80 border-b border-slate-200">{[isRTL?"التاريخ":"Date",isRTL?"رقم الحركة":"#",isRTL?"النوع":"Type",isRTL?"الطرف":"Party",isRTL?"المبلغ":"Amount",isRTL?"الاتجاه":"Direction",isRTL?"الطريقة":"Method",isRTL?"الإيصال":"Receipt",isRTL?"الحالة":"Status"].map((h,i)=><th key={i} className={`px-4 py-2.5 font-black text-xs text-slate-400 ${isRTL?"text-right":"text-left"}`}>{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {PAY_MOVEMENTS.map(m=>(
+              {MOCK_PAY_MOVEMENTS.map(m=>(
                 <tr key={m.id} className="hover:bg-slate-50/60">
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{m.date.split(" ")[0]}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{m.id}</td>
@@ -925,9 +1009,12 @@ export function PaymentsReportScreen({ lang, role, onNavigate }: { lang: Lang; r
 }
 
 // ── MODAL: CANCEL PAYMENT ──────────────────────────────────────────────────────
-function CancelPaymentModal({ lang, movementId, onClose }: { lang: Lang; movementId: string; onClose: () => void }) {
+function CancelPaymentModal({ lang, movementId, onClose, onCancelled }: { lang: Lang; movementId: string; onClose: () => void; onCancelled?: () => void }) {
+  if (!IS_MOCK_MODE) {
+    return <LiveCancelPaymentModal lang={lang} movementId={movementId} onClose={onClose} onCancelled={onCancelled} Btn={Btn} />;
+  }
   const isRTL = lang === "ar";
-  const m = PAY_MOVEMENTS.find(x => x.id === movementId)!;
+  const m = MOCK_PAY_MOVEMENTS.find(x => x.id === movementId)!;
   const [reason, setReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   return (

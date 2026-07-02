@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Cell
@@ -10,6 +10,11 @@ import {
   FileSpreadsheet, Clock, User, Lock, ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
+import { LoadingState, ErrorState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { IS_MOCK_MODE } from "@/services/config";
+import { getTaxSummaryLive, getTaxSalesVat, getTaxPurchaseVat, getTaxNetVat, listTaxWarnings, generateTaxWarnings, dismissTaxWarning, resolveTaxWarning } from "@/services/taxService";
+import { ReasonModal } from "@/features/invoices/ReasonModal";
+import { ApiError } from "@/services/api/errors";
 
 type Lang = "ar" | "en";
 type TenantRole = "owner" | "accountant" | "cashier";
@@ -140,13 +145,49 @@ function BackBtn({ lang, onClick }: { lang: Lang; onClick: () => void }) {
 export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
   const canAccess = role !== "cashier";
+  const [summary, setSummary] = useState({ outputVat: 21250, inputVat: 14900, netVat: 6350, warningCount: 5 });
+  const [warnings, setWarnings] = useState(TAX_WARNINGS);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([getTaxSummaryLive(), listTaxWarnings()])
+      .then(([taxSummary, taxWarnings]) => {
+        if (cancelled) return;
+        setSummary({
+          outputVat: taxSummary.outputVat,
+          inputVat: taxSummary.inputVat,
+          netVat: taxSummary.netVat,
+          warningCount: taxSummary.warningCount ?? taxWarnings.length,
+        });
+        setWarnings(taxWarnings.map((w, i) => ({
+          id: w.id,
+          ref: w.documentId ?? `W-${i + 1}`,
+          entity: w.documentType,
+          desc: w.message,
+          severity: w.severity === "high" ? "high" : "medium",
+          status: w.dismissed ? "dismissed" : "open",
+          type: w.documentType,
+        })) as typeof TAX_WARNINGS);
+      })
+      .catch((err) => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
   if (!canAccess) return (
     <div className="flex flex-col items-center justify-center h-64 gap-3 text-center p-6">
       <Lock size={40} className="text-slate-300" />
       <p className="text-lg font-semibold text-slate-500">{isRTL ? "ليس لديك صلاحية لعرض إدارة الضريبة" : "Access Denied"}</p>
     </div>
   );
-  const netVat = 21250 - 14900;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const netVat = summary.netVat;
   return (
     <div className={`p-4 md:p-6 space-y-5 ${isRTL ? "text-right" : "text-left"}`} dir={isRTL ? "rtl" : "ltr"}>
       {/* Header */}
@@ -173,10 +214,10 @@ export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; rol
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard label={isRTL ? "ضريبة المبيعات هذا الشهر" : "Sales VAT (Month)"} value={fmtAED(21250)} color="green" icon={TrendingUp} />
-        <KpiCard label={isRTL ? "ضريبة المشتريات هذا الشهر" : "Purchase VAT (Month)"} value={fmtAED(14900)} color="amber" icon={TrendingDown} />
+        <KpiCard label={isRTL ? "ضريبة المبيعات هذا الشهر" : "Sales VAT (Month)"} value={fmtAED(summary.outputVat)} color="green" icon={TrendingUp} />
+        <KpiCard label={isRTL ? "ضريبة المشتريات هذا الشهر" : "Purchase VAT (Month)"} value={fmtAED(summary.inputVat)} color="amber" icon={TrendingDown} />
         <KpiCard label={isRTL ? "صافي الضريبة التقديري" : "Net VAT Estimate"} value={fmtAED(netVat)} sub={isRTL ? "ضريبة مستحقة تقديرية" : "Est. VAT payable"} color="blue" icon={Hash} />
-        <KpiCard label={isRTL ? "تحذيرات TRN" : "TRN Warnings"} value="5" color="red" icon={AlertTriangle} />
+        <KpiCard label={isRTL ? "تحذيرات TRN" : "TRN Warnings"} value={String(summary.warningCount)} color="red" icon={AlertTriangle} />
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiCard label={isRTL ? "فواتير مبيعات ضريبية" : "Taxable Sales Inv."} value="86" color="green" icon={FileText} />
@@ -191,12 +232,12 @@ export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; rol
         <div className={`flex items-center gap-3 flex-wrap ${isRTL ? "flex-row-reverse justify-end" : ""}`}>
           <div className="bg-emerald-50 rounded-lg px-4 py-2 text-center">
             <p className="text-xs text-emerald-600">{isRTL ? "ضريبة المبيعات" : "Sales VAT"}</p>
-            <p className="font-bold text-emerald-700">{fmtAED(21250)}</p>
+            <p className="font-bold text-emerald-700">{fmtAED(summary.outputVat)}</p>
           </div>
           <span className="text-xl font-light text-slate-300">−</span>
           <div className="bg-amber-50 rounded-lg px-4 py-2 text-center">
             <p className="text-xs text-amber-600">{isRTL ? "ضريبة المشتريات" : "Purchase VAT"}</p>
-            <p className="font-bold text-amber-700">{fmtAED(14900)}</p>
+            <p className="font-bold text-amber-700">{fmtAED(summary.inputVat)}</p>
           </div>
           <span className="text-xl font-light text-slate-300">=</span>
           <div className="bg-[#0F2C59]/8 rounded-lg px-4 py-2 text-center">
@@ -231,7 +272,7 @@ export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; rol
             <button onClick={() => onNavigate("tax-warnings")} className="text-xs text-[#0F2C59] hover:underline">{isRTL ? "عرض الكل" : "View All"}</button>
           </div>
           <div className="space-y-2">
-            {TAX_WARNINGS.filter(w => w.status === "open").slice(0, 4).map(w => (
+            {warnings.filter(w => w.status === "open").slice(0, 4).map(w => (
               <div key={w.id} className="flex items-start gap-2 p-2 bg-slate-50 rounded-lg">
                 <AlertTriangle size={13} className={w.severity === "high" ? "text-red-500 mt-0.5 shrink-0" : "text-amber-500 mt-0.5 shrink-0"} />
                 <div className="min-w-0 flex-1">
@@ -271,8 +312,45 @@ export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; rol
 export function SalesVATReportScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("2025-06-01");
+  const [dateTo, setDateTo] = useState("2025-06-30");
+  const [apiRows, setApiRows] = useState<typeof SALES_VAT_ROWS>([]);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
   const canExport = role !== "cashier";
-  const rows = SALES_VAT_ROWS.filter(r =>
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoading(true);
+    getTaxSalesVat({ date_from: dateFrom, date_to: dateTo })
+      .then((data) => {
+        if (cancelled) return;
+        const raw = Array.isArray(data.rows) ? data.rows : [];
+        setApiRows(raw.map((r: Record<string, unknown>, i: number) => ({
+          id: String(r.id ?? r.number ?? i),
+          date: String(r.date ?? ""),
+          customer: String(r.customer ?? r.customer_name ?? ""),
+          trn: String(r.trn ?? ""),
+          subtotal: Number(r.subtotal ?? 0),
+          vatRate: Number(r.vat_rate ?? 5),
+          vat: Number(r.vat ?? 0),
+          total: Number(r.total ?? 0),
+          taxStatus: String(r.tax_status ?? "taxable"),
+          trnStatus: String(r.trn_status ?? "ok"),
+          user: String(r.user ?? ""),
+        })));
+      })
+      .catch((err) => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [dateFrom, dateTo]);
+
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const sourceRows = IS_MOCK_MODE ? SALES_VAT_ROWS : apiRows;
+  const rows = sourceRows.filter(r =>
     r.id.toLowerCase().includes(search.toLowerCase()) ||
     r.customer.includes(search)
   );
@@ -395,8 +473,46 @@ export function SalesVATReportScreen({ lang, role, onNavigate }: { lang: Lang; r
 export function PurchaseVATReportScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("2025-06-01");
+  const [dateTo, setDateTo] = useState("2025-06-30");
+  const [apiRows, setApiRows] = useState<typeof PURCH_VAT_ROWS>([]);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
   const canExport = role !== "cashier";
-  const rows = PURCH_VAT_ROWS.filter(r =>
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoading(true);
+    getTaxPurchaseVat({ date_from: dateFrom, date_to: dateTo })
+      .then((data) => {
+        if (cancelled) return;
+        const raw = Array.isArray(data.rows) ? data.rows : [];
+        setApiRows(raw.map((r: Record<string, unknown>, i: number) => ({
+          id: String(r.id ?? r.number ?? i),
+          suppInv: String(r.supplier_invoice_number ?? r.supp_inv ?? ""),
+          date: String(r.date ?? ""),
+          supplier: String(r.supplier ?? r.supplier_name ?? ""),
+          trn: String(r.trn ?? ""),
+          subtotal: Number(r.subtotal ?? 0),
+          vatRate: Number(r.vat_rate ?? 5),
+          vat: Number(r.vat ?? 0),
+          total: Number(r.total ?? 0),
+          taxStatus: String(r.tax_status ?? "taxable"),
+          trnStatus: String(r.trn_status ?? "ok"),
+          user: String(r.user ?? ""),
+        })));
+      })
+      .catch((err) => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [dateFrom, dateTo]);
+
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const sourceRows = IS_MOCK_MODE ? PURCH_VAT_ROWS : apiRows;
+  const rows = sourceRows.filter(r =>
     r.id.toLowerCase().includes(search.toLowerCase()) ||
     r.supplier.includes(search)
   );
@@ -496,10 +612,38 @@ export function NetVATScreen({ lang, role, onNavigate }: { lang: Lang; role: Ten
   const isRTL = lang === "ar";
   const [inclCancelled, setInclCancelled] = useState(false);
   const [inclManual, setInclManual] = useState(true);
-  const salesVat = 21250;
-  const purchVat = 14900;
-  const netVat = salesVat - purchVat;
+  const [dateFrom, setDateFrom] = useState("2025-06-01");
+  const [dateTo, setDateTo] = useState("2025-06-30");
+  const [salesVat, setSalesVat] = useState(21250);
+  const [purchVat, setPurchVat] = useState(14900);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
   const canExport = role !== "cashier";
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      getTaxSummaryLive({ date_from: dateFrom, date_to: dateTo }),
+      getTaxNetVat({ date_from: dateFrom, date_to: dateTo }),
+    ])
+      .then(([summary, netData]) => {
+        if (cancelled) return;
+        setSalesVat(summary.outputVat);
+        setPurchVat(summary.inputVat);
+        if (typeof netData.output_vat === "number") setSalesVat(netData.output_vat as number);
+        if (typeof netData.input_vat === "number") setPurchVat(netData.input_vat as number);
+      })
+      .catch((err) => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [dateFrom, dateTo]);
+
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const netVat = salesVat - purchVat;
 
   return (
     <div className={`p-4 md:p-6 space-y-5 ${isRTL ? "text-right" : "text-left"}`} dir={isRTL ? "rtl" : "ltr"}>
@@ -630,8 +774,44 @@ export function NetVATScreen({ lang, role, onNavigate }: { lang: Lang; role: Ten
 export function TaxWarningsScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
   const [filter, setFilter] = useState<"all" | "open" | "reviewed" | "dismissed">("all");
+  const [warningRows, setWarningRows] = useState(TAX_WARNINGS);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
+  const [generating, setGenerating] = useState(false);
+  const [dismissTarget, setDismissTarget] = useState<string | null>(null);
+  const [resolveTarget, setResolveTarget] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
   const canDismiss = role === "owner" || role === "accountant";
-  const rows = TAX_WARNINGS.filter(w => filter === "all" || w.status === filter);
+
+  const reloadWarnings = () => {
+    if (IS_MOCK_MODE) return;
+    setLoading(true);
+    listTaxWarnings()
+      .then((items) => {
+        setWarningRows(items.map((w, i) => ({
+          id: w.id,
+          date: "",
+          ref: w.documentId ?? `W-${i + 1}`,
+          entity: w.documentType,
+          desc: w.message,
+          severity: w.severity === "high" ? "high" : "medium",
+          status: w.dismissed ? "dismissed" : "open",
+          type: w.documentType,
+        })) as typeof TAX_WARNINGS);
+      })
+      .catch((err) => setError(err))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    reloadWarnings();
+  }, []);
+
+  if (loading) return <LoadingState lang={lang} />;
+  if (error && ApiError.isForbidden(error)) return <PermissionDeniedState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={reloadWarnings} />;
+
+  const rows = warningRows.filter(w => filter === "all" || w.status === filter);
 
   const typeLabel = (t: string, ar: boolean) => {
     const map: Record<string, [string, string]> = {
@@ -654,13 +834,36 @@ export function TaxWarningsScreen({ lang, role, onNavigate }: { lang: Lang; role
   return (
     <div className={`p-4 md:p-6 space-y-5 ${isRTL ? "text-right" : "text-left"}`} dir={isRTL ? "rtl" : "ltr"}>
       <BackBtn lang={lang} onClick={() => onNavigate("tax")} />
-      <h1 className="text-xl font-bold text-[#0F2C59]">{isRTL ? "تحذيرات الضريبة" : "Tax Warnings"}</h1>
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <h1 className="text-xl font-bold text-[#0F2C59]">{isRTL ? "تحذيرات الضريبة" : "Tax Warnings"}</h1>
+        {canDismiss && !IS_MOCK_MODE && (
+          <button
+            type="button"
+            disabled={generating}
+            onClick={async () => {
+              setGenerating(true);
+              try {
+                await generateTaxWarnings();
+                toast.success(isRTL ? "تم توليد التحذيرات" : "Warnings generated");
+                reloadWarnings();
+              } catch (err) {
+                toast.error(err instanceof ApiError ? err.message : "Failed");
+              } finally {
+                setGenerating(false);
+              }
+            }}
+            className="px-4 py-2 rounded-xl bg-[#0F2C59] text-white text-sm font-bold disabled:opacity-50"
+          >
+            {isRTL ? "توليد التحذيرات" : "Generate warnings"}
+          </button>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard label={isRTL ? "إجمالي التحذيرات" : "Total Warnings"} value={String(TAX_WARNINGS.length)} color="blue" icon={AlertTriangle} />
-        <KpiCard label={isRTL ? "تحذيرات TRN" : "TRN Warnings"} value={String(TAX_WARNINGS.filter(w => w.type.includes("trn")).length)} color="red" icon={Hash} />
-        <KpiCard label={isRTL ? "الضريبة المعدلة" : "VAT Adjusted"} value={String(TAX_WARNINGS.filter(w => w.type === "vat_rate_changed").length)} color="amber" icon={RefreshCw} />
-        <KpiCard label={isRTL ? "مفتوحة" : "Open"} value={String(TAX_WARNINGS.filter(w => w.status === "open").length)} color="red" icon={AlertCircle} />
+        <KpiCard label={isRTL ? "إجمالي التحذيرات" : "Total Warnings"} value={String(warningRows.length)} color="blue" icon={AlertTriangle} />
+        <KpiCard label={isRTL ? "تحذيرات TRN" : "TRN Warnings"} value={String(warningRows.filter(w => w.type.includes("trn")).length)} color="red" icon={Hash} />
+        <KpiCard label={isRTL ? "الضريبة المعدلة" : "VAT Adjusted"} value={String(warningRows.filter(w => w.type === "vat_rate_changed").length)} color="amber" icon={RefreshCw} />
+        <KpiCard label={isRTL ? "مفتوحة" : "Open"} value={String(warningRows.filter(w => w.status === "open").length)} color="red" icon={AlertCircle} />
       </div>
 
       {/* Filter tabs */}
@@ -700,8 +903,10 @@ export function TaxWarningsScreen({ lang, role, onNavigate }: { lang: Lang; role
                     <div className="flex gap-1">
                       <button onClick={() => toast.info(w.ref)} className="p-1 hover:bg-slate-100 rounded text-slate-500 text-xs">{isRTL ? "فتح" : "Open"}</button>
                       {canDismiss && w.status === "open" && (
-                        <button onClick={() => toast.success(isRTL ? "تم رفض التحذير" : "Warning dismissed")}
-                          className="p-1 hover:bg-red-50 rounded text-red-500 text-xs">{isRTL ? "رفض" : "Dismiss"}</button>
+                        <>
+                          <button onClick={() => setResolveTarget(w.id)} className="p-1 hover:bg-emerald-50 rounded text-emerald-600 text-xs">{isRTL ? "حل" : "Resolve"}</button>
+                          <button onClick={() => setDismissTarget(w.id)} className="p-1 hover:bg-red-50 rounded text-red-500 text-xs">{isRTL ? "رفض" : "Dismiss"}</button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -711,6 +916,55 @@ export function TaxWarningsScreen({ lang, role, onNavigate }: { lang: Lang; role
           </table>
         </div>
       </div>
+      {dismissTarget && (
+        <ReasonModal
+          lang={lang}
+          titleAr="رفض التحذير"
+          titleEn="Dismiss warning"
+          confirmLabelAr="رفض"
+          confirmLabelEn="Dismiss"
+          loading={actionLoading}
+          onClose={() => setDismissTarget(null)}
+          onConfirm={async (reason) => {
+            setActionLoading(true);
+            try {
+              await dismissTaxWarning(dismissTarget, reason);
+              toast.success(isRTL ? "تم الرفض" : "Dismissed");
+              setDismissTarget(null);
+              reloadWarnings();
+            } catch (err) {
+              toast.error(err instanceof ApiError ? err.message : "Failed");
+            } finally {
+              setActionLoading(false);
+            }
+          }}
+        />
+      )}
+      {resolveTarget && (
+        <ReasonModal
+          lang={lang}
+          titleAr="حل التحذير"
+          titleEn="Resolve warning"
+          confirmLabelAr="حل"
+          confirmLabelEn="Resolve"
+          loading={actionLoading}
+          optionalReason
+          onClose={() => setResolveTarget(null)}
+          onConfirm={async (reason) => {
+            setActionLoading(true);
+            try {
+              await resolveTaxWarning(resolveTarget, reason || undefined);
+              toast.success(isRTL ? "تم الحل" : "Resolved");
+              setResolveTarget(null);
+              reloadWarnings();
+            } catch (err) {
+              toast.error(err instanceof ApiError ? err.message : "Failed");
+            } finally {
+              setActionLoading(false);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

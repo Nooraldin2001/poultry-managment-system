@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // POULTRY HERO — SETTINGS, USERS & PERMISSIONS MODULE (self-contained)
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import {
   X, Check, ChevronRight, ChevronLeft, ChevronDown,
@@ -11,6 +11,16 @@ import {
   Calendar, Phone, Mail, Building2, Star, Zap, Crown
 } from "lucide-react";
 import { toast } from "sonner";
+import { IS_MOCK_MODE } from "@/services/config";
+import {
+  getTenantSettings, updateCompanySettings, getVatSettings, updateVatSettings,
+  listNumberingSettings, updateNumberingSettings, listPrintTemplateSettings, updatePrintTemplateSettings,
+} from "@/services/settingsService";
+import { listTenantUsers, suspendTenantUser, reactivateTenantUser, createTenantUser } from "@/services/userService";
+import { LoadingState, ErrorState, PermissionDeniedState, ApiUnavailableState, EmptyState } from "@/shared/components/ApiStates";
+import { FormErrors } from "@/shared/components/FormErrors";
+import { ApiError } from "@/services/api/errors";
+import { LiveUserPermissionsScreen } from "@/features/permissions/LiveUserPermissionsScreen";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -354,20 +364,76 @@ export function SettingsHomeScreen({ lang, role, onNavigate }: { lang: Lang; rol
 // ── SCREEN: COMPANY PROFILE ────────────────────────────────────────────────────
 export function CompanyProfileScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
-  const [nameAr, setNameAr] = useState("Prime Fresh Meat LLC");
-  const [nameEn, setNameEn] = useState("Prime Fresh Meat LLC");
+  const canManage = role === "owner" || role === "accountant";
+  const [nameAr, setNameAr] = useState("");
+  const [nameEn, setNameEn] = useState("");
   const [trn, setTrn] = useState("");
-  const [phone, setPhone] = useState("+971 54 321 6789");
-  const [email, setEmail] = useState("info@primefresh.ae");
-  const [license, setLicense] = useState("DM-2024-88912");
-  const [emirate, setEmirate] = useState("dubai");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [license, setLicense] = useState("");
+  const [emirate, setEmirate] = useState("");
   const [address, setAddress] = useState("");
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    setLoading(true);
+    getTenantSettings()
+      .then((s) => {
+        setNameAr(s.name_ar ?? "");
+        setNameEn(s.name_en ?? "");
+        setTrn(s.trn ?? "");
+        setPhone(s.phone ?? "");
+        setEmail(s.email ?? "");
+        setLicense(s.trade_license ?? "");
+        setEmirate(s.emirate ?? "");
+        setAddress(s.address ?? "");
+      })
+      .catch((e) => setError(e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم حفظ بيانات الشركة" : "Company profile saved");
+      return;
+    }
+    setSaving(true);
+    setFieldErrors({});
+    try {
+      await updateCompanySettings({
+        name_ar: nameAr,
+        name_en: nameEn,
+        trn,
+        phone,
+        email,
+        trade_license: license,
+        emirate,
+        address,
+      });
+      toast.success(isRTL ? "تم حفظ بيانات الشركة" : "Company profile saved");
+    } catch (e) {
+      setError(e);
+      if (e instanceof ApiError) setFieldErrors(e.fieldErrors);
+      toast.error(e instanceof ApiError ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!IS_MOCK_MODE && !canManage && role === "cashier") return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error && !nameAr) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
 
   return (
     <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-5">
       <SettingsHeader title="بيانات الشركة" titleEn="Company Profile" onBack={() => onNavigate("settings")} lang={lang}>
-        <Btn variant="primary" onClick={() => toast.success(isRTL ? "تم حفظ بيانات الشركة" : "Company profile saved")}><Check size={15} />{isRTL ? "حفظ التغييرات" : "Save Changes"}</Btn>
+        <Btn variant="primary" disabled={saving} onClick={() => void handleSave()}><Check size={15} />{isRTL ? "حفظ التغييرات" : "Save Changes"}</Btn>
       </SettingsHeader>
+      <FormErrors lang={lang} error={error} fieldErrors={fieldErrors} />
 
       {/* Identity */}
       <Card className="p-5">
@@ -387,6 +453,9 @@ export function CompanyProfileScreen({ lang, role, onNavigate }: { lang: Lang; r
       {/* Branding */}
       <Card className="p-5">
         <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "ب. الشعار والختم" : "B. Branding"}</h3>
+        {!IS_MOCK_MODE ? (
+          <ApiUnavailableState lang={lang} messageAr="رفع الشعار والختم والتوقيع غير متاح عبر API حالياً" messageEn="Logo, stamp, and signature upload is not available via API yet" />
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             [isRTL ? "شعار الشركة" : "Company Logo", isRTL ? "لم يتم رفع الشعار بعد" : "Logo not uploaded"],
@@ -400,6 +469,7 @@ export function CompanyProfileScreen({ lang, role, onNavigate }: { lang: Lang; r
             </div>
           ))}
         </div>
+        )}
         <div className="mt-4 bg-[#0F2C59]/5 rounded-xl p-3 flex gap-2"><Info size={13} className="text-[#0F2C59]/60 shrink-0 mt-0.5" /><p className="text-xs font-semibold text-slate-500">{isRTL ? "الشعار والختم والتوقيع يظهرون في الفواتير، الإيصالات، وكشوف الحساب." : "Logo, stamp and signature appear on invoices, receipts and statements."}</p></div>
       </Card>
     </div>
@@ -413,8 +483,50 @@ export function UsersListScreen({ lang, role, onNavigate, setSelectedUserId }: {
 }) {
   const isRTL = lang === "ar";
   const isOwner = role === "owner";
-  const userLimit = 3;
-  const limitReached = SETTINGS_USERS.length >= userLimit;
+  const [liveUsers, setLiveUsers] = useState<{ id: string; name: string; email: string; role: UserRole; active: boolean; lastLogin: string; customPerms: boolean }[]>([]);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    setLoading(true);
+    listTenantUsers()
+      .then((rows) => setLiveUsers(rows.map((u) => ({
+        id: u.id,
+        name: u.fullName,
+        email: u.email,
+        role: u.role as UserRole,
+        active: u.isActive,
+        lastLogin: u.dateJoined,
+        customPerms: false,
+      }))))
+      .catch((e) => setError(e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const users = IS_MOCK_MODE ? SETTINGS_USERS : liveUsers;
+  const userLimit = 50;
+  const limitReached = !IS_MOCK_MODE && users.length >= userLimit;
+
+  if (!IS_MOCK_MODE && role === "cashier") return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error && liveUsers.length === 0) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const handleToggleActive = async (userId: string, active: boolean) => {
+    if (IS_MOCK_MODE) return;
+    try {
+      if (active) await suspendTenantUser(userId);
+      else await reactivateTenantUser(userId);
+      const rows = await listTenantUsers();
+      setLiveUsers(rows.map((u) => ({
+        id: u.id, name: u.fullName, email: u.email, role: u.role as UserRole,
+        active: u.isActive, lastLogin: u.dateJoined, customPerms: false,
+      })));
+      toast.success(isRTL ? "تم تحديث حالة المستخدم" : "User status updated");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Update failed");
+    }
+  };
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -433,9 +545,9 @@ export function UsersListScreen({ lang, role, onNavigate, setSelectedUserId }: {
               {isRTL ? `الباقة الحالية تسمح بـ ${userLimit} مستخدمين` : `Current plan allows ${userLimit} users`}
             </span>
           </div>
-          <span className={`font-mono font-black text-lg ${limitReached ? "text-red-600" : "text-amber-700"}`}>{SETTINGS_USERS.length} / {userLimit}</span>
+          <span className={`font-mono font-black text-lg ${limitReached ? "text-red-600" : "text-amber-700"}`}>{users.length} / {userLimit}</span>
         </div>
-        <div className="w-full bg-white rounded-full h-2 border border-red-200"><div className={`h-2 rounded-full ${limitReached ? "bg-red-500" : "bg-amber-500"}`} style={{ width: `${(SETTINGS_USERS.length / userLimit) * 100}%` }} /></div>
+        <div className="w-full bg-white rounded-full h-2 border border-red-200"><div className={`h-2 rounded-full ${limitReached ? "bg-red-500" : "bg-amber-500"}`} style={{ width: `${Math.min(100, (users.length / userLimit) * 100)}%` }} /></div>
         {limitReached && (
           <div className="flex items-center gap-3 mt-3 flex-wrap">
             <span className="text-xs font-bold text-red-700">{isRTL ? "تم الوصول إلى الحد الأقصى للمستخدمين." : "User limit reached for current plan."}</span>
@@ -446,7 +558,7 @@ export function UsersListScreen({ lang, role, onNavigate, setSelectedUserId }: {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[[SETTINGS_USERS.length.toString(),"إجمالي المستخدمين","Total Users","bg-[#0F2C59]"],[SETTINGS_USERS.filter(u=>u.active).length.toString(),"المستخدمون النشطون","Active","bg-emerald-500"],[SETTINGS_USERS.filter(u=>u.role==="owner").length.toString(),"مالك / أدمن","Owners","bg-[#0F2C59]"],[SETTINGS_USERS.filter(u=>u.role==="accountant").length.toString(),"محاسبون","Accountants","bg-blue-500"]].map(([v,ar,en,bg],i)=>(
+        {[[users.length.toString(),"إجمالي المستخدمين","Total Users","bg-[#0F2C59]"],[users.filter(u=>u.active).length.toString(),"المستخدمون النشطون","Active","bg-emerald-500"],[users.filter(u=>u.role==="owner").length.toString(),"مالك / أدمن","Owners","bg-[#0F2C59]"],[users.filter(u=>u.role==="accountant").length.toString(),"محاسبون","Accountants","bg-blue-500"]].map(([v,ar,en,bg],i)=>(
           <div key={i} className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 flex items-start gap-3">
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${bg}`}><Users size={16} className="text-white" /></div>
             <div><div className="text-2xl font-black text-[#0F2C59] font-mono">{v}</div><div className="text-[10px] font-bold text-slate-400 mt-0.5">{isRTL ? ar : en}</div></div>
@@ -459,7 +571,7 @@ export function UsersListScreen({ lang, role, onNavigate, setSelectedUserId }: {
         <table className="w-full text-sm">
           <thead><tr className="bg-slate-50/80 border-b border-slate-200">{[isRTL?"الاسم":"Name",isRTL?"البريد الإلكتروني":"Email",isRTL?"الدور":"Role",isRTL?"الحالة":"Status",isRTL?"آخر دخول":"Last Login",isRTL?"صلاحيات مخصصة":"Custom Perms",isRTL?"إجراءات":"Actions"].map((h,i)=><th key={i} className={`px-4 py-3 font-black text-xs uppercase tracking-wide text-slate-400 ${isRTL?"text-right":"text-left"}`}>{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {SETTINGS_USERS.map(u => (
+            {users.map(u => (
               <tr key={u.id} className="hover:bg-slate-50/60 transition-colors">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2.5">
@@ -476,7 +588,7 @@ export function UsersListScreen({ lang, role, onNavigate, setSelectedUserId }: {
                   <div className="flex items-center gap-1">
                     {isOwner && <button onClick={() => { setSelectedUserId(u.id); onNavigate("settings-user-permissions"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-violet-50 hover:text-violet-600 transition-all" title={isRTL ? "تخصيص الصلاحيات" : "Customize Permissions"}><Shield size={13} /></button>}
                     {isOwner && <button className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all"><Pencil size={13} /></button>}
-                    {isOwner && u.role !== "owner" && <button className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all"><Lock size={13} /></button>}
+                    {isOwner && u.role !== "owner" && <button type="button" aria-label={isRTL ? "تعليق المستخدم" : "Suspend user"} onClick={() => void handleToggleActive(u.id, u.active)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all"><Lock size={13} /></button>}
                   </div>
                 </td>
               </tr>
@@ -514,7 +626,38 @@ export function CreateUserScreen({ lang, role, onNavigate }: { lang: Lang; role:
   const [pass, setPass] = useState(""); const [confirmPass, setConfirmPass] = useState("");
   const [forceChange, setForceChange] = useState(true);
   const [useCustom, setUseCustom] = useState(false);
-  const limitReached = SETTINGS_USERS.length >= 3;
+  const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  const limitReached = IS_MOCK_MODE && SETTINGS_USERS.length >= 3;
+
+  const handleCreate = async () => {
+    if (!name || !email || !pass || pass !== confirmPass) return;
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم إضافة المستخدم بنجاح" : "User added successfully");
+      onNavigate("settings-users");
+      return;
+    }
+    setSaving(true);
+    setFieldErrors({});
+    try {
+      await createTenantUser({
+        full_name: name,
+        email,
+        password: pass,
+        role: userRole,
+        force_password_change: forceChange,
+      });
+      toast.success(isRTL ? "تم إضافة المستخدم بنجاح" : "User added successfully");
+      onNavigate("settings-users");
+    } catch (e) {
+      if (e instanceof ApiError) setFieldErrors(e.fieldErrors);
+      toast.error(e instanceof ApiError ? e.message : "Create failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!IS_MOCK_MODE && role !== "owner") return <PermissionDeniedState lang={lang} />;
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-5">
@@ -528,6 +671,7 @@ export function CreateUserScreen({ lang, role, onNavigate }: { lang: Lang; role:
         </div>
       )}
 
+      <FormErrors lang={lang} fieldErrors={fieldErrors} />
       <Card className="p-5 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FInput label={isRTL ? "الاسم الكامل *" : "Full Name *"} value={name} onChange={setName} required />
@@ -560,7 +704,7 @@ export function CreateUserScreen({ lang, role, onNavigate }: { lang: Lang; role:
 
       <div className="flex flex-wrap gap-3 justify-between">
         <Btn variant="outline" onClick={() => onNavigate("settings-users")}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
-        <Btn disabled={limitReached || !name || !email || !pass || pass !== confirmPass} onClick={() => { toast.success(isRTL ? "تم إضافة المستخدم بنجاح" : "User added successfully"); onNavigate("settings-users"); }}><Check size={15} />{isRTL ? "إضافة المستخدم" : "Add User"}</Btn>
+        <Btn disabled={limitReached || !name || !email || !pass || pass !== confirmPass || saving} onClick={() => void handleCreate()}><Check size={15} />{isRTL ? "إضافة المستخدم" : "Add User"}</Btn>
       </div>
     </div>
   );
@@ -570,6 +714,22 @@ export function CreateUserScreen({ lang, role, onNavigate }: { lang: Lang; role:
 export function UserPermissionsScreen({ lang, role, onNavigate, userId }: {
   lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; userId: string;
 }) {
+  if (!IS_MOCK_MODE) {
+    return (
+      <LiveUserPermissionsScreen
+        lang={lang}
+        role={role}
+        onNavigate={onNavigate}
+        userId={userId}
+        Card={Card}
+        Btn={Btn}
+        SettingsHeader={SettingsHeader}
+        Toggle={Toggle}
+        RoleBadge={RoleBadge}
+        SensitiveActionModal={SensitiveActionModal}
+      />
+    );
+  }
   const isRTL = lang === "ar";
   const u = SETTINGS_USERS.find(x => x.id === userId) || SETTINGS_USERS[1];
   const [useCustom, setUseCustom] = useState(u.customPerms);
@@ -767,13 +927,69 @@ export function SettingsAuditScreen({ lang, role, onNavigate }: { lang: Lang; ro
 // ── SCREEN: NUMBERING SETTINGS ─────────────────────────────────────────────────
 export function NumberingSettingsScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
-  const [docs, setDocs] = useState(NUMBERING_DOCS.map(d => ({ ...d })));
-  const updateDoc = (key: string, field: string, val: string) => setDocs(prev => prev.map(d => d.key === key ? { ...d, [field]: val, preview: field === "prefix" ? `${val}-2026-${d.next}` : field === "next" ? `${d.prefix}-2026-${val}` : d.preview } : d));
+  const canManage = role === "owner" || role === "accountant";
+  const [docs, setDocs] = useState(NUMBERING_DOCS.map(d => ({ ...d, apiId: 0 })));
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    setLoading(true);
+    listNumberingSettings()
+      .then((rows) => {
+        if (rows.length === 0) return;
+        setDocs(rows.map((r) => ({
+          key: r.document_type,
+          ar: r.document_type,
+          en: r.document_type,
+          prefix: r.prefix,
+          next: String(r.next_number),
+          reset: r.reset_rule,
+          preview: `${r.prefix}-${new Date().getFullYear()}-${r.next_number}`,
+          apiId: r.id,
+        })));
+      })
+      .catch((e) => setError(e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const updateDoc = (key: string, field: string, val: string) =>
+    setDocs((prev) => prev.map((d) => d.key === key ? { ...d, [field]: val, preview: field === "prefix" ? `${val}-2026-${d.next}` : field === "next" ? `${d.prefix}-2026-${val}` : d.preview } : d));
+
+  const handleSave = async () => {
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم حفظ إعدادات الترقيم" : "Numbering settings saved");
+      return;
+    }
+    setSaving(true);
+    try {
+      await Promise.all(
+        docs.filter((d) => d.apiId).map((d) =>
+          updateNumberingSettings(d.apiId, {
+            prefix: d.prefix,
+            next_number: Number(d.next),
+            reset_rule: d.reset,
+          }),
+        ),
+      );
+      toast.success(isRTL ? "تم حفظ إعدادات الترقيم" : "Numbering settings saved");
+    } catch (e) {
+      setError(e);
+      toast.error(e instanceof ApiError ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!IS_MOCK_MODE && !canManage) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error && docs.every((d) => !d.apiId)) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
       <SettingsHeader title="إعدادات ترقيم المستندات" titleEn="Document Numbering Settings" onBack={() => onNavigate("settings")} lang={lang}>
-        <Btn variant="primary" onClick={() => toast.success(isRTL ? "تم حفظ إعدادات الترقيم" : "Numbering settings saved")}><Check size={15} />{isRTL ? "حفظ الإعدادات" : "Save"}</Btn>
+        <Btn variant="primary" disabled={saving} onClick={() => void handleSave()}><Check size={15} />{isRTL ? "حفظ الإعدادات" : "Save"}</Btn>
       </SettingsHeader>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2"><AlertTriangle size={13} className="text-amber-500 shrink-0 mt-0.5" /><p className="text-xs font-bold text-amber-700">{isRTL ? "تغيير الترقيم يؤثر على المستندات الجديدة فقط. يتطلب سبباً وسيتم تسجيله." : "Numbering changes affect new documents only. Requires reason and will be logged."}</p></div>
@@ -801,27 +1017,73 @@ export function NumberingSettingsScreen({ lang, role, onNavigate }: { lang: Lang
 // ── SCREEN: VAT SETTINGS ───────────────────────────────────────────────────────
 export function VATSettingsScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
+  const canManage = role === "owner" || role === "accountant";
   const [vatEnabled, setVatEnabled] = useState(true);
   const [rate, setRate] = useState("5");
-  const [allowDisable, setAllowDisable] = useState(true);
-  const [reqCustomerTRN, setReqCustomerTRN] = useState(false);
-  const [showWarnings, setShowWarnings] = useState(true);
-  const subtotal = 3305.55;
-  const vatAmt = (subtotal * parseFloat(rate || "0") / 100).toFixed(2);
+  const [allowDisableSales, setAllowDisableSales] = useState(true);
+  const [warnCustomerTrn, setWarnCustomerTrn] = useState(true);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  const previewSubtotal = IS_MOCK_MODE ? 3305.55 : 1000;
+  const vatAmt = (previewSubtotal * parseFloat(rate || "0") / 100).toFixed(2);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    setLoading(true);
+    getVatSettings()
+      .then((s) => {
+        setVatEnabled(s.vat_enabled_default);
+        setRate(String(s.default_vat_rate ?? "5"));
+        setAllowDisableSales(s.allow_vat_disable_sales ?? true);
+        setWarnCustomerTrn(s.warn_missing_customer_trn ?? true);
+      })
+      .catch((e) => setError(e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم حفظ إعدادات الضريبة" : "VAT settings saved");
+      return;
+    }
+    setSaving(true);
+    setFieldErrors({});
+    try {
+      await updateVatSettings({
+        vat_enabled_default: vatEnabled,
+        default_vat_rate: rate,
+        allow_vat_disable_sales: allowDisableSales,
+        warn_missing_customer_trn: warnCustomerTrn,
+      });
+      toast.success(isRTL ? "تم حفظ إعدادات الضريبة" : "VAT settings saved");
+    } catch (e) {
+      setError(e);
+      if (e instanceof ApiError) setFieldErrors(e.fieldErrors);
+      toast.error(e instanceof ApiError ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!IS_MOCK_MODE && !canManage) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error && rate === "5" && !IS_MOCK_MODE) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-5">
       <SettingsHeader title="إعدادات الضريبة VAT" titleEn="VAT Settings" onBack={() => onNavigate("settings")} lang={lang}>
-        <Btn variant="primary" onClick={() => toast.success(isRTL ? "تم حفظ إعدادات الضريبة" : "VAT settings saved")}><Check size={15} />{isRTL ? "حفظ" : "Save"}</Btn>
+        <Btn variant="primary" disabled={saving} onClick={() => void handleSave()}><Check size={15} />{isRTL ? "حفظ" : "Save"}</Btn>
       </SettingsHeader>
+      <FormErrors lang={lang} error={error} fieldErrors={fieldErrors} />
 
       <Card className="p-5 space-y-4">
         {[
           [vatEnabled, setVatEnabled, isRTL ? "تفعيل الضريبة على القيمة المضافة بشكل افتراضي" : "Enable VAT by default", false],
-          [allowDisable, setAllowDisable, isRTL ? "السماح بإيقاف الضريبة على فاتورة معينة (يتطلب سبباً)" : "Allow disabling VAT on specific invoice (requires reason)", false],
-          [reqCustomerTRN, setReqCustomerTRN, isRTL ? "طلب TRN العميل للفواتير الضريبية" : "Require customer TRN for tax invoices", false],
-          [showWarnings, setShowWarnings, isRTL ? "إظهار تحذيرات TRN المفقود" : "Show missing TRN warnings", false],
-        ].map(([val, setter, label, locked]: any) => (
+          [allowDisableSales, setAllowDisableSales, isRTL ? "السماح بإيقاف الضريبة على فاتورة بيع (يتطلب سبباً)" : "Allow disabling VAT on sales invoice (requires reason)", false],
+          [warnCustomerTrn, setWarnCustomerTrn, isRTL ? "إظهار تحذيرات TRN العميل المفقود" : "Show missing customer TRN warnings", false],
+        ].map(([val, setter, label, locked]: [boolean, (v: boolean) => void, string, boolean]) => (
           <div key={label} className="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0">
             <span className="text-sm font-bold text-slate-700">{label}</span>
             <Toggle on={val} onChange={setter} disabled={locked} />
@@ -830,21 +1092,19 @@ export function VATSettingsScreen({ lang, role, onNavigate }: { lang: Lang; role
         <div className="pt-2">
           <label className="text-sm font-bold text-slate-700 block mb-1.5">{isRTL ? "معدل الضريبة الافتراضي" : "Default VAT Rate"}</label>
           <div className="flex items-center gap-3">
-            <input type="number" value={rate} onChange={e => setRate(e.target.value)} className="w-24 px-3 py-2 rounded-xl border border-slate-200 text-sm font-mono text-center bg-white outline-none focus:border-[#0F2C59]" />
+            <input type="number" value={rate} onChange={e => setRate(e.target.value)} className="w-24 px-3 py-2 rounded-xl border border-slate-200 text-sm font-mono text-center bg-white outline-none focus:border-[#0F2C59]" aria-label={isRTL ? "معدل الضريبة" : "VAT rate"} />
             <span className="font-black text-[#0F2C59] text-lg">%</span>
           </div>
         </div>
       </Card>
 
-      {/* VAT preview */}
       <Card className="p-5">
-        <h3 className="font-black text-[#0F2C59] mb-3 text-sm">{isRTL ? "معاينة حساب الضريبة" : "VAT Calculation Preview"}</h3>
+        <h3 className="font-black text-[#0F2C59] mb-3 text-sm">{isRTL ? "معاينة حساب الضريبة (مثال)" : "VAT calculation preview (sample)"}</h3>
         <div className="space-y-2">
-          {[[isRTL ? "المبلغ الخاضع للضريبة" : "Taxable Amount", `AED ${subtotal.toLocaleString()}`, "text-slate-700"], [isRTL ? `ضريبة القيمة المضافة ${rate}%` : `VAT ${rate}%`, `AED ${vatAmt}`, "text-[#0F2C59]"], [isRTL ? "الإجمالي الشامل للضريبة" : "Total incl. VAT", `AED ${(subtotal + parseFloat(vatAmt)).toFixed(2)}`, "text-emerald-600 font-black text-lg"]].map(([l, v, c]) => (
-            <div key={l} className="flex justify-between items-center py-1.5 border-b border-slate-100 last:border-0 text-sm"><span className="text-slate-600 font-semibold">{l}</span><span className={`font-mono font-bold ${c}`}>{v}</span></div>
+          {[[isRTL ? "المبلغ الخاضع للضريبة" : "Taxable Amount", `AED ${previewSubtotal.toLocaleString()}`, "text-slate-700"], [isRTL ? `ضريبة القيمة المضافة ${rate}%` : `VAT ${rate}%`, `AED ${vatAmt}`, "text-[#0F2C59]"], [isRTL ? "الإجمالي الشامل للضريبة" : "Total incl. VAT", `AED ${(previewSubtotal + parseFloat(vatAmt)).toFixed(2)}`, "text-emerald-600 font-black text-lg"]].map(([l, v, c]) => (
+            <div key={l as string} className="flex justify-between items-center py-1.5 border-b border-slate-100 last:border-0 text-sm"><span className="text-slate-600 font-semibold">{l}</span><span className={`font-mono font-bold ${c}`}>{v}</span></div>
           ))}
         </div>
-        <div className="mt-3 bg-[#0F2C59]/5 rounded-xl p-3 text-xs font-bold text-[#0F2C59]">{isRTL ? "TRN الشركة: 100345678901203" : "Company TRN: 100345678901203"}</div>
       </Card>
     </div>
   );
@@ -1029,6 +1289,89 @@ export function PlanFeaturesScreen({ lang, role, onNavigate }: { lang: Lang; rol
           </table>
         </div>
       </Card>
+    </div>
+  );
+}
+
+// ── SCREEN: PRINT TEMPLATE SETTINGS ────────────────────────────────────────────
+export function PrintTemplatesScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+  const isRTL = lang === "ar";
+  const canManage = role === "owner" || role === "accountant";
+  const [templates, setTemplates] = useState<import("@/services/settingsService").PrintTemplateSettingsRow[]>([]);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    setLoading(true);
+    listPrintTemplateSettings()
+      .then(setTemplates)
+      .catch((e) => setError(e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const patchTemplate = (id: number, field: string, value: boolean | string) => {
+    setTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, [field]: value } : t)));
+  };
+
+  const saveTemplate = async (t: import("@/services/settingsService").PrintTemplateSettingsRow) => {
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم الحفظ" : "Saved");
+      return;
+    }
+    setSavingId(t.id);
+    try {
+      await updatePrintTemplateSettings(t.id, {
+        show_logo: t.show_logo,
+        show_stamp: t.show_stamp,
+        show_signature: t.show_signature,
+        show_trn: t.show_trn,
+        show_arabic_labels: t.show_arabic_labels,
+        show_english_labels: t.show_english_labels,
+        footer_notes: t.footer_notes ?? "",
+      });
+      toast.success(isRTL ? "تم حفظ قالب الطباعة" : "Print template saved");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Save failed");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  if (!IS_MOCK_MODE && !canManage) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (!IS_MOCK_MODE && error && templates.length === 0) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+  if (!IS_MOCK_MODE && templates.length === 0) return <EmptyState lang={lang} messageAr="لا توجد قوالب طباعة" messageEn="No print templates configured" />;
+
+  return (
+    <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
+      <SettingsHeader title="قوالب الطباعة" titleEn="Print Templates" onBack={() => onNavigate("settings")} lang={lang} />
+      {templates.map((t) => (
+        <Card key={t.id} className="p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-black text-slate-800">{t.template_type}</h3>
+            <Btn size="sm" disabled={savingId === t.id} onClick={() => void saveTemplate(t)}><Check size={13} />{isRTL ? "حفظ" : "Save"}</Btn>
+          </div>
+          {[
+            ["show_logo", isRTL ? "إظهار الشعار" : "Show logo"],
+            ["show_stamp", isRTL ? "إظهار الختم" : "Show stamp"],
+            ["show_signature", isRTL ? "إظهار التوقيع" : "Show signature"],
+            ["show_trn", isRTL ? "إظهار TRN" : "Show TRN"],
+            ["show_arabic_labels", isRTL ? "تسميات عربية" : "Arabic labels"],
+            ["show_english_labels", isRTL ? "تسميات إنجليزية" : "English labels"],
+          ].map(([field, label]) => (
+            <div key={field} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+              <span className="text-sm font-bold text-slate-700">{label}</span>
+              <Toggle on={Boolean(t[field as keyof typeof t])} onChange={(v) => patchTemplate(t.id, field, v)} />
+            </div>
+          ))}
+          <div>
+            <label className="text-sm font-bold text-slate-700 block mb-1">{isRTL ? "نص التذييل" : "Footer notes"}</label>
+            <textarea value={t.footer_notes ?? ""} onChange={(e) => patchTemplate(t.id, "footer_notes", e.target.value)} className="w-full rounded-xl border p-3 text-sm min-h-[72px]" />
+          </div>
+        </Card>
+      ))}
     </div>
   );
 }

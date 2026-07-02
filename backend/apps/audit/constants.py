@@ -72,6 +72,18 @@ SENSITIVE_ACTIONS = {
     "cancel_quotation": RiskLevel.HIGH,
     "convert_quotation_to_sales": RiskLevel.MEDIUM,
     "override_quotation_price": RiskLevel.HIGH,
+    # --- Phase 8: expenses (reason-required) ---
+    "create_purchase_linked_expense": RiskLevel.MEDIUM,
+    # --- Phase 9: tax/VAT (reason-required) ---
+    "tax_warning_dismiss": RiskLevel.MEDIUM,
+    "tax_adjustment_create": RiskLevel.HIGH,
+    "tax_adjustment_cancel": RiskLevel.HIGH,
+    "tax_report_export": RiskLevel.MEDIUM,
+    # --- Phase 10: reports & analytics ---
+    "report_export": RiskLevel.MEDIUM,
+    "profit_report_view": RiskLevel.MEDIUM,
+    "tax_report_view": RiskLevel.MEDIUM,
+    "inventory_valuation_view": RiskLevel.MEDIUM,
 }
 
 # Non-reason-required purchase actions still recorded via create_audit_log:

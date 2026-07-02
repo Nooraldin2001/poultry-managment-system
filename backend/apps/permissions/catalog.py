@@ -70,7 +70,11 @@ GROUP_ACTIONS = {
         "print", "export", "reconcile", "sensitive",
     ],
     "receipts": ["view", "print"],
-    "expenses": ["view", "create", "edit", "cancel"],
+    "expenses": [
+        "view", "create", "edit", "cancel", "print", "export",
+        "manage_categories", "manage_recurring", "purchase_link",
+        "view_profit_impact", "upload_attachment",
+    ],
     "reports": ["view", "export"],
     "tax": ["view", "edit", "export", "sensitive"],
     "settings": ["view", "manage"],
@@ -92,6 +96,30 @@ EXTRA_PERMISSIONS = [
     ("inventory.stocktaking.create", "inventory", "stocktaking.create", False),
     ("inventory.stocktaking.apply", "inventory", "stocktaking.apply", True),
     ("inventory.settings.manage", "inventory", "settings.manage", False),
+    # Tax / VAT (Phase 9)
+    ("tax.view_sales_vat", "tax", "view_sales_vat", False),
+    ("tax.view_purchase_vat", "tax", "view_purchase_vat", False),
+    ("tax.view_expense_vat", "tax", "view_expense_vat", False),
+    ("tax.view_net_vat", "tax", "view_net_vat", False),
+    ("tax.generate_warnings", "tax", "generate_warnings", False),
+    ("tax.dismiss_warnings", "tax", "dismiss_warnings", True),
+    ("tax.adjust", "tax", "adjust", True),
+    ("tax.cancel_adjustment", "tax", "cancel_adjustment", True),
+    ("tax.view_audit", "tax", "view_audit", False),
+    # Reports & analytics (Phase 10)
+    ("reports.view_dashboard", "reports", "view_dashboard", False),
+    ("reports.view_sales", "reports", "view_sales", False),
+    ("reports.view_purchases", "reports", "view_purchases", False),
+    ("reports.view_inventory", "reports", "view_inventory", False),
+    ("reports.view_inventory_valuation", "reports", "view_inventory_valuation", True),
+    ("reports.view_customer_statement", "reports", "view_customer_statement", False),
+    ("reports.view_supplier_statement", "reports", "view_supplier_statement", False),
+    ("reports.view_payments", "reports", "view_payments", False),
+    ("reports.view_expenses", "reports", "view_expenses", False),
+    ("reports.view_profit", "reports", "view_profit", True),
+    ("reports.view_tax_summary", "reports", "view_tax_summary", False),
+    ("reports.save_snapshot", "reports", "save_snapshot", False),
+    ("reports.view_audit", "reports", "view_audit", False),
 ]
 
 # Actions that are inherently sensitive (require reason + audit when performed).
@@ -169,9 +197,17 @@ ACCOUNTANT_DEFAULTS = [
     "payments.create_supplier_refund", "payments.allocate",
     "payments.print", "payments.export", "payments.reconcile",
     "receipts.view", "receipts.print",
-    "expenses.view", "expenses.create", "expenses.edit",
-    "reports.view", "reports.export",
-    "tax.view", "tax.export",
+    "expenses.view", "expenses.create", "expenses.edit", "expenses.print",
+    "expenses.export", "expenses.manage_categories", "expenses.manage_recurring",
+    "expenses.purchase_link", "expenses.view_profit_impact", "expenses.upload_attachment",
+    "tax.view", "tax.view_sales_vat", "tax.view_purchase_vat", "tax.view_expense_vat",
+    "tax.view_net_vat", "tax.generate_warnings", "tax.dismiss_warnings",
+    "tax.export", "tax.view_audit",
+    "reports.view_dashboard", "reports.view_sales", "reports.view_purchases",
+    "reports.view_inventory", "reports.view_inventory_valuation",
+    "reports.view_customer_statement", "reports.view_supplier_statement",
+    "reports.view_payments", "reports.view_expenses", "reports.view_profit",
+    "reports.view_tax_summary", "reports.export", "reports.view_audit",
     "settings.view",
     "audit.view",
 ]
@@ -185,6 +221,7 @@ CASHIER_DEFAULTS = [
     "inventory.view",
     "payments.view", "payments.create_customer_collection", "payments.print",
     "receipts.view", "receipts.print",
+    "reports.view_dashboard", "reports.view_sales",
 ]
 
 

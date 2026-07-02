@@ -5,16 +5,13 @@
 > replacement. Sources read: `API_BOUNDARY_PLAN.md`, `src/services/index.ts`,
 > `src/services/mock/*`, `src/services/api/client.ts`, `src/shared/types/*`.
 
-## Service boundary facts (current)
+## Service boundary facts (current — Phase 2 integrated)
 
-- All accessors are exported from `src/services/index.ts`; screens import from there.
-- Every function returns a `Promise` (`ListResponse<T> = Promise<T[]>`,
-  `ItemResponse<T> = Promise<T|null>`, `ObjectResponse<T> = Promise<T>`) via
-  `services/mock/mockDelay.ts` — so swapping mock → `fetch` is signature-compatible.
-- `src/services/api/client.ts` exposes `API_CONFIG { baseUrl, useMock }` and a stub
-  `request<T>()`. `useMock=true` today; flip to `false` after `request()` is implemented.
-- `ListParams { search?, page?, pageSize? }` is the pagination/filter contract
-  (`page_size` on the wire).
+- All accessors are exported from `frontend/src/services/index.ts`; screens import from there.
+- **Phase 1 live:** auth, admin companies, tenant dashboard.
+- **Phase 2 live:** products, customers, suppliers, inventory, purchases, sales, payments, quotations, expenses, tax, reports module endpoints via dedicated `*Service.ts` files and `hooks/api/useTenantResources`.
+- `createCrudService()` + `useListResource` / `useDetailResource` pattern for tenant CRUD.
+- `IS_MOCK_MODE` gates mock data; forced off in production builds.
 
 ---
 
@@ -22,8 +19,8 @@
 
 | Frontend service fn | Current mock source | Future backend endpoint | Required model(s) | Notes |
 | --- | --- | --- | --- | --- |
-| `listCompanies()` | `data/mock/company.mock.ts` (`COMPANIES`) | `GET /api/v1/admin/companies/` | `Company`, `CompanySubscription` | Super-admin scope; not tenant-isolated |
-| `getCompanyById(id)` | `company.mock.ts` | `GET /api/v1/admin/companies/{id}/` | `Company`, `CompanySubscription`, `SubscriptionPayment` | Super-admin scope |
+| `listCompanies()` | `data/mock/company.mock.ts` (`COMPANIES`) | `GET /api/v1/admin/companies/` ✅ Phase 1 | `Company`, `CompanySubscription` | Super-admin; wired via `adminService.listCompanies()` |
+| `getCompanyById(id)` | `company.mock.ts` | `GET /api/v1/admin/companies/{id}/` ✅ Phase 1 | `Company`, `CompanySubscription` | Super-admin; `adminService.getCompanyById()` |
 | `listCustomers()` | `customers.mock.ts` (`S_CUSTOMERS`) | `GET /api/v1/tenant/customers/` ✅ | `Customer` | Tenant-scoped; `?search=&customer_type=&has_balance=&credit_exceeded=` |
 | `getCustomerById(id)` | `customers.mock.ts` | `GET /api/v1/tenant/customers/{id}/` ✅ | `Customer` (+ `/ledger/`, `/statement/`) | `404` when out of scope |
 | `listSuppliers()` | `suppliers.mock.ts` | `GET /api/v1/tenant/suppliers/` ✅ | `Supplier` | Tenant-scoped; `?search=&supplier_type=&has_balance=` |
@@ -35,10 +32,10 @@
 | `getSalesInvoiceById(id)` | `sales.mock.ts` | `GET /api/v1/tenant/sales/{id}/` | `SalesInvoice`+lines | Detail includes lines |
 | `listPurchaseInvoices()` | `purchases.mock.ts` | `GET /api/v1/tenant/purchases/` ✅ | `PurchaseInvoice`, `PurchaseInvoiceLine` | `?supplier=&status=&payment_status=&date_from=&date_to=&supplier_invoice_number=&search=&has_balance=&vat_enabled=` |
 | `listPaymentMovements()` | `payments.mock.ts` | `GET /api/v1/tenant/payments/movements/` | `PaymentMovement`, `PaymentAllocation` | `?party_type=&movement_type=` |
-| `listExpenses()` | `expenses.mock.ts` | `GET /api/v1/expenses/` | `Expense`, `ExpenseCategory` | `?category=&date_*=` |
-| `getReportSummary()` | `reports.mock.ts` (`T_DAILY`,`T_MONTHLY_PROFIT`,`T_PAY_PIE`) | `GET /api/v1/reports/summary/` | aggregates over `SalesInvoice`/`PurchaseInvoice`/`Expense` (+ optional `ReportSnapshot`) | Returns `{daily, monthlyProfit, paymentSplit}` (`ReportSummaryData`) |
-| `getDashboardSummary()` | derived from `T_DAILY`,`T_INVOICES`,`T_CUSTOMERS` | `GET /api/v1/dashboard/summary/` | aggregates (sales today, open invoices, overdue customers) | Returns `DashboardSummary {totalSalesToday, openInvoices, overdueCustomers}` |
-| `getTaxSummary()` | `tax.mock.ts` (`TAX_SUMMARY`) | `GET /api/v1/tax/summary/` | `VatRecord`, `VatSettings` | Returns `TaxSummary` (sales/purchase/net VAT) |
+| `listExpenses()` | `GET/POST /api/v1/tenant/expenses/` (+ cancel, voucher-preview) | `Expense`, `ExpenseCategory` |
+| `getReportSummary()` | `reports.mock.ts` (`T_DAILY`,`T_MONTHLY_PROFIT`,`T_PAY_PIE`) | `GET /api/v1/tenant/reports/dashboard/` + module reports | Phase 10 `apps.reports` services | Not yet on service boundary; mock only |
+| `getTenantDashboardSummary()` | `reportsService.ts` (mock maps legacy shape) | `GET /api/v1/tenant/reports/dashboard/` ✅ Phase 1 | `DashboardSummary` | Tenant dashboard KPIs + `sales_trend`; `date_from`/`date_to` query |
+| `getTaxSummary()` | `GET /api/v1/tenant/tax/summary/` (+ sales/purchase/expense/net-vat, export-payload) | `TaxWarning`, `TaxAdjustment` |
 
 ---
 
@@ -49,7 +46,7 @@ backend concepts"). Add them to `src/services/index.ts` with matching signatures
 
 | New frontend service (proposed) | Backend endpoint | Model(s) |
 | --- | --- | --- |
-| `login()/logout()/refresh()/me()` | `/api/v1/auth/*` | `User`, JWT |
+| `login()/logout()/refresh()/me()` | `/api/v1/auth/*` ✅ Phase 1 | `User`, JWT | `authService.ts` + `authStore.tsx` |
 | `createSalesInvoice()/approveSalesInvoice()/cancelSalesInvoice()` | `POST /api/v1/tenant/sales/`, `.../approve/`, `.../cancel/` | `SalesInvoice` + inventory side effects on approve |
 | `createPurchaseInvoice()/approve/cancel` | `/api/v1/tenant/purchases/*` ✅ (Phase 4) | `PurchaseInvoice` + inventory side effects |
 | `listQuotations()/convertQuotation()` | `GET/POST /api/v1/tenant/quotations/` (+ send/accept/convert-to-sales) | `Quotation` |
@@ -85,27 +82,17 @@ backend concepts"). Add them to `src/services/index.ts` with matching signatures
 
 ---
 
-## Production data hygiene (Phase 4)
+## Production data hygiene (Phase 2)
 
-`API_CONFIG.useMock` is now driven by the `VITE_USE_MOCK_DATA` env var and **defaults
-to false** in production (see `src/services/api/client.ts` + `frontend/.env.production.example`).
-When false, a console warning is emitted because the live REST client is not implemented
-yet, so mock data is never silently presented as real production data.
+`IS_MOCK_MODE` forces mock off in production builds. Phase 2 wired tenant module list/detail screens to live APIs via `*Service.ts` + hooks; mock arrays (`MOCK_*`) are only used when `IS_MOCK_MODE=true`. API failures show error/empty states — never silent mock fallback.
 
-> **Known limitation / follow-up:** screens still import mock services from
-> `services/index.ts` regardless of `useMock`. Removing mock data from the production UI
-> and wiring screens to the live APIs is a tracked follow-up:
-> _"Frontend API integration and mock-data removal from production UI."_
+See `docs/frontend/PHASE_2_ERP_API_INTEGRATION_NOTES.md`.
 
-## Integration mechanics (Phase 11)
+## Integration mechanics (Phase 3+)
 
-1. Implement `request<T>(path, init)` in `src/services/api/client.ts`: prefix `baseUrl`,
-   attach `Authorization: Bearer <access>`, parse JSON, map errors, and convert paginated
-   `{count,next,previous,results}` → `T[]` for `ListResponse`.
-2. Create real service modules (e.g. `services/http/customerService.ts`) with the **same
-   exported names/signatures** as the mocks.
-3. In `src/services/index.ts`, switch each export from `./mock/*` to `./http/*` (or branch
-   on `API_CONFIG.useMock`). No screen imports change.
+1. ~~Implement `request<T>(path, init)` in `src/services/api/client.ts`~~ ✅ Phase 1
+2. Wire remaining service modules with the **same exported names/signatures** as mocks (Phase 2).
+3. In `src/services/index.ts`, switch each export from `./mock/*` to live impl (or keep `pick()`).
 4. Map `ListParams.pageSize → page_size` query param.
-5. Add an auth/login screen + token storage; resolve tenant from subdomain.
-6. Keep mock mode working (`useMock=true`) for offline dev + tests.
+5. ~~Add auth/login + token storage~~ ✅ Phase 1; tenant from JWT `/auth/me/`.
+6. Keep mock mode working (`VITE_USE_MOCK_DATA=true`) for offline dev.

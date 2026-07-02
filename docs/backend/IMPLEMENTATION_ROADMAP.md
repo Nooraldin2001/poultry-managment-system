@@ -147,26 +147,39 @@ OpenAPI schema updated.
 - **Acceptance:** convert → sales draft → approval path works without double stock deduction.
 - **Next:** Phase 8 (Expenses).
 
-## Phase 8 — Expenses
+## Phase 8 — Expenses  ✅ DONE
 
-- **Goals:** VAT settings, per-document VAT records, summaries, credit-note placeholder.
-- **Models:** `VatSettings`, `VatRecord`, `TaxCreditNote` (placeholder).
-- **APIs:** `/tax/summary`, `/tax/records`, `/tax/settings`, `/tax/credit-notes`.
-- **Tests:** VAT computed on approval; change/disable VAT sensitive + audited; net VAT
-  estimate.
-- **Risks:** retroactive rate changes; TRN warnings.
-- **Acceptance:** sales/purchase VAT + net VAT reported; rate changes audited.
+- **App:** `apps.expenses` — `ExpenseCategory`, `Expense`, `RecurringExpense`,
+  `ExpenseAttachment`, `ExpenseStatusHistory`.
+- **Goals met:** daily/monthly/recurring expenses, purchase-linked draft adjustments,
+  cancellation with audit, voucher print-preview JSON, profit impact foundation.
+- **APIs:** `/api/v1/tenant/{expenses,expense-categories,recurring-expenses}/...`.
+- **Tests:** 42 added (288 total passing).
+- **No side effects:** expenses do not post to payments ledger or double-entry accounting.
+- **Acceptance:** operational expense totals exclude purchase payable/cost adjustments;
+  cancelled expenses excluded from summaries.
+- **Next:** Phase 9 (Tax/VAT).
 
-## Phase 10 — Reports
+## Phase 9 — Tax / VAT  ✅ DONE
 
-- **Goals:** aggregated reports + dashboard summaries (+ optional snapshot materialization).
-- **Models:** `ReportSnapshot` (optional).
-- **APIs:** `/dashboard/summary`, `/reports/summary`, `/reports/{sales,purchases,inventory,
-  profit,customers,suppliers}`, `/reports/export`.
-- **Tests:** profit formulas (daily/monthly/gross/net); FIFO valuation; export sensitive +
-  audited; numbers match transactional data.
-- **Risks:** aggregate performance; snapshot freshness.
-- **Acceptance:** dashboards + reports match underlying ledgers.
+- **App:** `apps.tax` — `TaxPeriod`, `TaxWarning`, `TaxAdjustment`.
+- **Goals met:** sales/purchase/expense VAT reports, net VAT estimate, TRN warnings,
+  disabled VAT tracking, manual adjustments, export payload, tax audit view.
+- **APIs:** `/api/v1/tenant/tax/...` (summary, reports, warnings, adjustments, periods).
+- **Tests:** 35 added.
+- **Not a filing engine:** internal estimate with disclaimer.
+- **Next:** Phase 10 (Reports and Analytics).
+
+## Phase 10 — Reports and Analytics  ✅ DONE
+
+- **App:** `apps.reports` — services-only (no snapshot model).
+- **Goals met:** dashboard KPIs, sales/purchase/inventory/payments/expenses reports,
+  customer/supplier statements & aging, profit analytics, tax summary bridge, export JSON.
+- **APIs:** `/api/v1/tenant/reports/...` (dashboard, sales, purchases, inventory,
+  movements, statements, aging, payments, expenses, profit, tax-summary, export-payload).
+- **Tests:** 30 added (354 total).
+- **Not included:** PDF/Excel, email scheduling, BI warehouse, snapshot persistence.
+- **Next:** Phase 11 (Frontend API integration).
 
 ## Phase 11 — Frontend API integration
 

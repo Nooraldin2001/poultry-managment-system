@@ -25,6 +25,9 @@ api_v1 = [
     path("tenant/", include("apps.sales.urls")),
     path("tenant/", include("apps.payments.urls")),
     path("tenant/", include("apps.quotations.urls")),
+    path("tenant/", include("apps.expenses.urls")),
+    path("tenant/", include("apps.tax.urls")),
+    path("tenant/", include("apps.reports.urls")),
 ]
 
 urlpatterns = [

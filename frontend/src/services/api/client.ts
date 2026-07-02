@@ -1,47 +1,188 @@
-// Placeholder API client.
-//
-// IMPORTANT: This does NOT call any backend yet. It documents the seam where the
-// future Django REST client will live.
-//
-// Production data hygiene (Phase 4A):
-//   `useMock` is derived from the central `IS_MOCK_MODE` helper (services/config.ts),
-//   which reads `VITE_USE_MOCK_DATA` and is FORCED OFF in production builds. Mock
-//   data is only enabled when a developer explicitly sets VITE_USE_MOCK_DATA=true
-//   in a non-production (dev) build.
-//
-//   When live-API mode is active but a given endpoint is not implemented yet, the
-//   service layer (services/index.ts) returns controlled empty results — it must
-//   NEVER silently fall back to mock/demo data in production.
-
 import { API_BASE_URL, IS_MOCK_MODE } from "@/services/config";
+import { ApiError } from "./errors";
+
+const ACCESS_KEY = "poultry_hero_access_token";
+const REFRESH_KEY = "poultry_hero_refresh_token";
 
 export const API_CONFIG = {
-  /** Base URL for the Django REST API (e.g. https://poultryhero.solutions/api). */
   baseUrl: API_BASE_URL,
-  /** Whether the app is backed by mock data. Always false in production builds. */
   useMock: IS_MOCK_MODE,
 };
 
-if (!API_CONFIG.useMock && typeof console !== "undefined") {
-  // Live-API mode: the real HTTP client is not implemented yet. Screens that are
-  // not wired to the backend show clean empty states (never demo data).
-  console.info(
-    "[poultry-hero] Live-API mode (VITE_USE_MOCK_DATA is off). Screens without a " +
-      "wired endpoint show empty states; no demo data is rendered.",
-  );
-}
-
-/** Not implemented yet — real HTTP client comes with the frontend integration phase. */
-export async function request<T>(_path: string, _init?: RequestInit): Promise<T> {
-  throw new ApiUnavailableError(
-    "API client not implemented yet. This endpoint has no live backend wiring.",
-  );
-}
-
-/** Thrown when a live endpoint is requested but not yet implemented/reachable. */
-export class ApiUnavailableError extends Error {
-  constructor(message = "API unavailable") {
-    super(message);
-    this.name = "ApiUnavailableError";
+export function getAccessToken(): string | null {
+  try {
+    return localStorage.getItem(ACCESS_KEY);
+  } catch {
+    return null;
   }
 }
+
+export function getRefreshToken(): string | null {
+  try {
+    return localStorage.getItem(REFRESH_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setTokens(access: string, refresh: string): void {
+  localStorage.setItem(ACCESS_KEY, access);
+  localStorage.setItem(REFRESH_KEY, refresh);
+}
+
+export function clearTokens(): void {
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+}
+
+function buildUrl(path: string, query?: Record<string, string | number | boolean | undefined | null>): string {
+  const base = (API_BASE_URL || "").replace(/\/$/, "");
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const url = `${base}/v1${normalized}`;
+  if (!query) return url;
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) {
+    if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+  }
+  const qs = params.toString();
+  return qs ? `${url}?${qs}` : url;
+}
+
+function parseDrfErrors(data: unknown): { message: string; fieldErrors: Record<string, string[]> } {
+  if (!data || typeof data !== "object") {
+    return { message: "Request failed", fieldErrors: {} };
+  }
+  const obj = data as Record<string, unknown>;
+  if (typeof obj.detail === "string") {
+    return { message: obj.detail, fieldErrors: {} };
+  }
+  if (Array.isArray(obj.non_field_errors) && obj.non_field_errors.length) {
+    return { message: String(obj.non_field_errors[0]), fieldErrors: {} };
+  }
+  const fieldErrors: Record<string, string[]> = {};
+  const messages: string[] = [];
+  for (const [key, val] of Object.entries(obj)) {
+    if (Array.isArray(val)) {
+      fieldErrors[key] = val.map(String);
+      messages.push(...fieldErrors[key]);
+    } else if (typeof val === "string") {
+      fieldErrors[key] = [val];
+      messages.push(val);
+    }
+  }
+  return { message: messages[0] ?? "Validation failed", fieldErrors };
+}
+
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refresh = getRefreshToken();
+  if (!refresh) return null;
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const res = await fetch(buildUrl("/auth/refresh/"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ refresh }),
+        });
+        if (!res.ok) {
+          clearTokens();
+          return null;
+        }
+        const data = (await res.json()) as { access: string };
+        localStorage.setItem(ACCESS_KEY, data.access);
+        return data.access;
+      } catch {
+        clearTokens();
+        return null;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+  }
+  return refreshPromise;
+}
+
+export type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+
+export interface RequestOptions {
+  method?: HttpMethod;
+  body?: unknown;
+  query?: Record<string, string | number | boolean | undefined | null>;
+  auth?: boolean;
+  /** Skip automatic token refresh retry on 401. */
+  noRefresh?: boolean;
+}
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = "GET", body, query, auth = true, noRefresh = false } = options;
+
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+
+  if (body !== undefined && method !== "GET") {
+    headers["Content-Type"] = "application/json";
+  }
+
+  if (auth) {
+    const token = getAccessToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
+  const url = buildUrl(path, query);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError("Unable to reach the server. Check your connection.", {
+      code: "network_error",
+      status: 0,
+    });
+  }
+
+  if (res.status === 401 && auth && !noRefresh) {
+    const newAccess = await refreshAccessToken();
+    if (newAccess) {
+      return request<T>(path, { ...options, noRefresh: true });
+    }
+    throw new ApiError("Session expired. Please sign in again.", {
+      status: 401,
+      code: "session_expired",
+    });
+  }
+
+  if (res.status === 204 || res.status === 205) {
+    return undefined as T;
+  }
+
+  let data: unknown = null;
+  const text = await res.text();
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+
+  if (!res.ok) {
+    const { message, fieldErrors } = parseDrfErrors(data);
+    const code =
+      res.status === 401 ? "unauthorized" :
+      res.status === 403 ? "forbidden" :
+      res.status === 404 ? "not_found" :
+      "api_error";
+    throw new ApiError(message, { status: res.status, code, fieldErrors, raw: data });
+  }
+
+  return data as T;
+}
+
+export { ApiError, ApiUnavailableError } from "./errors";

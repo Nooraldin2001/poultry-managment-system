@@ -10,6 +10,14 @@ import {
   Wallet, Tag, Star, BarChart2, Shield, Truck
 } from "lucide-react";
 import { toast } from "sonner";
+import { useSuppliers, useSupplierDetail } from "@/hooks/api/useTenantResources";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { toModuleSupplier } from "./moduleMappers";
+import { IS_MOCK_MODE } from "@/services/config";
+import { useSupplierProfileTabs, type SupplierProfileTabKey } from "@/features/profiles/useSupplierProfileTabs";
+import { ProfileTabBody } from "@/features/profiles/ProfileTabState";
+import { LiveSupplierPaymentModal } from "@/features/payments/LivePaymentModals";
+import { ApiUnavailableState } from "@/shared/components/ApiStates";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -103,7 +111,7 @@ interface Supplier {
   balance: number; paymentTerms: string; status: SuppStatus; active: boolean; openingBalance: number;
   lastInvoice: string; lastPayment: string;
 }
-const SUPPLIERS: Supplier[] = [
+const MOCK_SUPPLIERS: Supplier[] = [
   { id: "sp1", nameAr: "WESTLAND FOODSTUFF",     nameEn: "WESTLAND FOODSTUFF TRADING LLC", type: "credit", category: "food_company", phone: "+971 4 123 4567",  whatsapp: "+971 4 123 4567",  email: "orders@westland.ae", trn: "100765432100003", emirate: "دبي",      balance: 18500,    paymentTerms: "15", status: "has_payable", active: true, openingBalance: 5000,  lastInvoice: "2025-01-28", lastPayment: "2025-01-28" },
   { id: "sp2", nameAr: "MNM Foodstuff Trading",  nameEn: "MNM Foodstuff Trading LLC",      type: "credit", category: "food_company", phone: "+971 50 987 6543", whatsapp: "+971 50 987 6543", email: "",                   trn: "",                emirate: "الشارقة", balance: 6942.86,  paymentTerms: "7",  status: "active",     active: true, openingBalance: 0,     lastInvoice: "2025-01-26", lastPayment: "2025-01-20" },
   { id: "sp3", nameAr: "مزرعة العين للدواجن",   nameEn: "Al Ain Poultry Farm",            type: "credit", category: "farm",         phone: "+971 3 765 4321",  whatsapp: "+971 3 765 4321",  email: "",                   trn: "",                emirate: "أبوظبي",  balance: 25000,    paymentTerms: "30", status: "has_payable", active: true, openingBalance: 0,     lastInvoice: "2025-01-25", lastPayment: "2025-01-15" },
@@ -201,6 +209,32 @@ function StmtTypeBadge({ type, lang }: { type: string; lang: Lang }) {
   return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.bg} ${c.t}`}>{lang === "ar" ? c.ar : c.en}</span>;
 }
 
+function supplierRowFromMock(m: Supplier) {
+  return { id: m.id, name: m.nameAr, nameEn: m.nameEn, phone: m.phone, balance: m.balance, due: m.lastInvoice, overdue: m.balance > 0, isActive: m.active };
+}
+
+function enrichSupplier(m: ReturnType<typeof toModuleSupplier>, mock?: Supplier): Supplier {
+  return {
+    id: m.id,
+    nameAr: m.nameAr,
+    nameEn: m.nameEn,
+    type: mock?.type ?? "credit",
+    category: mock?.category ?? "other",
+    phone: m.phone,
+    whatsapp: mock?.whatsapp ?? m.phone,
+    email: mock?.email ?? "",
+    trn: mock?.trn ?? m.trn,
+    emirate: mock?.emirate ?? "",
+    balance: m.balance,
+    paymentTerms: mock?.paymentTerms ?? "15",
+    status: (m.balance > 0 ? "has_payable" : m.active ? "clear" : "inactive") as SuppStatus,
+    active: m.active,
+    openingBalance: mock?.openingBalance ?? 0,
+    lastInvoice: mock?.lastInvoice ?? m.lastInvoice,
+    lastPayment: mock?.lastPayment ?? m.lastPayment,
+  };
+}
+
 // ── SCREEN: SUPPLIERS LIST ─────────────────────────────────────────────────────
 export function SuppliersListScreen({ lang, role, onNavigate, setSelectedSupplier }: {
   lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void;
@@ -213,6 +247,16 @@ export function SuppliersListScreen({ lang, role, onNavigate, setSelectedSupplie
 
   const canCreate = role === "owner" || role === "accountant";
   const canPay = role === "owner" || role === "accountant";
+
+  const { items: supplierRows, loading, error, forbidden, reload } = useSuppliers(
+    search ? { search } : undefined,
+    async () => MOCK_SUPPLIERS.map(supplierRowFromMock),
+  );
+  const SUPPLIERS = supplierRows.map((row) => enrichSupplier(toModuleSupplier(row), MOCK_SUPPLIERS.find((m) => m.id === row.id)));
+
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
 
   const filtered = SUPPLIERS.filter(s => {
     const q = search.toLowerCase();
@@ -229,8 +273,8 @@ export function SuppliersListScreen({ lang, role, onNavigate, setSelectedSupplie
     { v: `AED ${totalPayable.toLocaleString()}`,                 ar: "إجمالي مستحقات الموردين",  en: "Total Payables",         bg: "bg-red-500" },
     { v: SUPPLIERS.filter(s => s.type === "cash").length.toString(),   ar: "موردين كاش",         en: "Cash Suppliers",         bg: "bg-slate-500" },
     { v: SUPPLIERS.filter(s => s.type !== "cash").length.toString(),   ar: "موردين آجل",         en: "Credit Suppliers",       bg: "bg-blue-500" },
-    { v: "AED 9,600",                                            ar: "دفعات اليوم",               en: "Today's Payments",       bg: "bg-violet-500" },
-    { v: "AED 25,000",                                           ar: "مشتريات هذا الشهر",         en: "Month's Purchases",      bg: "bg-emerald-600" },
+    { v: IS_MOCK_MODE ? "AED 9,600" : "AED 0",                    ar: "دفعات اليوم",               en: "Today's Payments",       bg: "bg-violet-500" },
+    { v: IS_MOCK_MODE ? "AED 25,000" : "AED 0",                   ar: "مشتريات هذا الشهر",         en: "Month's Purchases",      bg: "bg-emerald-600" },
   ];
 
   return (
@@ -350,7 +394,7 @@ export function SuppliersListScreen({ lang, role, onNavigate, setSelectedSupplie
       )}
 
       {filtered.length === 0 && (
-        <Card className="p-14 text-center"><Truck size={48} className="text-slate-200 mx-auto mb-4" /><h3 className="text-lg font-black text-slate-500 mb-2">{isRTL ? "لا يوجد موردين حالياً" : "No suppliers yet"}</h3>{canCreate && <Btn onClick={() => onNavigate("suppliers-new")}><Plus size={15} />{isRTL ? "إضافة أول مورد" : "Add First Supplier"}</Btn>}</Card>
+        <EmptyState lang={lang} messageAr="لا يوجد موردون بعد" messageEn="No suppliers yet" />
       )}
     </div>
   );
@@ -510,12 +554,28 @@ export function SupplierProfileScreen({ lang, role, onNavigate, supplierId }: {
   const [tab, setTab] = useState("overview");
   const [showPay, setShowPay] = useState(false);
   const [showSpecialPrice, setShowSpecialPrice] = useState(false);
+  const profileTabs = useSupplierProfileTabs(supplierId, tab as SupplierProfileTabKey);
 
-  const s = SUPPLIERS.find(x => x.id === supplierId) || SUPPLIERS[0];
+  const { item: row, loading, error, forbidden, reload } = useSupplierDetail(
+    supplierId,
+    async (id) => {
+      const m = MOCK_SUPPLIERS.find((x) => x.id === id);
+      return m ? supplierRowFromMock(m) : null;
+    },
+  );
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+  const s = row ? enrichSupplier(toModuleSupplier(row), IS_MOCK_MODE ? MOCK_SUPPLIERS.find((m) => m.id === row.id) : undefined) : null;
+  if (!s) return <EmptyState lang={lang} messageAr="لا يوجد موردون بعد" messageEn="No suppliers yet" />;
   const canEdit = role === "owner" || role === "accountant";
   const canPay = role === "owner" || role === "accountant";
-  const totalPurchases = SUPP_INVOICES.reduce((sum, i) => sum + i.netPayable, 0);
-  const totalPaid = SUPP_PAYMENTS.reduce((sum, p) => sum + p.amount, 0);
+  const totalPurchases = IS_MOCK_MODE
+    ? SUPP_INVOICES.reduce((sum, i) => sum + i.netPayable, 0)
+    : profileTabs.purchases.data.reduce((sum, i) => sum + i.total, 0);
+  const totalPaid = IS_MOCK_MODE
+    ? SUPP_PAYMENTS.reduce((sum, p) => sum + p.amount, 0)
+    : profileTabs.payments.data.reduce((sum, p) => sum + p.amount, 0);
 
   const TABS = [
     { k: "overview",   ar: "نظرة عامة",         en: "Overview" },
@@ -625,70 +685,63 @@ export function SupplierProfileScreen({ lang, role, onNavigate, supplierId }: {
           {tab === "invoices" && (
             <div className="space-y-3">
               <div className="flex justify-end"><Btn size="sm" variant="primary" onClick={() => onNavigate("purchases-new")}><Plus size={13} />{isRTL ? "إنشاء فاتورة شراء" : "New Purchase"}</Btn></div>
-              {SUPP_INVOICES.length === 0 ? <div className="text-center py-8 text-slate-400 font-semibold">{isRTL ? "لا توجد فواتير شراء لهذا المورد" : "No purchase invoices for this supplier"}</div> : (
+              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.purchases.loading} error={profileTabs.purchases.error} forbidden={profileTabs.purchases.forbidden} unavailable={profileTabs.purchases.unavailable} empty={IS_MOCK_MODE ? SUPP_INVOICES.length === 0 : profileTabs.purchases.data.length === 0} emptyAr="لا توجد فواتير شراء" emptyEn="No purchase invoices">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "رقم الفاتورة" : "Invoice #", isRTL ? "رقم فاتورة المورد" : "Supplier Inv#", isRTL ? "التاريخ" : "Date", isRTL ? "صافي المستحق" : "Net Payable", isRTL ? "المدفوع" : "Paid", isRTL ? "المتبقي" : "Remaining", isRTL ? "الحالة" : "Status", isRTL ? "إجراءات" : "Actions"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
+                    <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "رقم الفاتورة" : "Invoice #", isRTL ? "التاريخ" : "Date", isRTL ? "الإجمالي" : "Total", isRTL ? "المدفوع" : "Paid", isRTL ? "المتبقي" : "Remaining", isRTL ? "الحالة" : "Status"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
                     <tbody className="divide-y divide-slate-100">
-                      {SUPP_INVOICES.map(inv => (
+                      {(IS_MOCK_MODE ? SUPP_INVOICES.map(inv => ({ id: inv.id, number: inv.id, date: inv.date, total: inv.netPayable, paid: inv.paid, remaining: inv.remaining, status: inv.status })) : profileTabs.purchases.data).map(inv => (
                         <tr key={inv.id} className="hover:bg-slate-50">
-                          <td className="px-3 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{inv.id}</td>
-                          <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{inv.supplierInvNo}</td>
+                          <td className="px-3 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{inv.number}</td>
                           <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{inv.date}</td>
-                          <td className="px-3 py-2.5 font-mono font-bold text-amber-700">AED {inv.netPayable.toLocaleString()}</td>
+                          <td className="px-3 py-2.5 font-mono font-bold text-amber-700">AED {inv.total.toLocaleString()}</td>
                           <td className="px-3 py-2.5 font-mono text-emerald-600">AED {inv.paid.toLocaleString()}</td>
                           <td className="px-3 py-2.5">{inv.remaining > 0 ? <span className="font-mono font-black text-red-500 text-xs">AED {inv.remaining.toLocaleString()}</span> : <span className="text-emerald-500 text-xs font-bold">✓</span>}</td>
                           <td className="px-3 py-2.5"><PurchInvStatusBadge status={inv.status} lang={lang} /></td>
-                          <td className="px-3 py-2.5"><div className="flex gap-1"><button className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"><Eye size={12} /></button><button className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"><Printer size={12} /></button>{inv.remaining > 0 && <button onClick={() => setShowPay(true)} className="p-1 rounded-lg text-slate-400 hover:bg-amber-50 hover:text-amber-600"><Wallet size={12} /></button>}</div></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              )}
+              </ProfileTabBody>
             </div>
           )}
 
-          {/* PAYMENTS */}
           {tab === "payments" && (
             <div className="space-y-3">
               <div className="flex justify-end">{canPay ? <Btn size="sm" variant="amber" onClick={() => setShowPay(true)}><Plus size={13} />{isRTL ? "تسجيل دفعة للمورد" : "Record Payment"}</Btn> : <PermBtn lang={lang}><Plus size={13} />{isRTL ? "تسجيل دفعة للمورد" : "Record Payment"}</PermBtn>}</div>
-              {SUPP_PAYMENTS.length === 0 ? <div className="text-center py-8 text-slate-400 font-semibold">{isRTL ? "لا توجد دفعات لهذا المورد" : "No payments for this supplier"}</div> : (
+              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.payments.loading} error={profileTabs.payments.error} forbidden={profileTabs.payments.forbidden} unavailable={profileTabs.payments.unavailable} empty={IS_MOCK_MODE ? SUPP_PAYMENTS.length === 0 : profileTabs.payments.data.length === 0} emptyAr="لا توجد دفعات" emptyEn="No payments">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "رقم الإيصال" : "Receipt #", isRTL ? "التاريخ" : "Date", isRTL ? "المبلغ" : "Amount", isRTL ? "الطريقة" : "Method", isRTL ? "الفاتورة" : "Invoice", isRTL ? "المرجع" : "Ref", isRTL ? "بواسطة" : "By"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
+                    <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "رقم الإيصال" : "Receipt #", isRTL ? "التاريخ" : "Date", isRTL ? "المبلغ" : "Amount", isRTL ? "الطريقة" : "Method"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
                     <tbody className="divide-y divide-slate-100">
-                      {SUPP_PAYMENTS.map(p => (
+                      {(IS_MOCK_MODE ? SUPP_PAYMENTS.map(p => ({ id: p.id, number: p.id, date: p.date, amount: p.amount, method: p.method })) : profileTabs.payments.data).map(p => (
                         <tr key={p.id} className="hover:bg-slate-50">
-                          <td className="px-3 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{p.id}</td>
+                          <td className="px-3 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{p.number}</td>
                           <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{p.date}</td>
                           <td className="px-3 py-2.5 font-mono font-black text-emerald-600">AED {p.amount.toLocaleString()}</td>
                           <td className="px-3 py-2.5 text-xs font-bold"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{p.method}</span></td>
-                          <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{p.linkedInv}</td>
-                          <td className="px-3 py-2.5 font-mono text-xs text-slate-400">{p.ref || "—"}</td>
-                          <td className="px-3 py-2.5 text-xs text-slate-500">{p.by}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              )}
+              </ProfileTabBody>
             </div>
           )}
 
-          {/* STATEMENT PREVIEW */}
           {tab === "statement" && (
             <div className="space-y-3">
               <div className="flex items-center justify-between"><p className="text-xs text-slate-400 font-semibold">{isRTL ? "معاينة الكشف — اضغط لفتح الكشف الكامل" : "Statement preview — click for full statement"}</p><Btn size="sm" variant="primary" onClick={() => onNavigate("supplier-statement")}><FileText size={13} />{isRTL ? "الكشف الكامل" : "Full Statement"}</Btn></div>
+              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.ledger.loading} error={profileTabs.ledger.error} forbidden={profileTabs.ledger.forbidden} unavailable={profileTabs.ledger.unavailable} empty={IS_MOCK_MODE ? SUPP_STMT.length === 0 : profileTabs.ledger.data.length === 0} emptyAr="لا توجد حركات" emptyEn="No movements">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "التاريخ" : "Date", isRTL ? "النوع" : "Type", isRTL ? "المرجع" : "Ref", isRTL ? "مدين" : "Debit", isRTL ? "دائن" : "Credit", isRTL ? "الرصيد" : "Balance"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
+                  <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "التاريخ" : "Date", isRTL ? "الوصف" : "Description", isRTL ? "مدين" : "Debit", isRTL ? "دائن" : "Credit", isRTL ? "الرصيد" : "Balance"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
                   <tbody className="divide-y divide-slate-100">
-                    {SUPP_STMT.slice(0, 6).map(m => (
+                    {(IS_MOCK_MODE ? SUPP_STMT.map(m => ({ id: m.id, date: m.date, description: m.desc, debit: m.debit, credit: m.credit, balance: m.balance })) : profileTabs.ledger.data).slice(0, 20).map(m => (
                       <tr key={m.id} className="hover:bg-slate-50">
                         <td className="px-3 py-2 font-mono text-xs text-slate-500">{m.date}</td>
-                        <td className="px-3 py-2"><StmtTypeBadge type={m.type} lang={lang} /></td>
-                        <td className="px-3 py-2 font-mono text-xs text-slate-400">{m.ref}</td>
+                        <td className="px-3 py-2 text-xs text-slate-600">{m.description}</td>
                         <td className="px-3 py-2 font-mono text-xs">{m.debit > 0 ? <span className="text-amber-600 font-bold">AED {m.debit.toFixed(2)}</span> : "—"}</td>
                         <td className="px-3 py-2 font-mono text-xs">{m.credit > 0 ? <span className="text-emerald-600 font-bold">AED {m.credit.toFixed(2)}</span> : "—"}</td>
                         <td className="px-3 py-2 font-mono font-black text-xs text-[#0F2C59]">AED {m.balance.toFixed(2)}</td>
@@ -697,6 +750,7 @@ export function SupplierProfileScreen({ lang, role, onNavigate, supplierId }: {
                   </tbody>
                 </table>
               </div>
+              </ProfileTabBody>
             </div>
           )}
 
@@ -707,94 +761,73 @@ export function SupplierProfileScreen({ lang, role, onNavigate, supplierId }: {
                 <p className="text-xs text-slate-400 font-semibold">{isRTL ? "سيتم اقتراح سعر المورد الخاص تلقائياً عند إنشاء فاتورة شراء لهذا المورد." : "Supplier special prices are automatically suggested when creating a purchase invoice."}</p>
                 {canEdit ? <Btn size="sm" variant="primary" onClick={() => setShowSpecialPrice(true)}><Plus size={13} />{isRTL ? "إضافة سعر شراء خاص" : "Add Special Price"}</Btn> : <PermBtn lang={lang}><Plus size={13} />{isRTL ? "إضافة سعر" : "Add Price"}</PermBtn>}
               </div>
-              {SUPP_PRICES.length === 0 ? <div className="text-center py-8 text-slate-400 font-semibold">{isRTL ? "لا توجد أسعار شراء خاصة. سيتم استخدام الأسعار الافتراضية." : "No special prices. Default prices will be used."}</div> : (
+              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.agreements.loading} error={profileTabs.agreements.error} forbidden={profileTabs.agreements.forbidden} unavailable={profileTabs.agreements.unavailable} empty={IS_MOCK_MODE ? SUPP_PRICES.length === 0 : profileTabs.agreements.data.length === 0} emptyAr="لا توجد أسعار خاصة" emptyEn="No special prices">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "المنتج" : "Product", isRTL ? "السعر الافتراضي" : "Default", isRTL ? "سعر المورد الخاص" : "Supplier Price", isRTL ? "نوع السعر" : "Type", isRTL ? "آخر تعديل" : "Last Edit", isRTL ? "الحالة" : "Status", isRTL ? "إجراءات" : "Actions"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
+                    <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "المنتج" : "Product", isRTL ? "السعر" : "Price", isRTL ? "الحالة" : "Status"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
                     <tbody className="divide-y divide-slate-100">
-                      {SUPP_PRICES.map((sp, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-3 py-2.5 font-bold text-slate-800">{isRTL ? sp.productAr : sp.product}<span className="ms-2 text-[10px] font-black bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded-full">{isRTL ? "سعر خاص" : "Special"}</span></td>
-                          <td className="px-3 py-2.5 font-mono text-slate-500">{sp.defaultPrice}</td>
-                          <td className="px-3 py-2.5 font-mono font-black text-[#0F2C59]">{sp.specialPrice} {sp.priceType === "tray" ? (isRTL ? "/طبق" : "/tray") : sp.priceType === "piece" ? (isRTL ? "/حبة" : "/piece") : "/KG"}</td>
-                          <td className="px-3 py-2.5 text-xs text-slate-500">{sp.priceType === "tray" ? (isRTL ? "سعر الطبق" : "Per Tray") : sp.priceType === "piece" ? (isRTL ? "سعر الحبة" : "Per Piece") : (isRTL ? "سعر الكيلو" : "Per KG")}</td>
-                          <td className="px-3 py-2.5 text-xs text-slate-400">{sp.lastEdit}</td>
-                          <td className="px-3 py-2.5"><span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{isRTL ? "نشط" : "Active"}</span></td>
-                          <td className="px-3 py-2.5">{canEdit && <button className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"><Pencil size={12} /></button>}</td>
+                      {(IS_MOCK_MODE ? SUPP_PRICES.map((sp, i) => ({ id: String(i), product: isRTL ? sp.productAr : sp.product, price: sp.specialPrice, active: sp.active })) : profileTabs.agreements.data).map((sp) => (
+                        <tr key={sp.id} className="hover:bg-slate-50">
+                          <td className="px-3 py-2.5 font-bold text-slate-800">{sp.product}</td>
+                          <td className="px-3 py-2.5 font-mono font-black text-[#0F2C59]">AED {sp.price}</td>
+                          <td className="px-3 py-2.5"><span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{sp.active ? (isRTL ? "نشط" : "Active") : (isRTL ? "موقوف" : "Inactive")}</span></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              )}
+              </ProfileTabBody>
             </div>
           )}
 
-          {/* AGREEMENTS */}
           {tab === "agreements" && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="bg-[#0F2C59]/5 border border-[#0F2C59]/15 rounded-xl p-3 flex-1 me-3 flex gap-2"><Info size={13} className="text-[#0F2C59]/60 shrink-0 mt-0.5" /><p className="text-xs font-semibold text-slate-500">{isRTL ? "الاتفاقات هنا تساعد المستخدم عند إنشاء فاتورة شراء، ويمكن تعديلها داخل الفاتورة حسب الصلاحيات." : "These agreements help when creating a purchase invoice and can be modified inside the invoice based on permissions."}</p></div>
-                {canEdit && <Btn size="sm" variant="primary"><Plus size={13} />{isRTL ? "إضافة اتفاق" : "Add Agreement"}</Btn>}
-              </div>
-              {SUPP_AGREEMENTS.length === 0 ? <div className="text-center py-8 text-slate-400 font-semibold">{isRTL ? "لا توجد اتفاقات محفوظة لهذا المورد." : "No agreements saved for this supplier."}</div> : (
+              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.agreements.loading} error={profileTabs.agreements.error} forbidden={profileTabs.agreements.forbidden} unavailable={profileTabs.agreements.unavailable} empty={IS_MOCK_MODE ? SUPP_AGREEMENTS.length === 0 : profileTabs.agreements.data.length === 0} emptyAr="لا توجد اتفاقات" emptyEn="No agreements">
                 <div className="space-y-2">
-                  {SUPP_AGREEMENTS.map((a, i) => (
-                    <div key={i} className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
-                      <div>
-                        <div className="font-bold text-slate-800 text-sm">{a.title}</div>
-                        {a.note && <div className="text-xs text-slate-500">{a.note}</div>}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-black text-[#0F2C59] text-sm">{a.value}</span>
-                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{isRTL ? "نشط" : "Active"}</span>
-                        {canEdit && <button className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"><Pencil size={12} /></button>}
-                      </div>
+                  {(IS_MOCK_MODE ? SUPP_AGREEMENTS.map((a, i) => ({ id: String(i), product: a.title, price: 0, active: a.active })) : profileTabs.agreements.data).map((a) => (
+                    <div key={a.id} className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                      <div className="font-bold text-slate-800 text-sm">{a.product}</div>
+                      <span className="font-mono font-black text-[#0F2C59] text-sm">AED {a.price}</span>
                     </div>
                   ))}
                 </div>
-              )}
+              </ProfileTabBody>
             </div>
           )}
 
-          {/* DEDUCTIONS */}
-          {tab === "deductions" && (
+          {tab === "deductions" && (IS_MOCK_MODE ? (
             <div className="space-y-3">
-              <div className="bg-[#0F2C59]/5 border border-[#0F2C59]/15 rounded-xl p-3 flex gap-2"><Info size={13} className="text-[#0F2C59]/60 shrink-0 mt-0.5" /><p className="text-xs font-semibold text-slate-500">{isRTL ? "خصم الشراء يقلل صافي المستحق للمورد. إلغاء الشراء قد يعكس المخزون والمستحقات." : "Purchase deductions reduce net payable. Cancellation may reverse inventory and payables."}</p></div>
-              {SUPP_DEDUCTIONS.length === 0 ? <div className="text-center py-8 text-slate-400 font-semibold">{isRTL ? "لا توجد خصومات أو تسويات" : "No deductions or adjustments"}</div> : (
+              {SUPP_DEDUCTIONS.length === 0 ? <div className="text-center py-8 text-slate-400 font-semibold">{isRTL ? "لا توجد خصومات" : "No deductions"}</div> : (
                 <div className="space-y-2">
                   {SUPP_DEDUCTIONS.map((d, i) => (
                     <div key={i} className="flex items-center justify-between bg-blue-50 rounded-xl px-4 py-3 border border-blue-100">
-                      <div><div className="font-bold text-blue-800 text-sm">{d.type}</div><div className="text-xs text-blue-600">{d.date} · {d.ref} · {isRTL ? "السبب:" : "Reason:"} {d.reason}</div></div>
-                      <div className="text-end"><div className="font-mono font-black text-blue-700">−AED {d.amount}</div><div className="text-xs text-slate-400">{d.approvedBy}</div></div>
+                      <div><div className="font-bold text-blue-800 text-sm">{d.type}</div><div className="text-xs text-blue-600">{d.date} · {d.reason}</div></div>
+                      <div className="font-mono font-black text-blue-700">−AED {d.amount}</div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-          )}
+          ) : <ApiUnavailableState lang={lang} compact />)}
 
-          {/* AUDIT */}
-          {tab === "audit" && (
+          {tab === "audit" && (IS_MOCK_MODE ? (
             <div className="space-y-2">
               {[
-                { t: "2025-01-28 14:30", a: isRTL ? "تسجيل دفعة للمورد" : "Payment Recorded",       u: "أحمد (مالك)",  d: "AED 3,470.83 — PAY-001",    dot: "bg-emerald-500" },
-                { t: "2025-01-28 11:00", a: isRTL ? "اعتماد فاتورة شراء" : "Purchase Approved",     u: "أحمد (مالك)",  d: "PUR-2025-0042",              dot: "bg-[#0F2C59]" },
-                { t: "2025-01-25 09:00", a: isRTL ? "خصم من المستحق" : "Deduction Applied",         u: "أحمد (مالك)",  d: "AED 300 — خصم نقل",          dot: "bg-blue-500" },
-                { t: "2025-01-01 08:00", a: isRTL ? "إضافة المورد" : "Supplier Created",             u: "أحمد (مالك)",  d: "",                           dot: "bg-slate-400" },
+                { t: "2025-01-28 14:30", a: isRTL ? "تسجيل دفعة للمورد" : "Payment Recorded", u: "أحمد (مالك)", d: "AED 3,470.83 — PAY-001", dot: "bg-emerald-500" },
               ].map((e, i) => (
                 <div key={i} className="bg-slate-50 rounded-xl p-3.5 flex items-start gap-3">
                   <span className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${e.dot}`} />
-                  <div className="flex-1 min-w-0"><div className="text-sm font-bold text-slate-700">{e.a}{e.d && <span className="ms-2 text-slate-400 font-normal text-xs">{e.d}</span>}</div><div className="text-xs text-slate-400">{e.u}</div></div>
+                  <div className="flex-1 min-w-0"><div className="text-sm font-bold text-slate-700">{e.a}</div><div className="text-xs text-slate-400">{e.u}</div></div>
                   <div className="font-mono text-xs text-slate-400 shrink-0">{e.t}</div>
                 </div>
               ))}
             </div>
-          )}
+          ) : <ApiUnavailableState lang={lang} compact />)}
         </div>
       </Card>
 
-      {showPay && <SupplierPayModal lang={lang} supplierId={s.id} onClose={() => setShowPay(false)} />}
+      {showPay && !IS_MOCK_MODE && <LiveSupplierPaymentModal lang={lang} supplierId={s.id} onClose={() => setShowPay(false)} />}
+      {showPay && IS_MOCK_MODE && <SupplierPayModal lang={lang} supplierId={s.id} onClose={() => setShowPay(false)} />}
       {showSpecialPrice && <SupplierSpecialPriceModal lang={lang} onClose={() => setShowSpecialPrice(false)} />}
     </div>
   );
@@ -803,7 +836,7 @@ export function SupplierProfileScreen({ lang, role, onNavigate, supplierId }: {
 // ── MODAL: SUPPLIER PAYMENT ────────────────────────────────────────────────────
 export function SupplierPayModal({ lang, supplierId, onClose }: { lang: Lang; supplierId: string; onClose: () => void }) {
   const isRTL = lang === "ar";
-  const s = SUPPLIERS.find(x => x.id === supplierId) || SUPPLIERS[0];
+  const s = MOCK_SUPPLIERS.find(x => x.id === supplierId) || MOCK_SUPPLIERS[0];
   const [mode, setMode] = useState<"invoice" | "account">("invoice");
   const [selectedInv, setSelectedInv] = useState(SUPP_INVOICES.find(i => i.remaining > 0)?.id || "");
   const [amount, setAmount] = useState("");
@@ -900,7 +933,18 @@ export function SupplierPayModal({ lang, supplierId, onClose }: { lang: Lang; su
 // ── SCREEN: SUPPLIER STATEMENT ─────────────────────────────────────────────────
 export function SupplierStatementScreen({ lang, supplierId, onNavigate }: { lang: Lang; supplierId: string; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
-  const s = SUPPLIERS.find(x => x.id === supplierId) || SUPPLIERS[0];
+  const { item: row, loading, error, forbidden, reload } = useSupplierDetail(
+    supplierId,
+    async (id) => {
+      const m = MOCK_SUPPLIERS.find((x) => x.id === id);
+      return m ? supplierRowFromMock(m) : null;
+    },
+  );
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+  const s = row ? enrichSupplier(toModuleSupplier(row), MOCK_SUPPLIERS.find((m) => m.id === row.id)) : null;
+  if (!s) return <EmptyState lang={lang} messageAr="لا يوجد موردون بعد" messageEn="No suppliers yet" />;
   const [dateFrom, setDateFrom] = useState("2025-01-01");
   const [dateTo, setDateTo] = useState("2025-01-31");
   const totalDebits = SUPP_STMT.reduce((sum, m) => sum + m.debit, 0);

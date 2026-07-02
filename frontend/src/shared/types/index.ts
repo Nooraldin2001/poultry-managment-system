@@ -11,3 +11,10 @@ export type {
   DocumentStatus, SProduct, SInvLine, SInvStatus, SInvoice,
   SalesInvoice, PurchaseInvoice,
 } from "./documents";
+export type { CurrentUser, LoginRequest, LoginResponse, CompanyBrief } from "./auth";
+export type { DashboardSummary, TrendPoint, TaxSummaryBridge } from "./reports";
+export type {
+  ProductRow, CustomerRow, SupplierRow, InventoryBalanceRow,
+  PurchaseInvoiceRow, SalesInvoiceRow, PaymentMovementRow, QuotationRow,
+  ExpenseRow, TaxSummary, TaxWarning, ReportPayload,
+} from "./entities";

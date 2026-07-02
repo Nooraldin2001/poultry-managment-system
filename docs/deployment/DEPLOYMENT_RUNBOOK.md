@@ -169,6 +169,16 @@ The frontend never shows demo data in a production build: `VITE_USE_MOCK_DATA`
 defaults to `false` and is force-disabled in production builds. The deploy script
 refuses to build with `VITE_USE_MOCK_DATA=true`.
 
+**Frontend build env (Phase 1):** copy `frontend/.env.production.example` or pass at build time:
+
+```bash
+VITE_API_BASE=https://poultryhero.solutions/api
+VITE_USE_MOCK_DATA=false
+```
+
+The production bundle calls live JWT auth and dashboard APIs at `{VITE_API_BASE}/v1/...`.
+See `docs/frontend/PHASE_1_API_INTEGRATION_NOTES.md`.
+
 ---
 
 ## Backups (before going to production)

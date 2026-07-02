@@ -12,6 +12,7 @@ class DocumentType(models.TextChoices):
     STOCK_ADJUSTMENT = "stock_adjustment", "Stock Adjustment"
     CUSTOMER_REFUND = "customer_refund", "Customer Refund"
     SUPPLIER_REFUND = "supplier_refund", "Supplier Refund"
+    TAX_ADJUSTMENT = "tax_adjustment", "Tax Adjustment"
 
 
 class TemplateType(models.TextChoices):

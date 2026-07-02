@@ -1,21 +1,8 @@
-// Service boundary entry point.
-//
-// Screens import data accessors from here (never from data/mock directly), so the
-// mock → Django REST swap only touches this folder.
-//
-// Mock vs live is decided HERE, centrally, via IS_MOCK_MODE:
-//   * Mock mode (dev + VITE_USE_MOCK_DATA=true): delegate to services/mock/*.
-//   * Live mode (production / flag off): the live REST client is not wired yet, so
-//     list endpoints return a controlled EMPTY result and object/summary endpoints
-//     throw ApiUnavailableError. We NEVER fall back to demo data in live mode.
-
 import { IS_MOCK_MODE } from "@/services/config";
-import { ApiUnavailableError } from "./api/client";
-
 import * as companyMock from "./mock/companyService.mock";
+import * as productMock from "./mock/productService.mock";
 import * as customerMock from "./mock/customerService.mock";
 import * as supplierMock from "./mock/supplierService.mock";
-import * as productMock from "./mock/productService.mock";
 import * as inventoryMock from "./mock/inventoryService.mock";
 import * as salesMock from "./mock/salesService.mock";
 import * as purchaseMock from "./mock/purchaseService.mock";
@@ -24,33 +11,109 @@ import * as expenseMock from "./mock/expenseService.mock";
 import * as reportMock from "./mock/reportService.mock";
 import * as taxMock from "./mock/taxService.mock";
 
-// Live-mode fallbacks (no demo data).
-const liveEmptyList = async () => [];
-const liveNoItem = async () => null;
-const liveUnavailable = async () => {
-  throw new ApiUnavailableError("Live endpoint not implemented yet.");
-};
+import { listCompanies as listCompaniesLive, getCompanyById as getCompanyByIdLive } from "./adminService";
+import { listProductRows, getProductRow } from "./productService";
+import { listCustomerRows, getCustomerRow } from "./customerService";
+import { listSupplierRows, getSupplierRow } from "./supplierService";
+import { listInventoryRows } from "./inventoryService";
+import { listPurchaseRows } from "./purchaseService";
+import { listSalesRows, getSalesRow } from "./salesService";
+import { listPaymentMovementRows } from "./paymentService";
+import { listExpenseRows } from "./expenseService";
+import { getTaxSummaryLive } from "./taxService";
+import { listQuotationRows } from "./quotationService";
 
 const pick = <T>(mockImpl: T, liveImpl: T): T => (IS_MOCK_MODE ? mockImpl : liveImpl);
 
-export const listCompanies: typeof companyMock.listCompanies = pick(companyMock.listCompanies, liveEmptyList);
-export const getCompanyById: typeof companyMock.getCompanyById = pick(companyMock.getCompanyById, liveNoItem);
-export const listCustomers: typeof customerMock.listCustomers = pick(customerMock.listCustomers, liveEmptyList);
-export const getCustomerById: typeof customerMock.getCustomerById = pick(customerMock.getCustomerById, liveNoItem);
-export const listSuppliers: typeof supplierMock.listSuppliers = pick(supplierMock.listSuppliers, liveEmptyList);
-export const getSupplierById: typeof supplierMock.getSupplierById = pick(supplierMock.getSupplierById, liveNoItem);
-export const listProducts: typeof productMock.listProducts = pick(productMock.listProducts, liveEmptyList);
-export const getProductById: typeof productMock.getProductById = pick(productMock.getProductById, liveNoItem);
-export const listInventoryItems: typeof inventoryMock.listInventoryItems = pick(inventoryMock.listInventoryItems, liveEmptyList);
-export const listSalesInvoices: typeof salesMock.listSalesInvoices = pick(salesMock.listSalesInvoices, liveEmptyList);
-export const getSalesInvoiceById: typeof salesMock.getSalesInvoiceById = pick(salesMock.getSalesInvoiceById, liveNoItem);
-export const listPurchaseInvoices: typeof purchaseMock.listPurchaseInvoices = pick(purchaseMock.listPurchaseInvoices, liveEmptyList);
-export const listPaymentMovements: typeof paymentMock.listPaymentMovements = pick(paymentMock.listPaymentMovements, liveEmptyList);
-export const listExpenses: typeof expenseMock.listExpenses = pick(expenseMock.listExpenses, liveEmptyList);
-export const getReportSummary: typeof reportMock.getReportSummary = pick(reportMock.getReportSummary, liveUnavailable);
-export const getDashboardSummary: typeof reportMock.getDashboardSummary = pick(reportMock.getDashboardSummary, liveUnavailable);
-export const getTaxSummary: typeof taxMock.getTaxSummary = pick(taxMock.getTaxSummary, liveUnavailable);
+export const listCompanies = pick(companyMock.listCompanies, listCompaniesLive);
+export const getCompanyById = pick(companyMock.getCompanyById, getCompanyByIdLive);
 
-export { API_CONFIG, ApiUnavailableError } from "./api/client";
+export async function listProducts() {
+  if (IS_MOCK_MODE) return productMock.listProducts();
+  return (await listProductRows()) as unknown as Awaited<ReturnType<typeof productMock.listProducts>>;
+}
+
+export async function getProductById(id: string) {
+  if (IS_MOCK_MODE) return productMock.getProductById(id);
+  return (await getProductRow(id)) as unknown as Awaited<ReturnType<typeof productMock.getProductById>>;
+}
+
+export async function listCustomers() {
+  if (IS_MOCK_MODE) return customerMock.listCustomers();
+  return (await listCustomerRows()) as unknown as Awaited<ReturnType<typeof customerMock.listCustomers>>;
+}
+
+export async function getCustomerById(id: string) {
+  if (IS_MOCK_MODE) return customerMock.getCustomerById(id);
+  return (await getCustomerRow(id)) as unknown as Awaited<ReturnType<typeof customerMock.getCustomerById>>;
+}
+
+export async function listSuppliers() {
+  if (IS_MOCK_MODE) return supplierMock.listSuppliers();
+  return (await listSupplierRows()) as unknown as Awaited<ReturnType<typeof supplierMock.listSuppliers>>;
+}
+
+export async function getSupplierById(id: string) {
+  if (IS_MOCK_MODE) return supplierMock.getSupplierById(id);
+  return (await getSupplierRow(id)) as unknown as Awaited<ReturnType<typeof supplierMock.getSupplierById>>;
+}
+
+export async function listInventoryItems() {
+  if (IS_MOCK_MODE) return inventoryMock.listInventoryItems();
+  return (await listInventoryRows()) as unknown as Awaited<ReturnType<typeof inventoryMock.listInventoryItems>>;
+}
+
+export async function listSalesInvoices() {
+  if (IS_MOCK_MODE) return salesMock.listSalesInvoices();
+  return (await listSalesRows()) as unknown as Awaited<ReturnType<typeof salesMock.listSalesInvoices>>;
+}
+
+export async function getSalesInvoiceById(id: string) {
+  if (IS_MOCK_MODE) return salesMock.getSalesInvoiceById(id);
+  return (await getSalesRow(id)) as unknown as Awaited<ReturnType<typeof salesMock.getSalesInvoiceById>>;
+}
+
+export async function listPurchaseInvoices() {
+  if (IS_MOCK_MODE) return purchaseMock.listPurchaseInvoices();
+  return (await listPurchaseRows()) as unknown as Awaited<ReturnType<typeof purchaseMock.listPurchaseInvoices>>;
+}
+
+export async function listPaymentMovements() {
+  if (IS_MOCK_MODE) return paymentMock.listPaymentMovements();
+  return (await listPaymentMovementRows()) as unknown as Awaited<ReturnType<typeof paymentMock.listPaymentMovements>>;
+}
+
+export async function listExpenses() {
+  if (IS_MOCK_MODE) return expenseMock.listExpenses();
+  return (await listExpenseRows()) as unknown as Awaited<ReturnType<typeof expenseMock.listExpenses>>;
+}
+
+export async function listQuotations() {
+  if (IS_MOCK_MODE) return [] as Awaited<ReturnType<typeof listQuotationRows>>;
+  return listQuotationRows();
+}
+
+export const getReportSummary = pick(reportMock.getReportSummary, reportMock.getReportSummary);
+
+export async function getTaxSummary() {
+  if (IS_MOCK_MODE) return taxMock.getTaxSummary();
+  return (await getTaxSummaryLive()) as unknown as Awaited<ReturnType<typeof taxMock.getTaxSummary>>;
+}
+
+export { API_CONFIG, ApiError, ApiUnavailableError, request, clearTokens } from "./api/client";
 export { IS_MOCK_MODE, IS_PRODUCTION, API_BASE_URL } from "./config";
-export type { ListResponse, ItemResponse, ObjectResponse, ListParams } from "./api/types";
+export type { ListResponse, ItemResponse, ObjectResponse, ListParams, PaginatedResponse, SelectOption } from "./api/types";
+export * from "./authService";
+export * from "./adminService";
+export * from "./reportsService";
+export * from "./tenantService";
+export * from "./productService";
+export * from "./customerService";
+export * from "./supplierService";
+export * from "./inventoryService";
+export * from "./purchaseService";
+export * from "./salesService";
+export * from "./paymentService";
+export * from "./quotationService";
+export * from "./expenseService";
+export * from "./taxService";

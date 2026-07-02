@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // POULTRY HERO — PRODUCT MASTER & PRICING RULES MODULE (self-contained)
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import {
   Plus, X, Check, ChevronRight, ChevronLeft, ChevronDown,
@@ -10,12 +10,18 @@ import {
   TrendingUp, TrendingDown, Lock, Star, Layers, Scale
 } from "lucide-react";
 import { toast } from "sonner";
+import { useProducts, useProductDetail } from "@/hooks/api/useTenantResources";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { FormErrors } from "@/shared/components/FormErrors";
+import { createProduct, updateProduct, getProductRow, buildProductCreatePayload, listProductCategories } from "@/services/productService";
+import { IS_MOCK_MODE } from "@/services/config";
+import { ApiError } from "@/services/api/errors";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
 type TenantRole = "owner" | "accountant" | "cashier";
 type TenantScreen =
-  | "products" | "products-new" | "product-detail" | "product-categories"
+  | "products" | "products-new" | "products-edit" | "product-detail" | "product-categories"
   | "products-bulk-setup" | "products-byproducts" | "products-import-export"
   | "inventory" | "inventory-product" | "reports-sales" | "reports-purchases" | string;
 type ProductType = "fixed" | "moving" | "part" | "byproduct" | "service" | "other";
@@ -95,7 +101,7 @@ interface Product {
   minCt: number; minKg: number; active: boolean; vatT: boolean;
   stockCt: number; stockKg: number; trackInv: boolean;
 }
-const PRODUCTS: Product[] = [
+const MOCK_PRODUCTS: Product[] = [
   { id:"pr1",  nameAr:"900 جرام",       nameEn:"900 GRAM",     sku:"W-900",  cat:"whole",     type:"fixed",     g:900,  ppc:10, saleP:14.75, salePT:"kg",  buyP:1.15, buyPT:"piece", minCt:20, minKg:180, active:true,  vatT:true,  stockCt:34, stockKg:306,  trackInv:true },
   { id:"pr2",  nameAr:"1000 جرام",      nameEn:"1000 GRAM",    sku:"W-1000", cat:"whole",     type:"fixed",     g:1000, ppc:10, saleP:14.75, salePT:"kg",  buyP:1.20, buyPT:"piece", minCt:20, minKg:200, active:true,  vatT:true,  stockCt:8,  stockKg:80,   trackInv:true },
   { id:"pr3",  nameAr:"700 جرام",       nameEn:"700 GRAM",     sku:"W-700",  cat:"whole",     type:"fixed",     g:700,  ppc:16, saleP:13.25, salePT:"kg",  buyP:1.00, buyPT:"piece", minCt:10, minKg:100, active:true,  vatT:true,  stockCt:12, stockKg:134,  trackInv:true },
@@ -201,7 +207,22 @@ export function ProductsListScreen({ lang, role, onNavigate, setSelectedProductI
   const [filterActive, setFilterActive] = useState("all");
   const canEdit = role === "owner" || role === "accountant";
 
-  const filtered = PRODUCTS.filter(p => {
+  const { items: productSource, loading, error, forbidden, reload } = useProducts(
+    search ? { search } : undefined,
+    async () => MOCK_PRODUCTS,
+  );
+
+  if (forbidden) {
+    return <PermissionDeniedState lang={lang} />;
+  }
+  if (loading) {
+    return <LoadingState lang={lang} />;
+  }
+  if (error) {
+    return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+  }
+
+  const filtered = productSource.filter(p => {
     const q = search.toLowerCase();
     return (!q || p.nameAr.includes(search) || p.nameEn.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)) &&
       (filterCat === "all" || p.cat === filterCat) &&
@@ -210,14 +231,14 @@ export function ProductsListScreen({ lang, role, onNavigate, setSelectedProductI
   });
 
   const kpis = [
-    { v: PRODUCTS.length.toString(),                           ar: "إجمالي المنتجات",     en: "Total Products",      bg: "bg-[#0F2C59]" },
-    { v: PRODUCTS.filter(p => p.active).length.toString(),    ar: "المنتجات النشطة",     en: "Active",              bg: "bg-emerald-500" },
-    { v: PRODUCTS.filter(p => !p.active).length.toString(),   ar: "المنتجات الموقوفة",   en: "Disabled",            bg: "bg-slate-500" },
-    { v: PRODUCTS.filter(p => p.type === "fixed").length.toString(),   ar: "أوزان ثابتة", en: "Fixed Weights",   bg: "bg-blue-500" },
-    { v: PRODUCTS.filter(p => p.type === "moving").length.toString(),  ar: "أوزان متحركة",en: "Moving Weights",  bg: "bg-violet-500" },
-    { v: PRODUCTS.filter(p => p.type === "byproduct").length.toString(),ar: "منتجات جانبية",en: "By-products",   bg: "bg-amber-500" },
-    { v: PRODUCTS.filter(p => p.stockCt < p.minCt && p.active).length.toString(), ar: "منخفضة المخزون", en: "Low Stock", bg: "bg-red-500" },
-    { v: PRODUCTS.filter(p => !p.saleP && p.active).length.toString(), ar: "بدون سعر",   en: "Missing Price",       bg: "bg-amber-600" },
+    { v: productSource.length.toString(),                           ar: "إجمالي المنتجات",     en: "Total Products",      bg: "bg-[#0F2C59]" },
+    { v: productSource.filter(p => p.active).length.toString(),    ar: "المنتجات النشطة",     en: "Active",              bg: "bg-emerald-500" },
+    { v: productSource.filter(p => !p.active).length.toString(),   ar: "المنتجات الموقوفة",   en: "Disabled",            bg: "bg-slate-500" },
+    { v: productSource.filter(p => p.type === "fixed").length.toString(),   ar: "أوزان ثابتة", en: "Fixed Weights",   bg: "bg-blue-500" },
+    { v: productSource.filter(p => p.type === "moving").length.toString(),  ar: "أوزان متحركة",en: "Moving Weights",  bg: "bg-violet-500" },
+    { v: productSource.filter(p => p.type === "byproduct").length.toString(),ar: "منتجات جانبية",en: "By-products",   bg: "bg-amber-500" },
+    { v: productSource.filter(p => p.stockCt < p.minCt && p.active).length.toString(), ar: "منخفضة المخزون", en: "Low Stock", bg: "bg-red-500" },
+    { v: productSource.filter(p => !p.saleP && p.active).length.toString(), ar: "بدون سعر",   en: "Missing Price",       bg: "bg-amber-600" },
   ];
 
   return (
@@ -225,7 +246,7 @@ export function ProductsListScreen({ lang, role, onNavigate, setSelectedProductI
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-black text-[#0F2C59]">{isRTL ? "المنتجات" : "Products"}</h1>
-          <p className="text-xs text-slate-400 font-semibold">{PRODUCTS.length} {isRTL ? "منتج مسجل" : "products"}</p>
+          <p className="text-xs text-slate-400 font-semibold">{productSource.length} {isRTL ? "منتج مسجل" : "products"}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Btn variant="outline" size="sm" onClick={() => onNavigate("product-categories")}><Tag size={13} />{isRTL ? "التصنيفات" : "Categories"}</Btn>
@@ -368,8 +389,9 @@ export function ProductsListScreen({ lang, role, onNavigate, setSelectedProductI
 }
 
 // ── SCREEN: ADD / EDIT PRODUCT ─────────────────────────────────────────────────
-export function AddProductScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+export function AddProductScreen({ lang, role, onNavigate, productId }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; productId?: string }) {
   const isRTL = isRTL_fn(lang);
+  const isEdit = Boolean(productId);
   const [nameAr, setNameAr] = useState(""); const [nameEn, setNameEn] = useState("");
   const [sku, setSku] = useState(""); const [cat, setCat] = useState(""); const [type, setType] = useState<ProductType>("fixed");
   const [active, setActive] = useState(true);
@@ -386,17 +408,122 @@ export function AddProductScreen({ lang, role, onNavigate }: { lang: Lang; role:
   const [canQuotation, setCanQuotation] = useState(true);
   const [canSales, setCanSales] = useState(true);
   const [canPurchase, setCanPurchase] = useState(true);
+  const [categories, setCategories] = useState<{ value: string; label: string }[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  const [saveError, setSaveError] = useState<unknown>(null);
+  const [saving, setSaving] = useState(false);
+  const [loadingProduct, setLoadingProduct] = useState(Boolean(productId) && !IS_MOCK_MODE);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    void listProductCategories().then((rows) => {
+      setCategories(rows.filter((c) => c.active).map((c) => ({
+        value: String(c.id),
+        label: isRTL ? c.nameAr : c.nameEn,
+      })));
+    });
+  }, [isRTL]);
+
+  useEffect(() => {
+    if (!productId || IS_MOCK_MODE) return;
+    setLoadingProduct(true);
+    void getProductRow(productId)
+      .then((p) => {
+        if (!p) return;
+        setNameAr(p.nameAr);
+        setNameEn(p.nameEn);
+        setSku(p.sku ?? "");
+        setCat(String(p.categoryId ?? ""));
+        setType((p.type as ProductType) ?? "fixed");
+        setActive(p.active !== false);
+        setGrams(p.g ? String(p.g) : "");
+        setPpc(p.ppc ? String(p.ppc) : "10");
+        setSaleP(p.saleP ? String(p.saleP) : "");
+        setSalePT((p.salePT as PriceType) ?? "kg");
+        setBuyP(p.buyP ? String(p.buyP) : "");
+        setBuyPT((p.buyPT as PriceType) ?? "piece");
+        setTrackInv(p.trackInv !== false);
+        setVatT(p.vatT !== false);
+      })
+      .finally(() => setLoadingProduct(false));
+  }, [productId]);
+
+  const categoryOptions = !IS_MOCK_MODE && categories.length > 0
+    ? [{ value: "", label: isRTL ? "اختر التصنيف" : "Select Category" }, ...categories]
+    : [{ value: "", label: isRTL ? "اختر التصنيف" : "Select Category" }, ...PROD_CATEGORIES.map(c => ({ value: c.key, label: isRTL ? c.ar : c.en }))];
+
+  const handleSave = async (addAnother: boolean) => {
+    if (!nameAr || !cat) return;
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم حفظ المنتج بنجاح" : "Product saved");
+      if (addAnother) {
+        setNameAr(""); setNameEn(""); setSku(""); setGrams(""); setSaleP(""); setBuyP("");
+      } else {
+        onNavigate("products");
+      }
+      return;
+    }
+    setSaveError(null);
+    setFieldErrors({});
+    setSaving(true);
+    const categoryId = Number(cat);
+    if (!categoryId) {
+      toast.error(isRTL ? "اختر تصنيفاً صالحاً" : "Select a valid category");
+      return;
+    }
+    try {
+      const payload = buildProductCreatePayload({
+        nameAr,
+        nameEn,
+        sku,
+        categoryId,
+        productType: type,
+        weightGrams: parseFloat(grams) || undefined,
+        piecesPerCarton: parseFloat(ppc) || undefined,
+        salesPrice: parseFloat(saleP) || 0,
+        salesPriceType: salePT,
+        purchasePrice: parseFloat(buyP) || 0,
+        purchasePriceType: buyPT,
+        trackInventory: trackInv,
+        vatTaxable: vatT,
+        minCartons: minCt ? parseFloat(minCt) : undefined,
+        minKg: minKg ? parseFloat(minKg) : undefined,
+      });
+      if (isEdit && productId) {
+        await updateProduct(productId, payload);
+      } else {
+        await createProduct(payload);
+      }
+      toast.success(isRTL ? "تم حفظ المنتج بنجاح" : "Product saved");
+      if (addAnother && !isEdit) {
+        setNameAr(""); setNameEn(""); setSku(""); setGrams(""); setSaleP(""); setBuyP(""); setCat("");
+      } else if (isEdit && productId) {
+        onNavigate("product-detail");
+      } else {
+        onNavigate("products");
+      }
+    } catch (err) {
+      setSaveError(err);
+      if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل الحفظ" : "Save failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const gramsNum = parseFloat(grams) || 0;
   const ppcNum = parseFloat(ppc) || 0;
   const cartonKg = gramsNum > 0 && ppcNum > 0 ? (gramsNum * ppcNum / 1000).toFixed(2) : "—";
 
+  if (loadingProduct) return <LoadingState lang={lang} />;
+
   return (
     <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-5">
       <div className="flex items-center gap-3">
-        <button onClick={() => onNavigate("products")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
-        <h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "إضافة منتج جديد" : "Add New Product"}</h2>
+        <button onClick={() => onNavigate(isEdit ? "product-detail" : "products")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
+        <h2 className="text-xl font-black text-[#0F2C59]">{isEdit ? (isRTL ? "تعديل المنتج" : "Edit Product") : (isRTL ? "إضافة منتج جديد" : "Add New Product")}</h2>
       </div>
+      <FormErrors lang={lang} error={saveError} fieldErrors={fieldErrors} />
 
       {/* A. Basic Info */}
       <Card className="p-5">
@@ -406,7 +533,7 @@ export function AddProductScreen({ lang, role, onNavigate }: { lang: Lang; role:
           <FInput label={isRTL ? "اسم المنتج (إنجليزي)" : "English Name"} value={nameEn} onChange={setNameEn} placeholder="e.g. 900 GRAM" />
           <FInput label={isRTL ? "رمز المنتج / SKU" : "Product Code / SKU"} value={sku} onChange={setSku} placeholder="W-900" />
           <FSelect label={isRTL ? "التصنيف *" : "Category *"} value={cat} onChange={setCat} required
-            options={[{ value: "", label: isRTL ? "اختر التصنيف" : "Select Category" }, ...PROD_CATEGORIES.map(c => ({ value: c.key, label: isRTL ? c.ar : c.en }))]} />
+            options={categoryOptions} />
           <div>
             <label className="text-sm font-bold text-slate-700 block mb-2">{isRTL ? "نوع المنتج *" : "Product Type *"}</label>
             <div className="grid grid-cols-3 gap-1.5">
@@ -531,8 +658,8 @@ export function AddProductScreen({ lang, role, onNavigate }: { lang: Lang; role:
       <div className="flex flex-wrap gap-3 justify-between">
         <Btn variant="outline" onClick={() => onNavigate("products")}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
         <div className="flex gap-2">
-          <Btn variant="secondary" onClick={() => { toast.success(isRTL ? "تم الحفظ وفتح منتج جديد" : "Saved, opening new"); setNameAr(""); setNameEn(""); setSku(""); setGrams(""); setSaleP(""); setBuyP(""); }}>{isRTL ? "حفظ وإضافة آخر" : "Save & Add Another"}</Btn>
-          <Btn disabled={!nameAr || !cat} onClick={() => { toast.success(isRTL ? "تم حفظ المنتج بنجاح" : "Product saved"); onNavigate("products"); }}><Check size={15} />{isRTL ? "حفظ المنتج" : "Save Product"}</Btn>
+          {!isEdit && <Btn variant="secondary" disabled={saving} onClick={() => void handleSave(true)}>{isRTL ? "حفظ وإضافة آخر" : "Save & Add Another"}</Btn>}
+          <Btn disabled={!nameAr || !cat || saving} onClick={() => void handleSave(false)}><Check size={15} />{isEdit ? (isRTL ? "حفظ التعديلات" : "Save Changes") : (isRTL ? "حفظ المنتج" : "Save Product")}</Btn>
         </div>
       </div>
     </div>
@@ -546,7 +673,17 @@ export function ProductDetailScreen({ lang, role, onNavigate, productId }: {
   const isRTL = isRTL_fn(lang);
   const [tab, setTab] = useState("overview");
   const [calcCt, setCalcCt] = useState("10");
-  const p = PRODUCTS.find(x => x.id === productId) || PRODUCTS[0];
+  const { item: liveProduct, loading, error, forbidden, reload } = useProductDetail(
+    productId,
+    async (id) => MOCK_PRODUCTS.find((x) => x.id === id) ?? null,
+  );
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+  const p = liveProduct;
+  if (!p) {
+    return <EmptyState lang={lang} messageAr="لا توجد منتجات بعد" messageEn="No products yet" />;
+  }
   const cartonKg = p.g > 0 ? (p.g * p.ppc / 1000).toFixed(1) : "—";
   const totalPcs = p.g > 0 ? (parseFloat(calcCt) || 0) * p.ppc : 0;
   const totalKg = p.g > 0 ? (totalPcs * p.g / 1000).toFixed(1) : ((parseFloat(calcCt) || 0) * (parseFloat(cartonKg) || 0)).toFixed(1);
@@ -580,7 +717,7 @@ export function ProductDetailScreen({ lang, role, onNavigate, productId }: {
 
       {/* Actions */}
       <Card className="p-4 flex flex-wrap gap-2">
-        {canEdit && <Btn size="sm" variant="secondary" onClick={() => onNavigate("products-new")}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
+        {canEdit && <Btn size="sm" variant="secondary" onClick={() => onNavigate("products-edit")}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
         <Btn size="sm" variant="outline" onClick={() => onNavigate("inventory-product")}><Package size={13} />{isRTL ? "عرض المخزون" : "View Inventory"}</Btn>
         <Btn size="sm" variant="outline" onClick={() => onNavigate("reports-sales")}><TrendingUp size={13} />{isRTL ? "عرض المبيعات" : "View Sales"}</Btn>
         <Btn size="sm" variant="outline" onClick={() => onNavigate("reports-purchases")}><TrendingDown size={13} />{isRTL ? "عرض المشتريات" : "View Purchases"}</Btn>

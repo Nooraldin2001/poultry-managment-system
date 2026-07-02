@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // POULTRY HERO — PHASE 5: INVENTORY MANAGEMENT MODULE (self-contained)
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import {
   Package, AlertTriangle, AlertCircle, CheckCircle, XCircle, Info, X, Plus,
@@ -10,6 +10,18 @@ import {
   ArrowUp, ArrowDown, BarChart2, Layers, FileText, Filter, Minus, DollarSign
 } from "lucide-react";
 import { toast } from "sonner";
+import { useInventory } from "@/hooks/api/useTenantResources";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { toModuleInvProduct } from "./moduleMappers";
+import { IS_MOCK_MODE } from "@/services/config";
+import {
+  listStockMovements,
+  createStocktakingSession,
+  addStocktakingLine,
+  applyStocktaking,
+} from "@/services/inventoryService";
+import { ReasonModal } from "@/features/invoices/ReasonModal";
+import { ApiError } from "@/services/api/errors";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -88,7 +100,7 @@ interface InvProduct {
   minCartons: number; minKg: number; status: InvStatus; category: string;
   lastPurchase: string; lastSale: string; avgSalePrice: number; fifoCost: number;
 }
-const INV_PRODUCTS: InvProduct[] = [
+const MOCK_INV_PRODUCTS: InvProduct[] = [
   { id: "ip900",  name: "900 GRAM",  nameAr: "900 جرام",   cartons: 34,  pcs: 340,  kg: 306,   minCartons: 20, minKg: 270, status: "available", category: "chicken", lastPurchase: "2025-01-28", lastSale: "2025-01-28", avgSalePrice: 13.75, fifoCost: 12.25 },
   { id: "ip1000", name: "1000 GRAM", nameAr: "1000 جرام",  cartons: 8,   pcs: 80,   kg: 80,    minCartons: 20, minKg: 200, status: "low",       category: "chicken", lastPurchase: "2025-01-27", lastSale: "2025-01-28", avgSalePrice: 14.00, fifoCost: 12.50 },
   { id: "ip1100", name: "1100 GRAM", nameAr: "1100 جرام",  cartons: 24,  pcs: 240,  kg: 264,   minCartons: 15, minKg: 165, status: "available", category: "chicken", lastPurchase: "2025-01-25", lastSale: "2025-01-27", avgSalePrice: 14.50, fifoCost: 13.00 },
@@ -148,6 +160,31 @@ function QtyDelta({ val, suffix = "" }: { val: number; suffix?: string }) {
   return <span className={`font-mono font-black text-xs ${val > 0 ? "text-emerald-600" : "text-red-500"}`}>{val > 0 ? "+" : ""}{val}{suffix}</span>;
 }
 
+function inventoryRowFromMock(p: InvProduct) {
+  const status = p.status === "available" ? "ok" : p.status;
+  return { id: p.id, productId: p.id, name: p.nameAr, nameEn: p.name, cartons: p.cartons, pieces: p.pcs, weightKg: p.kg, minStock: p.minCartons || p.minKg, priceKg: p.fifoCost, status: status as "ok" | "low" | "out" };
+}
+
+function enrichInvProduct(m: ReturnType<typeof toModuleInvProduct>, mock?: InvProduct): InvProduct {
+  const statusMap: Record<string, InvStatus> = { ok: "available", low: "low", out: "out" };
+  return {
+    id: m.id,
+    name: m.nameEn,
+    nameAr: m.nameAr,
+    cartons: m.cartons,
+    pcs: m.pieces,
+    kg: m.kg,
+    minCartons: mock?.minCartons ?? m.minCt,
+    minKg: mock?.minKg ?? m.minKg,
+    status: statusMap[m.status] ?? mock?.status ?? "available",
+    category: mock?.category ?? "chicken",
+    lastPurchase: mock?.lastPurchase ?? "",
+    lastSale: mock?.lastSale ?? "",
+    avgSalePrice: mock?.avgSalePrice ?? m.avgCost,
+    fifoCost: mock?.fifoCost ?? m.avgCost,
+  };
+}
+
 // ── SCREEN: INVENTORY OVERVIEW ─────────────────────────────────────────────────
 export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProductId, setSelectedProductId }: {
   lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void;
@@ -163,6 +200,16 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
   const canAdjust = role === "owner" || role === "accountant";
   const canStocktake = role === "owner" || role === "accountant";
   const canViewValuation = role === "owner" || role === "accountant";
+
+  const { items: inventoryRows, loading, error, forbidden, reload } = useInventory(
+    search ? { search } : undefined,
+    async () => MOCK_INV_PRODUCTS.map(inventoryRowFromMock),
+  );
+  const INV_PRODUCTS = inventoryRows.map((row) => enrichInvProduct(toModuleInvProduct(row), MOCK_INV_PRODUCTS.find((m) => m.id === row.productId || m.id === row.id)));
+
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
 
   const filtered = INV_PRODUCTS.filter(p => {
     const s = search.toLowerCase();
@@ -207,7 +254,7 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
           { v: lowCount.toString(),                  ar: "منتجات منخفضة المخزون",     en: "Low Stock",           iconBg: "bg-amber-500",   icon: AlertTriangle, onClick: () => onNavigate("inventory-alerts") },
           { v: outCount.toString(),                  ar: "منتجات نفدت من المخزون",    en: "Out of Stock",        iconBg: "bg-red-500",     icon: XCircle, onClick: () => onNavigate("inventory-alerts") },
           { v: `AED ${estValue.toLocaleString()}`,   ar: "قيمة المخزون التقديرية",    en: "Estimated Value",     iconBg: "bg-emerald-600", icon: TrendingUp },
-          { v: `36 KG`,                              ar: "مبيعات اليوم من المخزون",   en: "Today's Stock Sales", iconBg: "bg-[#0F2C59]",   icon: TrendingDown },
+          { v: IS_MOCK_MODE ? `36 KG` : `0 KG`,                              ar: "مبيعات اليوم من المخزون",   en: "Today's Stock Sales", iconBg: "bg-[#0F2C59]",   icon: TrendingDown },
         ].map((c, i) => {
           const Icon = c.icon;
           return (
@@ -329,12 +376,7 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
 
       {/* Empty state */}
       {filtered.length === 0 && (
-        <Card className="p-14 text-center">
-          <Package size={48} className="text-slate-200 mx-auto mb-4" />
-          <h3 className="text-lg font-black text-slate-500 mb-2">{isRTL ? "لا يوجد مخزون حالياً" : "No inventory yet"}</h3>
-          <p className="text-slate-400 text-sm mb-6">{isRTL ? "ابدأ باعتماد أول فاتورة شراء." : "Start by approving your first purchase invoice."}</p>
-          <Btn onClick={() => onNavigate("purchases-new")}><ShoppingCart size={15} />{isRTL ? "إنشاء فاتورة شراء" : "Create Purchase Invoice"}</Btn>
-        </Card>
+        <EmptyState lang={lang} messageAr="لا يوجد مخزون فعلي بعد" messageEn="No inventory yet" />
       )}
 
       {/* Mobile sticky actions */}
@@ -359,7 +401,7 @@ export function ProductDetailScreen({ lang, role, onNavigate, productId }: {
   const [showFIFO, setShowFIFO] = useState(false);
   const canAdjust = role === "owner" || role === "accountant";
 
-  const p = INV_PRODUCTS.find(x => x.id === productId) || INV_PRODUCTS[0];
+  const p = MOCK_INV_PRODUCTS.find(x => x.id === productId) || MOCK_INV_PRODUCTS[0];
   const movements = INV_MOVEMENTS.filter(m => m.productId === p.id);
   const totalPurchased = movements.filter(m => m.type === "purchase").reduce((s, m) => s + Math.abs(m.kgDelta), 0);
   const totalSold = movements.filter(m => m.type === "sale").reduce((s, m) => s + Math.abs(m.kgDelta), 0);
@@ -487,7 +529,7 @@ export function ProductDetailScreen({ lang, role, onNavigate, productId }: {
 // ── MODAL: MANUAL STOCK ADJUSTMENT ────────────────────────────────────────────
 export function StockAdjustModal({ lang, productId, onClose }: { lang: Lang; productId: string; onClose: () => void }) {
   const isRTL = lang === "ar";
-  const p = INV_PRODUCTS.find(x => x.id === productId) || INV_PRODUCTS[0];
+  const p = MOCK_INV_PRODUCTS.find(x => x.id === productId) || MOCK_INV_PRODUCTS[0];
   const [adjType, setAdjType] = useState<"increase" | "decrease" | "correction">("increase");
   const [ctAdj, setCtAdj] = useState("");
   const [pcsAdj, setPcsAdj] = useState("");
@@ -608,11 +650,30 @@ export function StocktakingScreen({ lang, role, onNavigate }: { lang: Lang; role
   const canApply = role === "owner" || role === "accountant";
   const [showConfirm, setShowConfirm] = useState(false);
   const [counts, setCounts] = useState<Record<string, { ct: string; pcs: string; kg: string }>>({});
+  const [sessionId, setSessionId] = useState("");
+  const [applying, setApplying] = useState(false);
+
+  const { items: inventoryRows, loading, error, forbidden, reload } = useInventory(
+    undefined,
+    async () => (IS_MOCK_MODE ? MOCK_INV_PRODUCTS.map(inventoryRowFromMock) : []),
+  );
+  const products = inventoryRows.map((row) =>
+    enrichInvProduct(toModuleInvProduct(row), IS_MOCK_MODE ? MOCK_INV_PRODUCTS.find((x) => x.id === row.productId || x.id === row.id) : undefined),
+  );
+
+  useEffect(() => {
+    if (IS_MOCK_MODE || sessionId) return;
+    void createStocktakingSession().then((s) => setSessionId(s.id)).catch(() => {});
+  }, [sessionId]);
+
+  if (!IS_MOCK_MODE && forbidden) return <PermissionDeniedState lang={lang} />;
+  if (!IS_MOCK_MODE && loading) return <LoadingState lang={lang} />;
+  if (!IS_MOCK_MODE && error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
 
   const setCount = (id: string, field: "ct" | "pcs" | "kg", val: string) =>
     setCounts(prev => ({ ...prev, [id]: { ct: "", pcs: "", kg: "", ...prev[id], [field]: val } }));
 
-  const getDiff = (p: InvProduct) => {
+  const getDiff = (p: { id: string; kg: number }) => {
     const c = counts[p.id];
     const actualKg = parseFloat(c?.kg || "") || null;
     if (actualKg === null) return null;
@@ -626,7 +687,37 @@ export function StocktakingScreen({ lang, role, onNavigate }: { lang: Lang; role
     return "short";
   };
 
-  const hasDiffs = INV_PRODUCTS.some(p => getDiff(p) !== null && getDiff(p) !== 0);
+  const hasDiffs = products.some(p => getDiff(p) !== null && getDiff(p) !== 0);
+
+  const handleApply = async (reason: string) => {
+    if (!sessionId || IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم تطبيق الجرد بنجاح" : "Stocktake applied successfully");
+      setShowConfirm(false);
+      return;
+    }
+    setApplying(true);
+    try {
+      for (const p of products) {
+        const c = counts[p.id];
+        if (!c?.kg) continue;
+        await addStocktakingLine(sessionId, {
+          product: Number(p.id),
+          actual_cartons: c.ct || "0",
+          actual_pieces: c.pcs || "0",
+          actual_weight_kg: c.kg,
+          system_weight_kg: String(p.kg),
+        });
+      }
+      await applyStocktaking(sessionId, reason);
+      toast.success(isRTL ? "تم تطبيق الجرد بنجاح" : "Stocktake applied successfully");
+      setShowConfirm(false);
+      onNavigate("inventory");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Apply failed");
+    } finally {
+      setApplying(false);
+    }
+  };
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -657,7 +748,7 @@ export function StocktakingScreen({ lang, role, onNavigate }: { lang: Lang; role
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {INV_PRODUCTS.map(p => {
+              {products.map(p => {
                 const diff = getDiff(p);
                 const diffStatus = getDiffStatus(diff);
                 return (
@@ -686,16 +777,16 @@ export function StocktakingScreen({ lang, role, onNavigate }: { lang: Lang; role
       </Card>
 
       {showConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-black text-[#0F2C59] mb-2">{isRTL ? "تأكيد تطبيق الجرد" : "Confirm Apply Stocktake"}</h3>
-            <p className="text-sm text-slate-500 mb-4">{isRTL ? "هل تريد تطبيق فروقات الجرد؟ سيتم تعديل المخزون مباشرة وإنشاء حركة مخزون لكل منتج." : "Apply stocktake differences? Inventory will be adjusted and a movement record created for each product."}</p>
-            <div className="flex gap-3">
-              <Btn variant="outline" onClick={() => setShowConfirm(false)} className="flex-1 justify-center">{isRTL ? "رجوع" : "Back"}</Btn>
-              <Btn variant="primary" onClick={() => { toast.success(isRTL ? "تم تطبيق الجرد بنجاح" : "Stocktake applied successfully"); setShowConfirm(false); }} className="flex-1 justify-center"><Check size={14} />{isRTL ? "تأكيد التطبيق" : "Apply"}</Btn>
-            </div>
-          </div>
-        </div>
+        <ReasonModal
+          lang={lang}
+          titleAr="تأكيد تطبيق الجرد"
+          titleEn="Confirm apply stocktake"
+          confirmLabelAr="تطبيق"
+          confirmLabelEn="Apply"
+          loading={applying}
+          onClose={() => setShowConfirm(false)}
+          onConfirm={handleApply}
+        />
       )}
     </div>
   );
@@ -705,6 +796,14 @@ export function StocktakingScreen({ lang, role, onNavigate }: { lang: Lang; role
 export function LowStockScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
   const canAdjustMin = role === "owner";
+
+  const { items: inventoryRows, loading, error, forbidden, reload } = useInventory(undefined, async () => MOCK_INV_PRODUCTS.map(inventoryRowFromMock));
+  const INV_PRODUCTS = inventoryRows.map((row) => enrichInvProduct(toModuleInvProduct(row), MOCK_INV_PRODUCTS.find((m) => m.id === row.productId || m.id === row.id)));
+
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
+
   const alerts = INV_PRODUCTS.filter(p => p.status === "low" || p.status === "out");
 
   if (alerts.length === 0) return (
@@ -769,8 +868,50 @@ export function MovementScreen({ lang, role, onNavigate }: { lang: Lang; role: T
   const isRTL = lang === "ar";
   const [filterProduct, setFilterProduct] = useState("all");
   const [filterType, setFilterType] = useState("all");
+  const [movements, setMovements] = useState<typeof INV_MOVEMENTS>([]);
+  const [movLoading, setMovLoading] = useState(!IS_MOCK_MODE);
+  const [movError, setMovError] = useState<unknown>(null);
 
-  const filtered = INV_MOVEMENTS.filter(m =>
+  const { items: inventoryRows, loading, error, forbidden, reload } = useInventory(
+    undefined,
+    async () => (IS_MOCK_MODE ? MOCK_INV_PRODUCTS.map(inventoryRowFromMock) : []),
+  );
+  const INV_PRODUCTS = inventoryRows.map((row) =>
+    enrichInvProduct(toModuleInvProduct(row), IS_MOCK_MODE ? MOCK_INV_PRODUCTS.find((x) => x.id === row.productId || x.id === row.id) : undefined),
+  );
+
+  const mapApiMovement = (r: Awaited<ReturnType<typeof listStockMovements>>[number]) => ({
+    id: r.id,
+    date: r.date,
+    productId: "",
+    type: (r.type || "adj-increase") as MovType,
+    ref: r.reference,
+    ctDelta: r.cartons,
+    pcsDelta: r.pieces,
+    kgDelta: r.weightKg,
+    balAfter: r.balanceAfter,
+    user: "",
+    note: "",
+  });
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) {
+      setMovements(INV_MOVEMENTS);
+      setMovLoading(false);
+      return;
+    }
+    setMovLoading(true);
+    listStockMovements()
+      .then((rows) => setMovements(rows.map(mapApiMovement)))
+      .catch((err) => setMovError(err))
+      .finally(() => setMovLoading(false));
+  }, []);
+
+  if (forbidden) return <PermissionDeniedState lang={lang} />;
+  if (loading || movLoading) return <LoadingState lang={lang} />;
+  if (error || movError) return <ErrorState lang={lang} error={error ?? movError} onRetry={() => { void reload(); if (!IS_MOCK_MODE) void listStockMovements().then((rows) => setMovements(rows.map(mapApiMovement))); }} />;
+
+  const filtered = movements.filter(m =>
     (filterProduct === "all" || m.productId === filterProduct) &&
     (filterType === "all" || m.type === filterType)
   );
@@ -884,8 +1025,8 @@ export function ValuationScreen({ lang, role, onNavigate }: { lang: Lang; role: 
     </div>
   );
 
-  const totalValue = Math.round(INV_PRODUCTS.reduce((s, p) => s + p.kg * p.fifoCost, 0));
-  const avgMargin = ((INV_PRODUCTS.reduce((s, p) => s + p.avgSalePrice, 0) / INV_PRODUCTS.length - INV_PRODUCTS.reduce((s, p) => s + p.fifoCost, 0) / INV_PRODUCTS.length) / (INV_PRODUCTS.reduce((s, p) => s + p.avgSalePrice, 0) / INV_PRODUCTS.length) * 100).toFixed(1);
+  const totalValue = Math.round(MOCK_INV_PRODUCTS.reduce((s, p) => s + p.kg * p.fifoCost, 0));
+  const avgMargin = ((MOCK_INV_PRODUCTS.reduce((s, p) => s + p.avgSalePrice, 0) / MOCK_INV_PRODUCTS.length - MOCK_INV_PRODUCTS.reduce((s, p) => s + p.fifoCost, 0) / MOCK_INV_PRODUCTS.length) / (MOCK_INV_PRODUCTS.reduce((s, p) => s + p.avgSalePrice, 0) / MOCK_INV_PRODUCTS.length) * 100).toFixed(1);
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -943,7 +1084,7 @@ export function ValuationScreen({ lang, role, onNavigate }: { lang: Lang; role: 
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {INV_PRODUCTS.filter(p => p.kg > 0).map(p => {
+              {MOCK_INV_PRODUCTS.filter(p => p.kg > 0).map(p => {
                 const stockValue = Math.round(p.kg * p.fifoCost);
                 const margin = ((p.avgSalePrice - p.fifoCost) / p.avgSalePrice * 100).toFixed(1);
                 const marginNum = parseFloat(margin);

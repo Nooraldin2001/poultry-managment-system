@@ -16,7 +16,7 @@ export type TenantScreen =
   | "payments" | "expenses" | "expenses-list" | "expenses-recurring" | "expenses-report" | "expense-detail" | "expense-voucher"
   | "accounts" | "tax" | "tax-sales" | "tax-purchases" | "tax-net" | "tax-warnings" | "tax-audit" | "tax-credit-notes" | "tax-non-taxable" | "tax-settings" | "tax-export-preview" | "users" | "qa-summary"
   | "payments-movements" | "payments-customer-collection" | "payments-supplier-payment" | "payments-customer-refund" | "payments-supplier-refund" | "payment-receipt-detail" | "payment-receipt-preview" | "payments-method-summary" | "payments-cash-bank" | "payments-report"
-  | "products" | "products-new" | "product-detail" | "product-categories" | "products-bulk-setup" | "products-byproducts" | "products-import-export"
+  | "products" | "products-new" | "products-edit" | "product-detail" | "product-categories" | "products-bulk-setup" | "products-byproducts" | "products-import-export"
   | "quotations-new" | "quotation-detail" | "quotation-preview" | "quotation-convert" | "quotation-analytics"
   | "settings" | "settings-company" | "settings-users" | "settings-user-new" | "settings-user-permissions"
   | "settings-roles" | "settings-sensitive-actions" | "settings-audit" | "settings-numbering"

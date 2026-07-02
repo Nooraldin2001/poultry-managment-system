@@ -2,3 +2,19 @@
 @source '../**/*.{js,ts,jsx,tsx}';
 
 @import 'tw-animate-css';
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-preview-doc,
+  .print-preview-doc * {
+    visibility: visible;
+  }
+  .print-preview-doc {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
