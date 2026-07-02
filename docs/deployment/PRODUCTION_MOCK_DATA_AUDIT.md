@@ -147,5 +147,5 @@ corepack pnpm run typecheck   # pass
 corepack pnpm run build       # pass
 ```
 
-- `bash scripts/check_no_production_mock_data.sh` — **skipped** (Windows shell); must run on Linux/VPS before deployment.
+- `bash scripts/check_no_production_mock_data.sh` — ✅ run on Linux VPS (2026-07-02), result: `OK: no production mock-data hazards found.`
 

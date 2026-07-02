@@ -92,6 +92,9 @@ echo "==> Django check / migrate / collectstatic..."
 # (they require --confirm-demo-data). See docs/deployment/DEPLOYMENT_RUNBOOK.md.
 ( cd "$BACKEND_DIR" && "$PY" manage.py check )
 ( cd "$BACKEND_DIR" && "$PY" manage.py migrate --noinput )
+# Safe idempotent reference data (NOT demo business data).
+( cd "$BACKEND_DIR" && "$PY" manage.py seed_plans )
+( cd "$BACKEND_DIR" && "$PY" manage.py seed_permissions )
 ( cd "$BACKEND_DIR" && "$PY" manage.py collectstatic --noinput )
 
 echo "==> Restarting $SERVICE_NAME..."

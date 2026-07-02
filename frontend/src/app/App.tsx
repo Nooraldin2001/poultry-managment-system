@@ -36,7 +36,7 @@ import { useTenantDashboard, dashboardDateRange } from "@/hooks/useTenantDashboa
 import { useSales, useSaleDetail } from "@/hooks/api/useTenantResources";
 import { parseAmount } from "@/services/reportsService";
 import { resolveTenantCompany, mapBackendRole } from "@/services/tenantService";
-import { buildAdminDashboardSummary } from "@/services/adminService";
+import { buildAdminDashboardSummary, createCompany, createCompanyAdminUser } from "@/services/adminService";
 import { ApiError } from "@/services/api/errors";
 import { T_NAV } from "@/app/navigation/tenantNavigation";
 import { getFilteredTenantNav, canViewScreen } from "@/app/navigation/permissions";
@@ -699,12 +699,86 @@ function CompanyDetailScreen({ companyId, lang, onNavigate, onSwitchToTenant }: 
 // ── SCREEN: CREATE COMPANY WIZARD ──────────────────────────────────────────────
 function CreateCompanyWizard({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Screen) => void }) {
   const isRTL = lang === "ar";
-  const [step, setStep] = useState(1); const [done, setDone] = useState(false);
+  const [step, setStep] = useState(1);
+  const [done, setDone] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ nameAr: "", nameEn: "", tradeNo: "", vatNo: "", emirate: "", address: "", phone: "", email: "", subdomain: "", plan: "basic", status: "trial", monthlyPrice: "800", yearlyPrice: "8000", renewalDate: "", trialEndDate: "", notes: "", adminName: "", adminPhone: "", adminEmail: "", tempPass: "", confirmPass: "", forceChange: true, modules: ["dashboard","sales","inventory","customers","reports","settings_mod"] });
   const u = (k: string, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
   const toggleMod = (k: string) => setForm(f => ({ ...f, modules: f.modules.includes(k) ? f.modules.filter(x => x !== k) : [...f.modules, k] }));
   const STEPS = [{ n: 1, ar: "معلومات الشركة", en: "Company Info" }, { n: 2, ar: "رابط الوصول", en: "Tenant Access" }, { n: 3, ar: "خطة الاشتراك", en: "Subscription" }, { n: 4, ar: "مستخدم الأدمن", en: "Admin User" }, { n: 5, ar: "الوحدات", en: "Modules" }, { n: 6, ar: "المراجعة", en: "Review" }];
   const EMIRATES = [{ value: "", label: isRTL ? "اختر الإمارة" : "Select Emirate" }, { value: "dubai", label: isRTL ? "دبي" : "Dubai" }, { value: "abudhabi", label: isRTL ? "أبوظبي" : "Abu Dhabi" }, { value: "sharjah", label: isRTL ? "الشارقة" : "Sharjah" }, { value: "ajman", label: isRTL ? "عجمان" : "Ajman" }, { value: "rak", label: isRTL ? "رأس الخيمة" : "RAK" }, { value: "uaq", label: isRTL ? "أم القيوين" : "UAQ" }, { value: "fujairah", label: isRTL ? "الفجيرة" : "Fujairah" }];
+
+  const validateStep = (s: number): boolean => {
+    if (s === 1) {
+      if (!form.nameAr.trim() || !form.nameEn.trim() || !form.tradeNo.trim() || !form.emirate || !form.phone.trim() || !form.email.trim()) {
+        toast.error(isRTL ? "يرجى تعبئة جميع الحقول المطلوبة" : "Please fill all required fields");
+        return false;
+      }
+    }
+    if (s === 2) {
+      if (!form.subdomain.trim()) {
+        toast.error(isRTL ? "يرجى إدخال النطاق الفرعي" : "Please enter a subdomain");
+        return false;
+      }
+    }
+    if (s === 4) {
+      if (!form.adminName.trim() || !form.adminPhone.trim() || !form.adminEmail.trim() || !form.tempPass || !form.confirmPass) {
+        toast.error(isRTL ? "يرجى تعبئة بيانات الأدمن" : "Please fill admin user details");
+        return false;
+      }
+      if (form.tempPass !== form.confirmPass) {
+        toast.error(isRTL ? "كلمتا المرور غير متطابقتين" : "Passwords do not match");
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const handleNext = () => {
+    if (!validateStep(step)) return;
+    setStep(s => s + 1);
+  };
+
+  const handleCreate = async () => {
+    if (!validateStep(1) || !validateStep(2) || !validateStep(4)) return;
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم إنشاء الشركة بنجاح!" : "Company created!");
+      setDone(true);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const company = await createCompany({
+        name_ar: form.nameAr.trim(),
+        name_en: form.nameEn.trim(),
+        subdomain: form.subdomain.trim(),
+        plan_code: form.plan,
+        status: form.status,
+        trade_license: form.tradeNo.trim(),
+        trn: form.vatNo.trim() || undefined,
+        emirate: form.emirate,
+        address: form.address.trim() || undefined,
+        phone: form.phone.trim(),
+        email: form.email.trim(),
+      });
+      await createCompanyAdminUser(company.id, {
+        email: form.adminEmail.trim(),
+        password: form.tempPass,
+        full_name: form.adminName.trim(),
+        phone: form.adminPhone.trim(),
+      });
+      toast.success(isRTL ? "تم إنشاء الشركة بنجاح!" : "Company created!");
+      setDone(true);
+    } catch (err) {
+      const msg = err instanceof ApiError
+        ? err.message
+        : (isRTL ? "فشل إنشاء الشركة" : "Failed to create company");
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (done) return (
     <div className="p-4 lg:p-8 flex items-center justify-center min-h-[60vh]"><div className="text-center max-w-sm"><div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle size={40} className="text-emerald-500" /></div><h2 className="text-2xl font-black text-[#0F2C59] mb-2">{isRTL ? "تم إنشاء الشركة بنجاح!" : "Company Created!"}</h2><p className="text-slate-400 font-semibold mb-8">{isRTL ? "تم إنشاء الشركة والمستخدم الأدمن." : "Company and admin user created."}</p><div className="flex gap-3 justify-center"><Btn onClick={() => onNavigate("companies")}><Building2 size={15} />{isRTL ? "عرض الشركات" : "View Companies"}</Btn><Btn variant="secondary" onClick={() => { setStep(1); setDone(false); }}><Plus size={15} />{isRTL ? "إضافة أخرى" : "Add Another"}</Btn></div></div></div>
   );
@@ -725,14 +799,14 @@ function CreateCompanyWizard({ lang, onNavigate }: { lang: Lang; onNavigate: (s:
       </div>
       <Card className="p-6 lg:p-8">
         {step === 1 && <div><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "معلومات الشركة" : "Company Information"}</h3><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><FInput label={isRTL ? "اسم الشركة (عربي)" : "Arabic Name"} value={form.nameAr} onChange={v => u("nameAr", v)} placeholder="شركة الدواجن" required /><FInput label={isRTL ? "اسم الشركة (إنجليزي)" : "English Name"} value={form.nameEn} onChange={v => u("nameEn", v)} placeholder="Poultry Co" required /><FInput label={isRTL ? "رقم الرخصة" : "Trade License"} value={form.tradeNo} onChange={v => u("tradeNo", v)} placeholder="DM-2025-XXXXX" required /><FInput label={isRTL ? "رقم الضريبة TRN" : "VAT/TRN"} value={form.vatNo} onChange={v => u("vatNo", v)} /><FSelect label={isRTL ? "الإمارة" : "Emirate"} value={form.emirate} onChange={v => u("emirate", v)} options={EMIRATES} required /><FInput label={isRTL ? "العنوان" : "Address"} value={form.address} onChange={v => u("address", v)} /><FInput label={isRTL ? "الهاتف" : "Phone"} type="tel" value={form.phone} onChange={v => u("phone", v)} placeholder="+971 50 XXX XXXX" required /><FInput label={isRTL ? "البريد الإلكتروني" : "Email"} type="email" value={form.email} onChange={v => u("email", v)} required /></div></div>}
-        {step === 2 && <div className="space-y-5"><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "رابط الوصول للشركة" : "Tenant Access"}</h3><FInput label="Subdomain" value={form.subdomain} onChange={v => u("subdomain", v.toLowerCase().replace(/[^a-z0-9-]/g, ""))} placeholder="company-name" helper={isRTL ? "استخدم حروف إنجليزية صغيرة بدون مسافات" : "Lowercase English, no spaces"} required />{form.subdomain && <div className="bg-[#0F2C59]/5 border border-[#0F2C59]/20 rounded-2xl p-4"><div className="text-xs font-bold text-slate-400 mb-1">{isRTL ? "رابط الشركة:" : "Company URL:"}</div><div className="font-mono font-black text-[#0F2C59]">https://{form.subdomain}.poultryhero.com</div></div>}{form.subdomain === "alnoor" && <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2"><XCircle size={15} className="text-red-500 shrink-0" /><span className="text-sm font-bold text-red-600">{isRTL ? "هذا النطاق الفرعي مستخدم بالفعل" : "Subdomain already taken"}</span></div>}</div>}
+        {step === 2 && <div className="space-y-5"><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "رابط الوصول للشركة" : "Tenant Access"}</h3><FInput label="Subdomain" value={form.subdomain} onChange={v => u("subdomain", v.toLowerCase().replace(/[^a-z0-9-]/g, ""))} placeholder="company-name" helper={isRTL ? "استخدم حروف إنجليزية صغيرة بدون مسافات" : "Lowercase English, no spaces"} required />{form.subdomain && <div className="bg-[#0F2C59]/5 border border-[#0F2C59]/20 rounded-2xl p-4"><div className="text-xs font-bold text-slate-400 mb-1">{isRTL ? "رابط الشركة:" : "Company URL:"}</div><div className="font-mono font-black text-[#0F2C59]">https://{form.subdomain}.poultryhero.solutions</div></div>}{form.subdomain === "alnoor" && <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2"><XCircle size={15} className="text-red-500 shrink-0" /><span className="text-sm font-bold text-red-600">{isRTL ? "هذا النطاق الفرعي مستخدم بالفعل" : "Subdomain already taken"}</span></div>}</div>}
         {step === 3 && <div className="space-y-5"><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "خطة الاشتراك" : "Subscription Plan"}</h3><div className="grid grid-cols-3 gap-3">{[{ k: "basic", ar: "الأساسية", en: "Basic", p: "800" }, { k: "pro", ar: "الاحترافية", en: "Pro", p: "1,500" }, { k: "enterprise", ar: "المؤسسية", en: "Enterprise", p: "3,000" }].map(pl => <button key={pl.k} onClick={() => { u("plan", pl.k); u("monthlyPrice", pl.p.replace(",", "")); }} className={`p-4 rounded-2xl border-2 text-center transition-all ${form.plan === pl.k ? "border-[#0F2C59] bg-[#0F2C59]/5" : "border-slate-200"}`}><div className="font-black text-slate-800 text-sm">{isRTL ? pl.ar : pl.en}</div><div className="text-xs text-slate-500 font-mono">AED {pl.p}/mo</div></button>)}</div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><FSelect label={isRTL ? "الحالة" : "Status"} value={form.status} onChange={v => u("status", v)} options={[{ value: "trial", label: isRTL ? "تجريبي" : "Trial" }, { value: "active", label: isRTL ? "نشط" : "Active" }, { value: "suspended", label: isRTL ? "موقوف" : "Suspended" }]} /><FInput label={isRTL ? "السعر الشهري (درهم)" : "Monthly Price (AED)"} type="number" value={form.monthlyPrice} onChange={v => u("monthlyPrice", v)} /><FInput label={isRTL ? "تاريخ التجديد" : "Renewal Date"} type="date" value={form.renewalDate} onChange={v => u("renewalDate", v)} />{form.status === "trial" && <FInput label={isRTL ? "تاريخ انتهاء التجربة" : "Trial End Date"} type="date" value={form.trialEndDate} onChange={v => u("trialEndDate", v)} />}</div></div>}
         {step === 4 && <div className="space-y-4"><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "إنشاء مستخدم الأدمن" : "Create Admin User"}</h3><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><FInput label={isRTL ? "الاسم الكامل" : "Full Name"} value={form.adminName} onChange={v => u("adminName", v)} required /><FInput label={isRTL ? "الهاتف" : "Phone"} type="tel" value={form.adminPhone} onChange={v => u("adminPhone", v)} required /><FInput label={isRTL ? "البريد الإلكتروني" : "Email"} type="email" value={form.adminEmail} onChange={v => u("adminEmail", v)} required /><div /><FInput label={isRTL ? "كلمة المرور المؤقتة" : "Temp Password"} type="password" value={form.tempPass} onChange={v => u("tempPass", v)} required /><FInput label={isRTL ? "تأكيد كلمة المرور" : "Confirm Password"} type="password" value={form.confirmPass} onChange={v => u("confirmPass", v)} error={form.confirmPass && form.tempPass !== form.confirmPass ? (isRTL ? "كلمتا المرور غير متطابقتين" : "Passwords do not match") : undefined} /></div><div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100"><button onClick={() => u("forceChange", !form.forceChange)} className={`w-12 h-6 rounded-full flex items-center shrink-0 ${form.forceChange ? "bg-[#0F2C59]" : "bg-slate-300"}`}><span className={`w-5 h-5 bg-white rounded-full shadow-sm transition-all mx-0.5 ${form.forceChange ? "translate-x-6" : "translate-x-0"}`} /></button><label className="text-sm font-bold text-slate-700">{isRTL ? "إجبار على تغيير كلمة المرور عند أول دخول" : "Force password change on first login"}</label></div></div>}
         {step === 5 && <div><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "الوحدات المتاحة" : "Enabled Modules"}</h3><div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">{ALL_MODULES.map(m => { const on = form.modules.includes(m.key); return <button key={m.key} onClick={() => toggleMod(m.key)} className={`flex items-center gap-2.5 p-3 rounded-xl border-2 text-start transition-all ${on ? "border-[#0F2C59] bg-[#0F2C59]/5" : "border-slate-200"}`}><div className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 ${on ? "bg-[#0F2C59]" : "bg-slate-200"}`}>{on && <Check size={11} className="text-white" />}</div><span className={`text-xs font-bold ${on ? "text-[#0F2C59]" : "text-slate-400"}`}>{isRTL ? m.ar : m.en}</span></button>; })}</div></div>}
         {step === 6 && <div className="space-y-4"><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "مراجعة المعلومات" : "Review"}</h3>{[{ title: isRTL ? "معلومات الشركة" : "Company Info", rows: [[isRTL ? "الاسم بالعربي" : "Arabic", form.nameAr || "—"], [isRTL ? "الاسم بالإنجليزي" : "English", form.nameEn || "—"], [isRTL ? "الإمارة" : "Emirate", form.emirate || "—"], [isRTL ? "الهاتف" : "Phone", form.phone || "—"]] }, { title: isRTL ? "الاشتراك" : "Subscription", rows: [[isRTL ? "الخطة" : "Plan", form.plan], [isRTL ? "الحالة" : "Status", form.status], [isRTL ? "السعر" : "Price", `AED ${parseInt(form.monthlyPrice || "0").toLocaleString()}/mo`]] }, { title: isRTL ? "الأدمن" : "Admin", rows: [[isRTL ? "الاسم" : "Name", form.adminName || "—"], [isRTL ? "البريد" : "Email", form.adminEmail || "—"]] }].map(sec => <div key={sec.title} className="bg-slate-50 rounded-2xl p-4"><div className="font-black text-slate-500 text-xs uppercase tracking-wide mb-3">{sec.title}</div><div className="space-y-2">{sec.rows.map(([k, v]) => <div key={k} className="flex justify-between text-sm"><span className="text-slate-400 font-semibold">{k}</span><span className="font-bold text-slate-800">{v}</span></div>)}</div></div>)}</div>}
         <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-100">
           <Btn variant="outline" onClick={() => step === 1 ? onNavigate("companies") : setStep(s => s - 1)}>{isRTL ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}{step === 1 ? (isRTL ? "إلغاء" : "Cancel") : (isRTL ? "رجوع" : "Back")}</Btn>
-          {step < 6 ? <Btn onClick={() => setStep(s => s + 1)}>{isRTL ? "التالي" : "Next"}{isRTL ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}</Btn> : <Btn onClick={() => { toast.success(isRTL ? "تم إنشاء الشركة بنجاح!" : "Company created!"); setDone(true); }}><Check size={15} />{isRTL ? "إنشاء الشركة" : "Create Company"}</Btn>}
+          {step < 6 ? <Btn onClick={handleNext}>{isRTL ? "التالي" : "Next"}{isRTL ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}</Btn> : <Btn onClick={() => void handleCreate()} disabled={submitting}><Check size={15} />{submitting ? (isRTL ? "جاري الإنشاء..." : "Creating...") : (isRTL ? "إنشاء الشركة" : "Create Company")}</Btn>}
         </div>
       </Card>
     </div>

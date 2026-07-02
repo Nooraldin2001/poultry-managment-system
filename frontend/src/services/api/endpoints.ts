@@ -9,6 +9,7 @@ export const ENDPOINTS = {
   admin: {
     companies: "/admin/companies/",
     company: (id: number | string) => `/admin/companies/${id}/`,
+    companyCreateAdminUser: (id: number | string) => `/admin/companies/${id}/create-admin-user/`,
     plans: "/admin/plans/",
     subscriptionPayments: "/admin/subscription-payments/",
   },

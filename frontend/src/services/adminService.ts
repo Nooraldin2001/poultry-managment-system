@@ -192,6 +192,61 @@ export async function listSubscriptionPaymentsLive(): Promise<ApiSubscriptionPay
   return data.results ?? [];
 }
 
+export interface CreateCompanyPayload {
+  name_ar: string;
+  name_en: string;
+  subdomain: string;
+  plan_code: string;
+  status?: string;
+  trade_license?: string;
+  trn?: string;
+  emirate?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+}
+
+export interface CreateCompanyAdminUserPayload {
+  email: string;
+  password: string;
+  full_name?: string;
+  phone?: string;
+}
+
+export async function createCompanyLive(payload: CreateCompanyPayload): Promise<ApiCompany> {
+  return request<ApiCompany>(ENDPOINTS.admin.companies, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function createCompanyAdminUserLive(
+  companyId: number | string,
+  payload: CreateCompanyAdminUserPayload,
+): Promise<unknown> {
+  return request(ENDPOINTS.admin.companyCreateAdminUser(companyId), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function createCompany(payload: CreateCompanyPayload): Promise<ApiCompany> {
+  if (IS_MOCK_MODE) {
+    throw new Error("createCompany is not available in mock mode");
+  }
+  return createCompanyLive(payload);
+}
+
+export async function createCompanyAdminUser(
+  companyId: number | string,
+  payload: CreateCompanyAdminUserPayload,
+): Promise<unknown> {
+  if (IS_MOCK_MODE) {
+    throw new Error("createCompanyAdminUser is not available in mock mode");
+  }
+  return createCompanyAdminUserLive(companyId, payload);
+}
+
 export async function listCompanies(params?: { search?: string }): Promise<Company[]> {
   if (IS_MOCK_MODE) return companyMock.listCompanies();
   return listCompaniesLive(params);
