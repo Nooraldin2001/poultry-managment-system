@@ -1,12 +1,7 @@
 # Launch Decision
 
-- **Date (UTC):** 2026-07-04
-- **Commit / Version:** pending deploy (tenant subdomain fix branch)
-- **Production URLs:**
-  - `https://poultryhero.solutions`
-  - `https://admin.poultryhero.solutions`
-  - `https://{subdomain}.poultryhero.solutions` (tenant workspaces)
-- **Tester:** Release owner + Cursor Agent
+- **Date (UTC):** 2026-07-04 (updated)
+- **Production URLs:** `poultryhero.solutions`, `admin.poultryhero.solutions`, `{subdomain}.poultryhero.solutions`
 
 ---
 
@@ -14,62 +9,43 @@
 
 # **GO WITH CONDITIONS**
 
-Application code fixes for tenant subdomain routing, API base resolution, company creation, and admin/tenant login guards are implemented locally. Production launch depends on **deploying this commit**, updating VPS **DNS wildcard**, **Nginx wildcard `server_name`**, **wildcard SSL**, and **backend `.env` ALLOWED_HOSTS / CORS regex**.
+Company creation and Super Admin flows are fixed and deployed. **Tenant subdomain routing is blocked by Nginx/SSL infrastructure** — not application code.
 
 ---
 
-## Root cause (production bugs)
+## Root cause: tenant subdomain shows BizManager Pro
 
-1. **Create-company wizard** previously showed fake success without API calls (fixed: `createCompany` + `createCompanyAdminUser`).
-2. **Frontend API base** always used `https://poultryhero.solutions/api`, so tenant subdomains never sent the correct `Host` header for login validation (fixed: `resolveApiBase()` same-origin on tenant/admin hosts).
-3. **Backend login** did not enforce admin vs tenant host rules — tenant users could sign in on `admin.poultryhero.solutions` (fixed: `LoginSerializer` host checks).
-4. **Tenant URLs** displayed as `*.poultryhero.com` in several screens (fixed: central `getTenantUrl()` helper).
-5. **Company detail** used mock data only — list showed companies but detail/open workspace failed (fixed: live `getCompanyById`).
-6. **Infrastructure**: Nginx/DNS/SSL did not include wildcard tenant subdomains (partially fixed in repo nginx config; **VPS + DNS + cert still required**).
+| Check | Result |
+|-------|--------|
+| DNS `firstview.poultryhero.solutions` | Resolves to `153.92.5.195` |
+| `https://admin.poultryhero.solutions` | Poultry Hero (correct) |
+| `https://firstview.poultryhero.solutions` | **BizManager Pro** ("Web-Based Business Management System") |
+| SSL on tenant subdomain | Browser "Not secure" — cert/SNI mismatch + wrong default SSL server |
+
+**Cause:** Nginx `443` block for `poultryhero.conf` covers only explicit hosts (apex, www, admin, demo). Unmatched tenant hosts (`firstview.poultryhero.solutions`) hit the **default SSL server** — an old BizManager Pro site on the same VPS.
+
+**Fix:** Run `scripts/fix_tenant_subdomain_routing.sh` on VPS + wildcard SSL cert for `*.poultryhero.solutions`.
 
 ---
 
-## Code fix status
+## Code status (already deployed)
 
 | Area | Status |
 |------|--------|
-| Company creation API wiring | Fixed |
-| Plans load from live API in wizard | Fixed |
-| Tenant URL helper (`getTenantUrl`) | Fixed |
-| Host-aware API base (`resolveApiBase`) | Fixed |
-| Backend host login guards | Fixed |
-| Admin tenant-access-denied screen | Fixed |
-| Company detail live API | Fixed |
-| Nginx wildcard in repo | Fixed |
-| Backend CORS regex support | Fixed |
-| `seed_plans` / `seed_permissions` in deploy script | Fixed |
+| Company creation API | Fixed |
+| Tenant URL helper | Fixed |
+| API base same-origin on tenant host | Fixed |
+| Backend login host guards | Fixed |
+| Admin tenant-access-denied | Fixed |
 
 ---
 
-## Infrastructure status (must verify on VPS)
+## Next steps (VPS — required)
 
-| Item | Status |
-|------|--------|
-| DNS `A * → 153.92.5.195` | **Manual verify** |
-| Wildcard SSL `*.poultryhero.solutions` | **Manual verify / likely blocker** |
-| Nginx `*.poultryhero.solutions` | Update live config from repo + reload |
-| `DJANGO_ALLOWED_HOSTS=.poultryhero.solutions,...` | Update live `.env` |
-| `CORS_ALLOWED_ORIGIN_REGEXES` | Update live `.env` |
+```bash
+cd /var/www/poultryhero
+git pull origin main
+bash scripts/fix_tenant_subdomain_routing.sh
+```
 
-See [TENANT_SUBDOMAIN_SETUP.md](./TENANT_SUBDOMAIN_SETUP.md).
-
----
-
-## Next manual smoke (after deploy)
-
-1. Super Admin: create company `firstview` at `admin.poultryhero.solutions`
-2. Confirm tenant URL `https://firstview.poultryhero.solutions`
-3. Tenant owner login on tenant URL → ERP dashboard
-4. Same credentials on admin URL → access denied (not Super Admin dashboard)
-5. `curl -s https://firstview.poultryhero.solutions/api/v1/health/`
-
----
-
-## Previous decision (2026-07-02)
-
-**NO-GO** at commit `dcdd536` due to fake company creation and missing plans. Addressed in code; pending production deploy + infra.
+Then manual smoke: open `https://firstview.poultryhero.solutions` → Poultry Hero login → tenant user login.

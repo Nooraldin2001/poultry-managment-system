@@ -122,10 +122,37 @@ Runtime behavior:
 |---------|--------------|
 | Subdomain does not resolve | Missing DNS wildcard A record |
 | SSL certificate error | Wildcard cert not installed |
+| **Wrong app (BizManager Pro / "Business Management System")** | **Nginx default SSL server or old site catching `*.poultryhero.solutions`** — poultryhero SSL block missing wildcard `server_name` |
 | Tenant login works on admin but not subdomain | Old frontend bundle calling wrong API host — redeploy |
 | 400 "Super Admin domain" on admin login | Expected for tenant users — use tenant URL |
 | 400 "workspace was not found" | Subdomain typo or company not created |
 | Empty companies list after create | Wizard not calling API — verify deployed commit includes `createCompany` |
+
+### BizManager Pro on tenant subdomain (confirmed production issue)
+
+**Symptom:** `https://firstview.poultryhero.solutions` shows "Biz Manager Pro" / "Web-Based Business Management System" with browser "Not secure" warning, while `https://admin.poultryhero.solutions` shows Poultry Hero correctly.
+
+**Root cause:** DNS resolves to the VPS (`153.92.5.195`), but the **443 SSL server block** for `firstview.poultryhero.solutions` is handled by an **old default Nginx site** (BizManager Pro), not `poultryhero.conf`. Certbot was run only for explicit hosts (`poultryhero.solutions`, `admin`, etc.) — **not** `*.poultryhero.solutions`.
+
+**Evidence (2026-07-04):**
+- `firstview` HTML title: `Web-Based Business Management System` (451 bytes, asset `index-Df09HOMO.js`)
+- `admin` HTML title: `Poultry managment system` (812 bytes, current deploy)
+
+**Fix on VPS:**
+
+```bash
+cd /var/www/poultryhero
+bash scripts/fix_tenant_subdomain_routing.sh
+```
+
+Or manually:
+1. `ls /etc/nginx/sites-enabled/` — disable any non-poultry site serving BizManager
+2. Add `*.poultryhero.solutions` to **both** `:80` and `:443` `server_name` in `poultryhero.conf`
+3. Issue wildcard SSL: `certbot certonly --manual --preferred-challenges dns -d 'poultryhero.solutions' -d '*.poultryhero.solutions'`
+4. `nginx -t && systemctl reload nginx`
+5. Verify: `curl -s -k https://firstview.poultryhero.solutions | grep -i title`
+
+See `deploy/nginx/poultryhero.ssl.example.conf` for the full target config.
 
 ## Manual smoke checklist
 

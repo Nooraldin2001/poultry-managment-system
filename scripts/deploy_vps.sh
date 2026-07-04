@@ -118,6 +118,10 @@ sudo nginx -t
 sudo systemctl reload "$NGINX_SERVICE"
 
 echo
+echo "==> Tenant subdomain reminder"
+echo "    Ensure Nginx 443 server_name includes *.poultryhero.solutions (not only admin/apex)."
+echo "    If tenant URLs show BizManager Pro, run: bash scripts/fix_tenant_subdomain_routing.sh"
+echo
 echo "==> Deploy complete. Verify:"
 echo "    https://poultryhero.solutions"
 echo "    https://admin.poultryhero.solutions"
