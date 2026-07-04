@@ -19,6 +19,7 @@ SERVICE_NAME="${SERVICE_NAME:-poultryhero-backend}"
 NGINX_SERVICE="${NGINX_SERVICE:-nginx}"
 BRANCH="${BRANCH:-main}"
 VITE_API_BASE="${VITE_API_BASE:-https://poultryhero.solutions/api}"
+VITE_TENANT_BASE_DOMAIN="${VITE_TENANT_BASE_DOMAIN:-poultryhero.solutions}"
 # DATA HYGIENE: production frontend builds must run in live-API mode (no demo
 # data). Default the flag to false and treat this deploy as a production env.
 VITE_USE_MOCK_DATA="${VITE_USE_MOCK_DATA:-false}"
@@ -101,10 +102,11 @@ echo "==> Restarting $SERVICE_NAME..."
 sudo systemctl restart "$SERVICE_NAME"
 
 # --- 3. Frontend -----------------------------------------------------------
-echo "==> Building frontend (VITE_API_BASE=$VITE_API_BASE, VITE_USE_MOCK_DATA=$VITE_USE_MOCK_DATA)..."
+echo "==> Building frontend (VITE_API_BASE=$VITE_API_BASE, VITE_TENANT_BASE_DOMAIN=$VITE_TENANT_BASE_DOMAIN, VITE_USE_MOCK_DATA=$VITE_USE_MOCK_DATA)..."
 (
   cd "$FRONTEND_DIR"
   export VITE_API_BASE
+  export VITE_TENANT_BASE_DOMAIN
   export VITE_USE_MOCK_DATA
   corepack pnpm install --frozen-lockfile
   corepack pnpm run build

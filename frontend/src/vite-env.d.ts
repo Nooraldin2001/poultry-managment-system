@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   /** Base URL for the Django REST API, e.g. https://poultryhero.solutions/api */
   readonly VITE_API_BASE?: string;
+  /** Production tenant subdomain base domain, e.g. poultryhero.solutions */
+  readonly VITE_TENANT_BASE_DOMAIN?: string;
   /** "true" to use local mock data. Defaults to false (live API) in production. */
   readonly VITE_USE_MOCK_DATA?: string;
 }

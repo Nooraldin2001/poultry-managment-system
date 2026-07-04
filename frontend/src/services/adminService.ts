@@ -256,3 +256,8 @@ export async function getCompanyById(id: string): Promise<Company | null> {
   if (IS_MOCK_MODE) return companyMock.getCompanyById(id);
   return getCompanyByIdLive(id);
 }
+
+export async function listPlans(): Promise<ApiPlan[]> {
+  if (IS_MOCK_MODE) return [];
+  return listPlansLive();
+}

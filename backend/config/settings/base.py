@@ -178,6 +178,11 @@ SPECTACULAR_SETTINGS = {
 
 # --- CORS -----------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
+# Tenant workspace subdomains (https://{sub}.poultryhero.solutions)
+CORS_ALLOWED_ORIGIN_REGEXES = env.list(
+    "CORS_ALLOWED_ORIGIN_REGEXES",
+    default=[r"^https://([a-z0-9-]+)\.poultryhero\.solutions$"],
+)
 CORS_ALLOW_CREDENTIALS = True
 
 # --- Tenancy --------------------------------------------------------------

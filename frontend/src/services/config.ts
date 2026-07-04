@@ -31,5 +31,8 @@ export const IS_PRODUCTION: boolean = env.PROD === true;
  */
 export const IS_MOCK_MODE: boolean = readMockFlag() && !IS_PRODUCTION;
 
-/** Base URL for the Django REST API, e.g. https://poultryhero.solutions/api */
+/** Build-time API base fallback (runtime uses resolveApiBase() in api/client.ts). */
 export const API_BASE_URL: string = (env.VITE_API_BASE ?? "").toString();
+
+export { getTenantUrl, getTenantBaseDomain, resolveApiBase, getAppHostKind, getTenantSubdomainFromHost } from "./tenantUrl";
+export type { AppHostKind } from "./tenantUrl";

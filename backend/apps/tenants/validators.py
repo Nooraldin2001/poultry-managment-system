@@ -10,4 +10,4 @@ subdomain_validator = RegexValidator(
     ),
 )
 
-RESERVED_SUBDOMAINS = {"admin", "www", "api", "app", "mail", "static", "media"}
+RESERVED_SUBDOMAINS = {"admin", "www", "api", "app", "mail", "static", "media", "demo"}

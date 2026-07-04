@@ -1,114 +1,75 @@
 # Launch Decision
 
-- **Date (UTC):** 2026-07-02 11:00 UTC
-- **Commit / Version:** `dcdd536` (`main`)
+- **Date (UTC):** 2026-07-04
+- **Commit / Version:** pending deploy (tenant subdomain fix branch)
 - **Production URLs:**
   - `https://poultryhero.solutions`
   - `https://admin.poultryhero.solutions`
-  - `https://poultryhero.solutions/api/v1/health/`
+  - `https://{subdomain}.poultryhero.solutions` (tenant workspaces)
 - **Tester:** Release owner + Cursor Agent
 
 ---
 
 ## Final status
 
-# **NO-GO**
+# **GO WITH CONDITIONS**
 
-Credentialed Super Admin smoke testing found **confirmed release blockers** that prevent tenant onboarding. Infrastructure, authentication, and read-only Super Admin flows pass, but company creation does not work in production.
-
----
-
-## Credentialed evidence
-
-### Passed
-
-| Check | Evidence |
-|---|---|
-| Super Admin login | Manual login; JWT tokens stored |
-| Super Admin dashboard | Loads with real zero KPIs |
-| Companies list | Live API returns empty list (no fake demo companies) |
-| Analytics widgets | Empty/unavailable states (`لا توجد بيانات فعلية بعد`) |
-| Session persistence | Admin reload retained authenticated session |
-| API routing | All calls to `https://poultryhero.solutions/api` |
-| Mobile (Super Admin) | Usable at 390×844 |
-
-### Failed / blocked
-
-| Check | Evidence |
-|---|---|
-| Create company (UI) | Success screen shown; `GET /admin/companies/` still `count: 0` |
-| Create company (API) | `POST /admin/companies/` → 400 `Unknown or inactive plan.` |
-| Plans reference data | `GET /admin/plans/` → `[]` |
-| Tenant login + ERP | Blocked — no tenant company/user exists |
+Application code fixes for tenant subdomain routing, API base resolution, company creation, and admin/tenant login guards are implemented locally. Production launch depends on **deploying this commit**, updating VPS **DNS wildcard**, **Nginx wildcard `server_name`**, **wildcard SSL**, and **backend `.env` ALLOWED_HOSTS / CORS regex**.
 
 ---
 
-## Counts
+## Root cause (production bugs)
 
-| Metric | Value |
-|---|---:|
-| Confirmed release blockers | **2** |
-| Downstream blocked areas | **12** |
-| High-priority non-blockers | **3** |
-| Low-priority polish | **3** |
-
----
-
-## Confirmed release blockers
-
-### 1. Create-company wizard is UI-only (false success)
-
-The Super Admin wizard in `frontend/src/app/App.tsx` (`CreateCompanyWizard`) calls `toast.success()` and `setDone(true)` on submit but **never POSTs** to `/api/v1/admin/companies/`. Operators see a success message with no backend effect.
-
-### 2. Plans not seeded on production
-
-`GET /api/v1/admin/plans/` returns an empty list. Even direct API company creation fails until `seed_plans` (and `seed_permissions`) run on the VPS.
+1. **Create-company wizard** previously showed fake success without API calls (fixed: `createCompany` + `createCompanyAdminUser`).
+2. **Frontend API base** always used `https://poultryhero.solutions/api`, so tenant subdomains never sent the correct `Host` header for login validation (fixed: `resolveApiBase()` same-origin on tenant/admin hosts).
+3. **Backend login** did not enforce admin vs tenant host rules — tenant users could sign in on `admin.poultryhero.solutions` (fixed: `LoginSerializer` host checks).
+4. **Tenant URLs** displayed as `*.poultryhero.com` in several screens (fixed: central `getTenantUrl()` helper).
+5. **Company detail** used mock data only — list showed companies but detail/open workspace failed (fixed: live `getCompanyById`).
+6. **Infrastructure**: Nginx/DNS/SSL did not include wildcard tenant subdomains (partially fixed in repo nginx config; **VPS + DNS + cert still required**).
 
 ---
 
-## Recommended immediate fixes (before re-test)
+## Code fix status
 
-### On VPS (reference data — not demo data)
-
-```bash
-cd /var/www/poultryhero/backend
-source /var/www/poultryhero/.venv/bin/activate
-export DJANGO_SETTINGS_MODULE=config.settings.production
-python manage.py seed_plans
-python manage.py seed_permissions
-```
-
-### In codebase (minimal fix)
-
-1. Add `createCompanyLive` / `createCompanyAdminUserLive` to `frontend/src/services/adminService.ts`
-2. Wire `CreateCompanyWizard` submit to call admin API (create company → create admin user)
-3. Rebuild frontend and redeploy
-4. Re-run credentialed smoke: Super Admin create company → tenant login → ERP E2E
+| Area | Status |
+|------|--------|
+| Company creation API wiring | Fixed |
+| Plans load from live API in wizard | Fixed |
+| Tenant URL helper (`getTenantUrl`) | Fixed |
+| Host-aware API base (`resolveApiBase`) | Fixed |
+| Backend host login guards | Fixed |
+| Admin tenant-access-denied screen | Fixed |
+| Company detail live API | Fixed |
+| Nginx wildcard in repo | Fixed |
+| Backend CORS regex support | Fixed |
+| `seed_plans` / `seed_permissions` in deploy script | Fixed |
 
 ---
 
-## Recommended post-launch fixes
+## Infrastructure status (must verify on VPS)
 
-- Bundle-size optimization
-- Phase 4B detail-mode parity
-- Add production deploy checklist step: verify `GET /admin/plans/` non-empty after deploy
+| Item | Status |
+|------|--------|
+| DNS `A * → 153.92.5.195` | **Manual verify** |
+| Wildcard SSL `*.poultryhero.solutions` | **Manual verify / likely blocker** |
+| Nginx `*.poultryhero.solutions` | Update live config from repo + reload |
+| `DJANGO_ALLOWED_HOSTS=.poultryhero.solutions,...` | Update live `.env` |
+| `CORS_ALLOWED_ORIGIN_REGEXES` | Update live `.env` |
 
----
-
-## Decision upgrade path
-
-| After fixes… | Decision |
-|---|---|
-| Company create works; tenant ERP smoke passes; no balance/permission defects | **GO** |
-| Core flows pass with minor UX gaps only | **GO WITH NON-BLOCKING LIMITATIONS** |
-| Any blocker remains | **NO-GO** |
+See [TENANT_SUBDOMAIN_SETUP.md](./TENANT_SUBDOMAIN_SETUP.md).
 
 ---
 
-## Recommended next Cursor prompt
+## Next manual smoke (after deploy)
 
-> Fix production Super Admin company provisioning: seed plans on VPS, wire `CreateCompanyWizard` to `POST /api/v1/admin/companies/` and `create-admin-user`, redeploy, then rerun credentialed production smoke test.
+1. Super Admin: create company `firstview` at `admin.poultryhero.solutions`
+2. Confirm tenant URL `https://firstview.poultryhero.solutions`
+3. Tenant owner login on tenant URL → ERP dashboard
+4. Same credentials on admin URL → access denied (not Super Admin dashboard)
+5. `curl -s https://firstview.poultryhero.solutions/api/v1/health/`
 
-After **GO** or **GO WITH NON-BLOCKING LIMITATIONS**:
+---
 
-> Prepare Post-Launch Monitoring and Maintenance Plan with uptime checks, automated backups, log review routine, error tracking, user feedback loop, performance optimization backlog, security update schedule, and Phase 5 frontend backlog.
+## Previous decision (2026-07-02)
+
+**NO-GO** at commit `dcdd536` due to fake company creation and missing plans. Addressed in code; pending production deploy + infra.

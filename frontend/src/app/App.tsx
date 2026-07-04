@@ -36,7 +36,8 @@ import { useTenantDashboard, dashboardDateRange } from "@/hooks/useTenantDashboa
 import { useSales, useSaleDetail } from "@/hooks/api/useTenantResources";
 import { parseAmount } from "@/services/reportsService";
 import { resolveTenantCompany, mapBackendRole } from "@/services/tenantService";
-import { buildAdminDashboardSummary, createCompany, createCompanyAdminUser } from "@/services/adminService";
+import { buildAdminDashboardSummary, createCompany, createCompanyAdminUser, getCompanyById, listPlans } from "@/services/adminService";
+import { getAppHostKind, getTenantSubdomainFromHost, getTenantUrl } from "@/services/tenantUrl";
 import { ApiError } from "@/services/api/errors";
 import { T_NAV } from "@/app/navigation/tenantNavigation";
 import { getFilteredTenantNav, canViewScreen } from "@/app/navigation/permissions";
@@ -65,6 +66,14 @@ const demoNum = (n: number): number => (IS_MOCK_MODE ? n : 0);
 // phone in settings/invoice-template previews) renders as a neutral fallback in
 // production so no fake business identity is shown as real.
 const demoStr = (s: string, fallback = ""): string => (IS_MOCK_MODE ? s : fallback);
+
+function openTenantWorkspace(subdomain: string): void {
+  window.open(getTenantUrl(subdomain), "_blank", "noopener,noreferrer");
+}
+
+function formatTenantHost(subdomain: string): string {
+  return getTenantUrl(subdomain).replace(/^https:\/\//, "");
+}
 
 // ── SHARED COMPONENTS ──────────────────────────────────────────────────────────
 function StatusBadge({ status, lang }: { status: CompanyStatus; lang: Lang }) {
@@ -260,6 +269,9 @@ function LoginScreen({ onLogin, lang, onLangSwitch }: { onLogin: (user: CurrentU
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const isRTL = lang === "ar";
+  const hostKind = getAppHostKind();
+  const isTenantLogin = hostKind === "tenant";
+  const tenantSub = getTenantSubdomainFromHost();
   const handleSubmit = async () => {
     if (!email || !password) {
       toast.error(isRTL ? "يرجى إدخال البريد وكلمة المرور" : "Please fill in all fields");
@@ -310,7 +322,11 @@ function LoginScreen({ onLogin, lang, onLangSwitch }: { onLogin: (user: CurrentU
           </div>
           <div className="mb-8">
             <h2 className="text-3xl font-black text-[#0F2C59] mb-1">{isRTL ? "لوحة تحكم Poultry Hero" : "Poultry Hero Control Panel"}</h2>
-            <p className="text-slate-400 font-semibold">{isRTL ? "تسجيل الدخول للسوبر أدمن" : "Super Admin Sign In"}</p>
+            <p className="text-slate-400 font-semibold">
+              {isTenantLogin
+                ? (isRTL ? `تسجيل الدخول — ${tenantSub ?? "الشركة"}` : `Company Sign In — ${tenantSub ?? "workspace"}`)
+                : (isRTL ? "تسجيل الدخول للسوبر أدمن" : "Super Admin Sign In")}
+            </p>
           </div>
           <div className="space-y-4">
             <FInput label={isRTL ? "البريد الإلكتروني" : "Email"} type="email" placeholder="admin@poultryhero.com" value={email} onChange={setEmail} required />
@@ -329,6 +345,52 @@ function LoginScreen({ onLogin, lang, onLangSwitch }: { onLogin: (user: CurrentU
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function TenantAccessDeniedScreen({
+  lang,
+  subdomain,
+  onGoToWorkspace,
+  onLogout,
+}: {
+  lang: Lang;
+  subdomain?: string;
+  onGoToWorkspace: () => void;
+  onLogout: () => void;
+}) {
+  const isRTL = lang === "ar";
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] p-6" dir={isRTL ? "rtl" : "ltr"}>
+      <Card className="max-w-md w-full p-8 text-center">
+        <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-5">
+          <Shield size={32} className="text-amber-600" />
+        </div>
+        <h2 className="text-xl font-black text-[#0F2C59] mb-2">
+          {isRTL ? "ليس لديك صلاحية للوصول إلى لوحة السوبر أدمن" : "You do not have permission to access the Super Admin dashboard"}
+        </h2>
+        <p className="text-slate-500 font-semibold text-sm mb-6">
+          {isRTL
+            ? "حسابك مرتبط بشركة. استخدم رابط مساحة عمل الشركة لتسجيل الدخول."
+            : "Your account belongs to a company. Use your company workspace URL to sign in."}
+        </p>
+        {subdomain && (
+          <p className="text-xs font-mono text-slate-400 mb-6">{formatTenantHost(subdomain)}</p>
+        )}
+        <div className="flex flex-col gap-3">
+          {subdomain && (
+            <Btn onClick={onGoToWorkspace}>
+              <ExternalLink size={15} />
+              {isRTL ? "الذهاب إلى مساحة عمل الشركة" : "Go to company workspace"}
+            </Btn>
+          )}
+          <Btn variant="outline" onClick={onLogout}>
+            <LogOut size={15} />
+            {isRTL ? "تسجيل الخروج" : "Sign out"}
+          </Btn>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -508,9 +570,8 @@ function DashboardScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: Scr
 }
 
 // ── SCREEN: COMPANIES ──────────────────────────────────────────────────────────
-function CompaniesScreen({ lang, onNavigate, onSelectCompany, onSwitchToTenant }: {
+function CompaniesScreen({ lang, onNavigate, onSelectCompany }: {
   lang: Lang; onNavigate: (s: Screen) => void; onSelectCompany: (id: string) => void;
-  onSwitchToTenant: (id: string) => void;
 }) {
   const isRTL = lang === "ar";
   const { companies, loading, error, reload } = useAdminCompanies();
@@ -571,7 +632,7 @@ function CompaniesScreen({ lang, onNavigate, onSelectCompany, onSwitchToTenant }
               <tbody className="divide-y divide-slate-100">
                 {filtered.map(c => (
                   <tr key={c.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-5 py-4"><div className="font-bold text-slate-800">{isRTL ? c.nameAr : c.nameEn}</div><div className="text-xs text-slate-400 font-mono">{c.subdomain}.poultryhero.com</div></td>
+                    <td className="px-5 py-4"><div className="font-bold text-slate-800">{isRTL ? c.nameAr : c.nameEn}</div><div className="text-xs text-slate-400 font-mono">{formatTenantHost(c.subdomain)}</div></td>
                     <td className="px-5 py-4"><PlanBadge plan={c.plan} lang={lang} /></td>
                     <td className="px-5 py-4"><StatusBadge status={c.status} lang={lang} /></td>
                     <td className="px-5 py-4 font-mono font-bold text-slate-700">AED {c.monthlyPrice.toLocaleString()}</td>
@@ -583,7 +644,7 @@ function CompaniesScreen({ lang, onNavigate, onSelectCompany, onSwitchToTenant }
                         <button className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all" title={isRTL ? "تعديل" : "Edit"}><Pencil size={14} /></button>
                         <button onClick={() => onNavigate("payments")} className="p-1.5 rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all" title={isRTL ? "دفعة" : "Payment"}><DollarSign size={14} /></button>
                         {c.status !== "suspended" ? <button onClick={() => setConfirmId(c.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all" title={isRTL ? "تعليق" : "Suspend"}><Ban size={14} /></button> : <button className="p-1.5 rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all"><RefreshCw size={14} /></button>}
-                        <button onClick={() => onSwitchToTenant(c.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#22C55E] hover:text-white transition-all" title={isRTL ? "فتح لوحة المستأجر" : "Open Tenant Dashboard"}><ExternalLink size={14} /></button>
+                        <button onClick={() => openTenantWorkspace(c.subdomain)} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#22C55E] hover:text-white transition-all" title={isRTL ? "فتح مساحة العمل" : "Open workspace"}><ExternalLink size={14} /></button>
                       </div>
                     </td>
                   </tr>
@@ -597,14 +658,14 @@ function CompaniesScreen({ lang, onNavigate, onSelectCompany, onSwitchToTenant }
         <div className="lg:hidden space-y-3">
           {filtered.map(c => (
             <Card key={c.id} className="p-4">
-              <div className="flex items-start justify-between mb-3"><div><div className="font-black text-slate-800">{isRTL ? c.nameAr : c.nameEn}</div><div className="text-xs text-slate-400 font-mono mt-0.5">{c.subdomain}.poultryhero.com</div></div><StatusBadge status={c.status} lang={lang} /></div>
+              <div className="flex items-start justify-between mb-3"><div><div className="font-black text-slate-800">{isRTL ? c.nameAr : c.nameEn}</div><div className="text-xs text-slate-400 font-mono mt-0.5">{formatTenantHost(c.subdomain)}</div></div><StatusBadge status={c.status} lang={lang} /></div>
               <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mb-4">
                 <div className="flex items-center gap-1.5"><span className="text-slate-400 font-semibold">{isRTL ? "الخطة" : "Plan"}:</span><PlanBadge plan={c.plan} lang={lang} /></div>
                 <div><span className="text-slate-400 font-semibold">{isRTL ? "الشهري" : "Monthly"}:</span> <span className="font-mono font-bold">AED {c.monthlyPrice.toLocaleString()}</span></div>
               </div>
               <div className="flex gap-2">
                 <Btn size="sm" variant="secondary" onClick={() => { onSelectCompany(c.id); onNavigate("company-detail"); }}><Eye size={13} />{isRTL ? "عرض" : "View"}</Btn>
-                <Btn size="sm" variant="green" onClick={() => onSwitchToTenant(c.id)}><ExternalLink size={13} />{isRTL ? "فتح" : "Open"}</Btn>
+                <Btn size="sm" variant="green" onClick={() => openTenantWorkspace(c.subdomain)}><ExternalLink size={13} />{isRTL ? "فتح" : "Open"}</Btn>
               </div>
             </Card>
           ))}
@@ -616,15 +677,34 @@ function CompaniesScreen({ lang, onNavigate, onSelectCompany, onSwitchToTenant }
 }
 
 // ── SCREEN: COMPANY DETAIL ─────────────────────────────────────────────────────
-function CompanyDetailScreen({ companyId, lang, onNavigate, onSwitchToTenant }: {
-  companyId: string; lang: Lang; onNavigate: (s: Screen) => void; onSwitchToTenant: (id: string) => void;
+function CompanyDetailScreen({ companyId, lang, onNavigate }: {
+  companyId: string; lang: Lang; onNavigate: (s: Screen) => void;
 }) {
   const isRTL = lang === "ar";
   const [tab, setTab] = useState("overview");
   const [confirmSuspend, setConfirmSuspend] = useState(false);
-  const c = COMPANIES.find(x => x.id === companyId) ?? null;
+  const [c, setC] = useState<Company | null>(IS_MOCK_MODE ? (COMPANIES.find(x => x.id === companyId) ?? null) : null);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
   const tabs = [{ k: "overview", ar: "نظرة عامة", en: "Overview" }, { k: "users", ar: "المستخدمون", en: "Users" }, { k: "subscription", ar: "الاشتراك", en: "Subscription" }, { k: "payments", ar: "المدفوعات", en: "Payments" }, { k: "modules", ar: "الوحدات", en: "Modules" }, { k: "activity", ar: "سجل النشاط", en: "Activity" }];
-  const companyPmts = c ? PAYMENTS_DATA.filter(p => p.companyId === c.id) : [];
+  const companyPmts = c && IS_MOCK_MODE ? PAYMENTS_DATA.filter(p => p.companyId === c.id) : [];
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) {
+      setC(COMPANIES.find(x => x.id === companyId) ?? null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    void getCompanyById(companyId).then(row => {
+      if (!cancelled) setC(row);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [companyId]);
+
+  if (loading) return <div className="p-8"><LoadingState lang={lang} /></div>;
   if (!c) return (
     <div className="p-4 lg:p-8 max-w-screen-xl mx-auto">
       <button onClick={() => onNavigate("companies")} className="mb-4 p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
@@ -635,13 +715,14 @@ function CompanyDetailScreen({ companyId, lang, onNavigate, onSwitchToTenant }: 
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
       <div className="flex items-start gap-3 flex-wrap">
         <button onClick={() => onNavigate("companies")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 shrink-0 mt-0.5">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
-        <div className="flex-1 min-w-0"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? c.nameAr : c.nameEn}</h2><p className="text-sm text-slate-400 font-mono">{c.subdomain}.poultryhero.com</p></div>
+        <div className="flex-1 min-w-0"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? c.nameAr : c.nameEn}</h2><p className="text-sm text-slate-400 font-mono">{formatTenantHost(c.subdomain)}</p></div>
         <div className="flex items-center gap-2 flex-wrap"><StatusBadge status={c.status} lang={lang} /><PlanBadge plan={c.plan} lang={lang} /></div>
       </div>
       <Card className="p-4 flex flex-wrap gap-2.5">
         <Btn size="sm"><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>
         <Btn size="sm" variant="secondary" onClick={() => onNavigate("payments")}><DollarSign size={13} />{isRTL ? "تسجيل دفعة" : "Record Payment"}</Btn>
-        <Btn size="sm" variant="green" onClick={() => onSwitchToTenant(c.id)}><ExternalLink size={13} />{isRTL ? "فتح لوحة المستأجر" : "Open Tenant Dashboard"}</Btn>
+        <Btn size="sm" variant="green" onClick={() => openTenantWorkspace(c.subdomain)}><ExternalLink size={13} />{isRTL ? "فتح مساحة العمل" : "Open Workspace"}</Btn>
+        <Btn size="sm" variant="secondary" onClick={() => { void navigator.clipboard?.writeText(getTenantUrl(c.subdomain)); toast.success(isRTL ? "تم نسخ الرابط" : "URL copied"); }}><Globe size={13} />{isRTL ? "نسخ الرابط" : "Copy URL"}</Btn>
         {c.status !== "suspended" ? <Btn size="sm" variant="danger" onClick={() => setConfirmSuspend(true)}><Ban size={13} />{isRTL ? "تعليق الشركة" : "Suspend"}</Btn> : <Btn size="sm" variant="secondary"><RefreshCw size={13} />{isRTL ? "إعادة تفعيل" : "Reactivate"}</Btn>}
       </Card>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -658,7 +739,7 @@ function CompanyDetailScreen({ companyId, lang, onNavigate, onSwitchToTenant }: 
         <div className="p-5">
           {tab === "overview" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[{ ar: "اسم الشركة (عربي)", en: "Arabic Name", v: c.nameAr }, { ar: "اسم الشركة (إنجليزي)", en: "English Name", v: c.nameEn }, { ar: "النطاق الفرعي", en: "Subdomain", v: `${c.subdomain}.poultryhero.com` }, { ar: "الإمارة", en: "Emirate", v: c.emirate }, { ar: "رقم الرخصة", en: "Trade License", v: c.tradeLicense }, { ar: "اسم المدير", en: "Admin Name", v: c.adminName }, { ar: "هاتف المدير", en: "Admin Phone", v: c.adminPhone }, { ar: "بريد المدير", en: "Admin Email", v: c.adminEmail }].map(f => (
+              {[{ ar: "اسم الشركة (عربي)", en: "Arabic Name", v: c.nameAr }, { ar: "اسم الشركة (إنجليزي)", en: "English Name", v: c.nameEn }, { ar: "النطاق الفرعي", en: "Subdomain", v: formatTenantHost(c.subdomain) }, { ar: "رابط مساحة العمل", en: "Workspace URL", v: getTenantUrl(c.subdomain) }, { ar: "الإمارة", en: "Emirate", v: c.emirate }, { ar: "رقم الرخصة", en: "Trade License", v: c.tradeLicense }, { ar: "اسم المدير", en: "Admin Name", v: c.adminName }, { ar: "هاتف المدير", en: "Admin Phone", v: c.adminPhone }, { ar: "بريد المدير", en: "Admin Email", v: c.adminEmail }].map(f => (
                 <div key={f.ar} className="bg-slate-50 rounded-xl p-3.5"><div className="text-xs font-bold text-slate-400 mb-1">{isRTL ? f.ar : f.en}</div><div className="font-bold text-slate-800 text-sm">{f.v}</div></div>
               ))}
             </div>
@@ -702,11 +783,34 @@ function CreateCompanyWizard({ lang, onNavigate }: { lang: Lang; onNavigate: (s:
   const [step, setStep] = useState(1);
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [createdSubdomain, setCreatedSubdomain] = useState("");
+  const [livePlans, setLivePlans] = useState<{ k: string; ar: string; en: string; p: string }[]>([]);
   const [form, setForm] = useState({ nameAr: "", nameEn: "", tradeNo: "", vatNo: "", emirate: "", address: "", phone: "", email: "", subdomain: "", plan: "basic", status: "trial", monthlyPrice: "800", yearlyPrice: "8000", renewalDate: "", trialEndDate: "", notes: "", adminName: "", adminPhone: "", adminEmail: "", tempPass: "", confirmPass: "", forceChange: true, modules: ["dashboard","sales","inventory","customers","reports","settings_mod"] });
   const u = (k: string, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
   const toggleMod = (k: string) => setForm(f => ({ ...f, modules: f.modules.includes(k) ? f.modules.filter(x => x !== k) : [...f.modules, k] }));
   const STEPS = [{ n: 1, ar: "معلومات الشركة", en: "Company Info" }, { n: 2, ar: "رابط الوصول", en: "Tenant Access" }, { n: 3, ar: "خطة الاشتراك", en: "Subscription" }, { n: 4, ar: "مستخدم الأدمن", en: "Admin User" }, { n: 5, ar: "الوحدات", en: "Modules" }, { n: 6, ar: "المراجعة", en: "Review" }];
   const EMIRATES = [{ value: "", label: isRTL ? "اختر الإمارة" : "Select Emirate" }, { value: "dubai", label: isRTL ? "دبي" : "Dubai" }, { value: "abudhabi", label: isRTL ? "أبوظبي" : "Abu Dhabi" }, { value: "sharjah", label: isRTL ? "الشارقة" : "Sharjah" }, { value: "ajman", label: isRTL ? "عجمان" : "Ajman" }, { value: "rak", label: isRTL ? "رأس الخيمة" : "RAK" }, { value: "uaq", label: isRTL ? "أم القيوين" : "UAQ" }, { value: "fujairah", label: isRTL ? "الفجيرة" : "Fujairah" }];
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    void listPlans().then(plans => {
+      if (plans.length === 0) return;
+      setLivePlans(plans.filter(p => p.is_active).map(p => ({
+        k: p.code,
+        ar: p.name,
+        en: p.name,
+        p: String(Math.round(Number(p.monthly_price))),
+      })));
+      const first = plans.find(p => p.is_active);
+      if (first) {
+        setForm(f => ({ ...f, plan: first.code, monthlyPrice: String(Math.round(Number(first.monthly_price))) }));
+      }
+    }).catch(() => { /* keep static fallbacks */ });
+  }, []);
+
+  const planOptions = livePlans.length > 0
+    ? livePlans
+    : [{ k: "basic", ar: "الأساسية", en: "Basic", p: "800" }, { k: "pro", ar: "الاحترافية", en: "Pro", p: "1,500" }, { k: "enterprise", ar: "المؤسسية", en: "Enterprise", p: "3,000" }];
 
   const validateStep = (s: number): boolean => {
     if (s === 1) {
@@ -767,6 +871,7 @@ function CreateCompanyWizard({ lang, onNavigate }: { lang: Lang; onNavigate: (s:
         full_name: form.adminName.trim(),
         phone: form.adminPhone.trim(),
       });
+      setCreatedSubdomain(form.subdomain.trim());
       toast.success(isRTL ? "تم إنشاء الشركة بنجاح!" : "Company created!");
       setDone(true);
     } catch (err) {
@@ -780,7 +885,7 @@ function CreateCompanyWizard({ lang, onNavigate }: { lang: Lang; onNavigate: (s:
   };
 
   if (done) return (
-    <div className="p-4 lg:p-8 flex items-center justify-center min-h-[60vh]"><div className="text-center max-w-sm"><div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle size={40} className="text-emerald-500" /></div><h2 className="text-2xl font-black text-[#0F2C59] mb-2">{isRTL ? "تم إنشاء الشركة بنجاح!" : "Company Created!"}</h2><p className="text-slate-400 font-semibold mb-8">{isRTL ? "تم إنشاء الشركة والمستخدم الأدمن." : "Company and admin user created."}</p><div className="flex gap-3 justify-center"><Btn onClick={() => onNavigate("companies")}><Building2 size={15} />{isRTL ? "عرض الشركات" : "View Companies"}</Btn><Btn variant="secondary" onClick={() => { setStep(1); setDone(false); }}><Plus size={15} />{isRTL ? "إضافة أخرى" : "Add Another"}</Btn></div></div></div>
+    <div className="p-4 lg:p-8 flex items-center justify-center min-h-[60vh]"><div className="text-center max-w-sm"><div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle size={40} className="text-emerald-500" /></div><h2 className="text-2xl font-black text-[#0F2C59] mb-2">{isRTL ? "تم إنشاء الشركة بنجاح!" : "Company Created!"}</h2><p className="text-slate-400 font-semibold mb-4">{isRTL ? "تم إنشاء الشركة والمستخدم الأدمن." : "Company and admin user created."}</p>{createdSubdomain && <div className="bg-[#0F2C59]/5 border border-[#0F2C59]/20 rounded-2xl p-4 mb-6"><div className="text-xs font-bold text-slate-400 mb-1">{isRTL ? "رابط مساحة العمل:" : "Workspace URL:"}</div><div className="font-mono font-black text-[#0F2C59] text-sm break-all">{getTenantUrl(createdSubdomain)}</div></div>}<div className="flex flex-col gap-3 justify-center">{createdSubdomain && <Btn onClick={() => openTenantWorkspace(createdSubdomain)}><ExternalLink size={15} />{isRTL ? "فتح مساحة العمل" : "Open Workspace"}</Btn>}<Btn variant={createdSubdomain ? "secondary" : "primary"} onClick={() => onNavigate("companies")}><Building2 size={15} />{isRTL ? "عرض الشركات" : "View Companies"}</Btn><Btn variant="secondary" onClick={() => { setStep(1); setDone(false); setCreatedSubdomain(""); }}><Plus size={15} />{isRTL ? "إضافة أخرى" : "Add Another"}</Btn></div></div></div>
   );
   return (
     <div className="p-4 lg:p-8 max-w-3xl mx-auto">
@@ -799,8 +904,8 @@ function CreateCompanyWizard({ lang, onNavigate }: { lang: Lang; onNavigate: (s:
       </div>
       <Card className="p-6 lg:p-8">
         {step === 1 && <div><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "معلومات الشركة" : "Company Information"}</h3><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><FInput label={isRTL ? "اسم الشركة (عربي)" : "Arabic Name"} value={form.nameAr} onChange={v => u("nameAr", v)} placeholder="شركة الدواجن" required /><FInput label={isRTL ? "اسم الشركة (إنجليزي)" : "English Name"} value={form.nameEn} onChange={v => u("nameEn", v)} placeholder="Poultry Co" required /><FInput label={isRTL ? "رقم الرخصة" : "Trade License"} value={form.tradeNo} onChange={v => u("tradeNo", v)} placeholder="DM-2025-XXXXX" required /><FInput label={isRTL ? "رقم الضريبة TRN" : "VAT/TRN"} value={form.vatNo} onChange={v => u("vatNo", v)} /><FSelect label={isRTL ? "الإمارة" : "Emirate"} value={form.emirate} onChange={v => u("emirate", v)} options={EMIRATES} required /><FInput label={isRTL ? "العنوان" : "Address"} value={form.address} onChange={v => u("address", v)} /><FInput label={isRTL ? "الهاتف" : "Phone"} type="tel" value={form.phone} onChange={v => u("phone", v)} placeholder="+971 50 XXX XXXX" required /><FInput label={isRTL ? "البريد الإلكتروني" : "Email"} type="email" value={form.email} onChange={v => u("email", v)} required /></div></div>}
-        {step === 2 && <div className="space-y-5"><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "رابط الوصول للشركة" : "Tenant Access"}</h3><FInput label="Subdomain" value={form.subdomain} onChange={v => u("subdomain", v.toLowerCase().replace(/[^a-z0-9-]/g, ""))} placeholder="company-name" helper={isRTL ? "استخدم حروف إنجليزية صغيرة بدون مسافات" : "Lowercase English, no spaces"} required />{form.subdomain && <div className="bg-[#0F2C59]/5 border border-[#0F2C59]/20 rounded-2xl p-4"><div className="text-xs font-bold text-slate-400 mb-1">{isRTL ? "رابط الشركة:" : "Company URL:"}</div><div className="font-mono font-black text-[#0F2C59]">https://{form.subdomain}.poultryhero.solutions</div></div>}{form.subdomain === "alnoor" && <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2"><XCircle size={15} className="text-red-500 shrink-0" /><span className="text-sm font-bold text-red-600">{isRTL ? "هذا النطاق الفرعي مستخدم بالفعل" : "Subdomain already taken"}</span></div>}</div>}
-        {step === 3 && <div className="space-y-5"><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "خطة الاشتراك" : "Subscription Plan"}</h3><div className="grid grid-cols-3 gap-3">{[{ k: "basic", ar: "الأساسية", en: "Basic", p: "800" }, { k: "pro", ar: "الاحترافية", en: "Pro", p: "1,500" }, { k: "enterprise", ar: "المؤسسية", en: "Enterprise", p: "3,000" }].map(pl => <button key={pl.k} onClick={() => { u("plan", pl.k); u("monthlyPrice", pl.p.replace(",", "")); }} className={`p-4 rounded-2xl border-2 text-center transition-all ${form.plan === pl.k ? "border-[#0F2C59] bg-[#0F2C59]/5" : "border-slate-200"}`}><div className="font-black text-slate-800 text-sm">{isRTL ? pl.ar : pl.en}</div><div className="text-xs text-slate-500 font-mono">AED {pl.p}/mo</div></button>)}</div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><FSelect label={isRTL ? "الحالة" : "Status"} value={form.status} onChange={v => u("status", v)} options={[{ value: "trial", label: isRTL ? "تجريبي" : "Trial" }, { value: "active", label: isRTL ? "نشط" : "Active" }, { value: "suspended", label: isRTL ? "موقوف" : "Suspended" }]} /><FInput label={isRTL ? "السعر الشهري (درهم)" : "Monthly Price (AED)"} type="number" value={form.monthlyPrice} onChange={v => u("monthlyPrice", v)} /><FInput label={isRTL ? "تاريخ التجديد" : "Renewal Date"} type="date" value={form.renewalDate} onChange={v => u("renewalDate", v)} />{form.status === "trial" && <FInput label={isRTL ? "تاريخ انتهاء التجربة" : "Trial End Date"} type="date" value={form.trialEndDate} onChange={v => u("trialEndDate", v)} />}</div></div>}
+        {step === 2 && <div className="space-y-5"><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "رابط الوصول للشركة" : "Tenant Access"}</h3><FInput label="Subdomain" value={form.subdomain} onChange={v => u("subdomain", v.toLowerCase().replace(/[^a-z0-9-]/g, ""))} placeholder="company-name" helper={isRTL ? "استخدم حروف إنجليزية صغيرة بدون مسافات" : "Lowercase English, no spaces"} required />{form.subdomain && <div className="bg-[#0F2C59]/5 border border-[#0F2C59]/20 rounded-2xl p-4"><div className="text-xs font-bold text-slate-400 mb-1">{isRTL ? "رابط الشركة:" : "Company URL:"}</div><div className="font-mono font-black text-[#0F2C59]">{getTenantUrl(form.subdomain)}</div></div>}{form.subdomain === "alnoor" && <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2"><XCircle size={15} className="text-red-500 shrink-0" /><span className="text-sm font-bold text-red-600">{isRTL ? "هذا النطاق الفرعي مستخدم بالفعل" : "Subdomain already taken"}</span></div>}</div>}
+        {step === 3 && <div className="space-y-5"><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "خطة الاشتراك" : "Subscription Plan"}</h3><div className="grid grid-cols-3 gap-3">{planOptions.map(pl => <button key={pl.k} onClick={() => { u("plan", pl.k); u("monthlyPrice", pl.p.replace(",", "")); }} className={`p-4 rounded-2xl border-2 text-center transition-all ${form.plan === pl.k ? "border-[#0F2C59] bg-[#0F2C59]/5" : "border-slate-200"}`}><div className="font-black text-slate-800 text-sm">{isRTL ? pl.ar : pl.en}</div><div className="text-xs text-slate-500 font-mono">AED {pl.p}/mo</div></button>)}</div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><FSelect label={isRTL ? "الحالة" : "Status"} value={form.status} onChange={v => u("status", v)} options={[{ value: "trial", label: isRTL ? "تجريبي" : "Trial" }, { value: "active", label: isRTL ? "نشط" : "Active" }, { value: "suspended", label: isRTL ? "موقوف" : "Suspended" }]} /><FInput label={isRTL ? "السعر الشهري (درهم)" : "Monthly Price (AED)"} type="number" value={form.monthlyPrice} onChange={v => u("monthlyPrice", v)} /><FInput label={isRTL ? "تاريخ التجديد" : "Renewal Date"} type="date" value={form.renewalDate} onChange={v => u("renewalDate", v)} />{form.status === "trial" && <FInput label={isRTL ? "تاريخ انتهاء التجربة" : "Trial End Date"} type="date" value={form.trialEndDate} onChange={v => u("trialEndDate", v)} />}</div></div>}
         {step === 4 && <div className="space-y-4"><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "إنشاء مستخدم الأدمن" : "Create Admin User"}</h3><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><FInput label={isRTL ? "الاسم الكامل" : "Full Name"} value={form.adminName} onChange={v => u("adminName", v)} required /><FInput label={isRTL ? "الهاتف" : "Phone"} type="tel" value={form.adminPhone} onChange={v => u("adminPhone", v)} required /><FInput label={isRTL ? "البريد الإلكتروني" : "Email"} type="email" value={form.adminEmail} onChange={v => u("adminEmail", v)} required /><div /><FInput label={isRTL ? "كلمة المرور المؤقتة" : "Temp Password"} type="password" value={form.tempPass} onChange={v => u("tempPass", v)} required /><FInput label={isRTL ? "تأكيد كلمة المرور" : "Confirm Password"} type="password" value={form.confirmPass} onChange={v => u("confirmPass", v)} error={form.confirmPass && form.tempPass !== form.confirmPass ? (isRTL ? "كلمتا المرور غير متطابقتين" : "Passwords do not match") : undefined} /></div><div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100"><button onClick={() => u("forceChange", !form.forceChange)} className={`w-12 h-6 rounded-full flex items-center shrink-0 ${form.forceChange ? "bg-[#0F2C59]" : "bg-slate-300"}`}><span className={`w-5 h-5 bg-white rounded-full shadow-sm transition-all mx-0.5 ${form.forceChange ? "translate-x-6" : "translate-x-0"}`} /></button><label className="text-sm font-bold text-slate-700">{isRTL ? "إجبار على تغيير كلمة المرور عند أول دخول" : "Force password change on first login"}</label></div></div>}
         {step === 5 && <div><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "الوحدات المتاحة" : "Enabled Modules"}</h3><div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">{ALL_MODULES.map(m => { const on = form.modules.includes(m.key); return <button key={m.key} onClick={() => toggleMod(m.key)} className={`flex items-center gap-2.5 p-3 rounded-xl border-2 text-start transition-all ${on ? "border-[#0F2C59] bg-[#0F2C59]/5" : "border-slate-200"}`}><div className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 ${on ? "bg-[#0F2C59]" : "bg-slate-200"}`}>{on && <Check size={11} className="text-white" />}</div><span className={`text-xs font-bold ${on ? "text-[#0F2C59]" : "text-slate-400"}`}>{isRTL ? m.ar : m.en}</span></button>; })}</div></div>}
         {step === 6 && <div className="space-y-4"><h3 className="text-lg font-black text-[#0F2C59] mb-6">{isRTL ? "مراجعة المعلومات" : "Review"}</h3>{[{ title: isRTL ? "معلومات الشركة" : "Company Info", rows: [[isRTL ? "الاسم بالعربي" : "Arabic", form.nameAr || "—"], [isRTL ? "الاسم بالإنجليزي" : "English", form.nameEn || "—"], [isRTL ? "الإمارة" : "Emirate", form.emirate || "—"], [isRTL ? "الهاتف" : "Phone", form.phone || "—"]] }, { title: isRTL ? "الاشتراك" : "Subscription", rows: [[isRTL ? "الخطة" : "Plan", form.plan], [isRTL ? "الحالة" : "Status", form.status], [isRTL ? "السعر" : "Price", `AED ${parseInt(form.monthlyPrice || "0").toLocaleString()}/mo`]] }, { title: isRTL ? "الأدمن" : "Admin", rows: [[isRTL ? "الاسم" : "Name", form.adminName || "—"], [isRTL ? "البريد" : "Email", form.adminEmail || "—"]] }].map(sec => <div key={sec.title} className="bg-slate-50 rounded-2xl p-4"><div className="font-black text-slate-500 text-xs uppercase tracking-wide mb-3">{sec.title}</div><div className="space-y-2">{sec.rows.map(([k, v]) => <div key={k} className="flex justify-between text-sm"><span className="text-slate-400 font-semibold">{k}</span><span className="font-bold text-slate-800">{v}</span></div>)}</div></div>)}</div>}
@@ -2384,7 +2489,7 @@ function TenantSidebar({ screen, onNavigate, lang, isOpen, onClose, company, rol
             </div>
             <div className="min-w-0">
               <div className="text-white font-black text-sm leading-tight truncate">{isRTL ? company.nameAr : company.nameEn}</div>
-              <div className="text-white/40 text-xs font-medium">{company.subdomain}.poultryhero.com</div>
+              <div className="text-white/40 text-xs font-medium">{formatTenantHost(company.subdomain)}</div>
             </div>
           </div>
           <div className="mt-3 flex items-center gap-2">
@@ -3401,38 +3506,79 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState("1");
   const [tenantCompanyId, setTenantCompanyId] = useState("1");
+  const [tenantAccessDenied, setTenantAccessDenied] = useState(false);
 
   const isRTL = lang === "ar";
   const switchLang = () => setLang(l => l === "ar" ? "en" : "ar");
   const navigate = (s: Screen) => { setScreen(s); setSidebarOpen(false); };
-  const switchToTenant = (id: string) => { setTenantCompanyId(id); setMode("tenant"); };
 
   const handleLogin = (loggedIn: CurrentUser) => {
+    const hostKind = getAppHostKind();
     if (loggedIn.is_superuser) {
+      setTenantAccessDenied(false);
       setMode("superadmin");
       navigate("dashboard");
-    } else if (loggedIn.company) {
-      setTenantCompanyId(String(loggedIn.company.id));
-      setMode("tenant");
+      return;
     }
+    if (!loggedIn.company) return;
+
+    if (hostKind === "superadmin") {
+      setTenantAccessDenied(true);
+      return;
+    }
+
+    if (hostKind === "tenant") {
+      const sub = getTenantSubdomainFromHost();
+      if (sub && loggedIn.company.subdomain !== sub) {
+        toast.error(isRTL ? "ليس لديك صلاحية للوصول إلى هذه الشركة" : "You do not have access to this company workspace");
+        void logout();
+        return;
+      }
+    }
+
+    if (hostKind === "root" && !IS_MOCK_MODE) {
+      window.location.assign(getTenantUrl(loggedIn.company.subdomain));
+      return;
+    }
+
+    setTenantCompanyId(String(loggedIn.company.id));
+    setMode("tenant");
+    setTenantAccessDenied(false);
   };
 
   const handleLogout = async () => {
     await logout();
     setMode("superadmin");
     setScreen("login");
+    setTenantAccessDenied(false);
   };
 
   useEffect(() => {
     if (IS_MOCK_MODE || loading) return;
     if (!user) {
       setScreen("login");
+      setTenantAccessDenied(false);
       return;
     }
     if (!user.is_superuser && user.company) {
+      const hostKind = getAppHostKind();
+      if (hostKind === "superadmin") {
+        setTenantAccessDenied(true);
+        return;
+      }
+      if (hostKind === "tenant") {
+        const sub = getTenantSubdomainFromHost();
+        if (sub && user.company.subdomain !== sub) {
+          toast.error(isRTL ? "ليس لديك صلاحية للوصول إلى هذه الشركة" : "You do not have access to this company workspace");
+          void logout();
+          return;
+        }
+      }
       setTenantCompanyId(String(user.company.id));
       setMode("tenant");
+      setTenantAccessDenied(false);
     } else if (user.is_superuser && mode !== "tenant") {
+      setTenantAccessDenied(false);
       setMode("superadmin");
       if (screen === "login") setScreen("dashboard");
     }
@@ -3445,6 +3591,20 @@ export default function App() {
         <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]" dir={isRTL ? "rtl" : "ltr"}>
           <LoadingState lang={lang} />
         </div>
+      </>
+    );
+  }
+
+  if (!IS_MOCK_MODE && tenantAccessDenied && user && !user.is_superuser && user.company) {
+    return (
+      <>
+        <Toaster position={isRTL ? "top-right" : "top-left"} richColors />
+        <TenantAccessDeniedScreen
+          lang={lang}
+          subdomain={user.company.subdomain}
+          onGoToWorkspace={() => openTenantWorkspace(user.company!.subdomain)}
+          onLogout={() => void handleLogout()}
+        />
       </>
     );
   }
@@ -3488,8 +3648,8 @@ export default function App() {
           <TopBar title={titleAr} titleEn={titleEn} onMenuClick={() => setSidebarOpen(true)} lang={lang} onLangSwitch={switchLang} />
           <main className="flex-1 overflow-y-auto">
             {screen === "dashboard"      && <DashboardScreen lang={lang} onNavigate={navigate} />}
-            {screen === "companies"      && <CompaniesScreen lang={lang} onNavigate={navigate} onSelectCompany={setSelectedCompany} onSwitchToTenant={switchToTenant} />}
-            {screen === "company-detail" && <CompanyDetailScreen companyId={selectedCompany} lang={lang} onNavigate={navigate} onSwitchToTenant={switchToTenant} />}
+            {screen === "companies"      && <CompaniesScreen lang={lang} onNavigate={navigate} onSelectCompany={setSelectedCompany} />}
+            {screen === "company-detail" && <CompanyDetailScreen companyId={selectedCompany} lang={lang} onNavigate={navigate} />}
             {screen === "create-company" && <CreateCompanyWizard lang={lang} onNavigate={navigate} />}
             {screen === "payments"       && <PaymentsScreen lang={lang} />}
             {screen === "outstanding"    && <OutstandingScreen lang={lang} onNavigate={navigate} />}

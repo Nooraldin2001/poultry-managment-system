@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from apps.core.tenancy import host_context_from_request
 from apps.permissions.services import allowed_permission_codes
 
 from .models import TenantRole, User
@@ -69,6 +70,46 @@ class LoginSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
         user = self.user
+        request = self.context.get("request")
+
+        if request is not None:
+            ctx = host_context_from_request(request)
+
+            if user.is_superuser:
+                if ctx["is_tenant_host"]:
+                    raise serializers.ValidationError(
+                        {
+                            "detail": (
+                                "Super Admin users must sign in from the Super Admin "
+                                "domain, not a company workspace."
+                            )
+                        }
+                    )
+            elif user.company_id is not None:
+                if ctx["is_superadmin_host"]:
+                    raise serializers.ValidationError(
+                        {
+                            "detail": (
+                                "Tenant users cannot sign in from the Super Admin domain."
+                            )
+                        }
+                    )
+
+                if ctx["is_tenant_host"]:
+                    tenant = ctx["tenant_company"]
+                    if tenant is None:
+                        raise serializers.ValidationError(
+                            {"detail": "This company workspace was not found."}
+                        )
+                    if user.company_id != tenant.id:
+                        raise serializers.ValidationError(
+                            {
+                                "detail": (
+                                    "You do not have access to this company workspace."
+                                )
+                            }
+                        )
+
         if user.company_id is not None and not user.company.is_operational:
             raise serializers.ValidationError(
                 {"detail": "This company account is suspended. Contact support."}

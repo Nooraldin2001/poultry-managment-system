@@ -1,11 +1,4 @@
-"""Tenant resolution utilities + middleware placeholder.
-
-Phase 0/1: we resolve the active tenant primarily from the authenticated user's
-company. Subdomain parsing is implemented as a utility and attached to the
-request, but full production subdomain ROUTING/enforcement is intentionally
-deferred (see docs/backend/OPEN_QUESTIONS.md). The middleware never blocks
-requests yet; it only annotates ``request.tenant`` / ``request.subdomain``.
-"""
+"""Host/subdomain helpers for multi-tenant routing."""
 
 from django.conf import settings
 
@@ -21,14 +14,13 @@ def parse_subdomain(host: str):
     """
     if not host:
         return None
-    host = host.split(":")[0].strip().lower()  # drop port
+    host = host.split(":")[0].strip().lower()
     base = getattr(settings, "BASE_DOMAIN", "").lower()
 
     if base and host.endswith("." + base):
         label = host[: -(len(base) + 1)]
         return label.split(".")[-1] or None
 
-    # Local dev convenience: <sub>.localhost
     if host.endswith(".localhost"):
         return host[: -len(".localhost")].split(".")[-1] or None
 
@@ -39,34 +31,68 @@ def is_superadmin_host(host: str) -> bool:
     return parse_subdomain(host) == getattr(settings, "SUPERADMIN_SUBDOMAIN", "admin")
 
 
-def resolve_company_for_subdomain(subdomain: str):
-    """Look up a Company by subdomain. Returns None if not found/super-admin.
+def is_root_host(host: str) -> bool:
+    """True for apex / www hosts (not a tenant workspace)."""
+    host = (host or "").split(":")[0].strip().lower()
+    base = getattr(settings, "BASE_DOMAIN", "").lower()
+    if not base:
+        return False
+    return host in (base, f"www.{base}")
 
-    Kept import-local to avoid app-loading issues at import time.
-    """
+
+def is_tenant_host(host: str) -> bool:
+    """True when host is a company workspace subdomain."""
+    subdomain = parse_subdomain(host)
+    if not subdomain:
+        return False
+    reserved = {
+        getattr(settings, "SUPERADMIN_SUBDOMAIN", "admin"),
+        "www",
+        "demo",
+    }
+    return subdomain not in reserved
+
+
+def resolve_company_for_subdomain(subdomain: str):
+    """Look up a Company by subdomain. Returns None if not found/reserved."""
     if not subdomain:
         return None
-    if subdomain == getattr(settings, "SUPERADMIN_SUBDOMAIN", "admin"):
+    if subdomain in {
+        getattr(settings, "SUPERADMIN_SUBDOMAIN", "admin"),
+        "www",
+        "demo",
+    }:
         return None
     from apps.tenants.models import Company
 
     return Company.objects.filter(subdomain=subdomain).first()
 
 
+def host_context_from_request(request) -> dict:
+    """Structured host metadata attached to login / tenant enforcement."""
+    host = request.get_host().split(":")[0].lower() if request else ""
+    subdomain = parse_subdomain(host)
+    return {
+        "host": host,
+        "subdomain": subdomain,
+        "is_superadmin_host": is_superadmin_host(host),
+        "is_root_host": is_root_host(host),
+        "is_tenant_host": is_tenant_host(host),
+        "tenant_company": resolve_company_for_subdomain(subdomain) if is_tenant_host(host) else None,
+    }
+
+
 class TenantResolutionMiddleware:
-    """Annotates the request with tenant context (non-blocking placeholder)."""
+    """Annotates the request with tenant context from the Host header."""
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        host = request.get_host() if hasattr(request, "get_host") else ""
-        subdomain = parse_subdomain(host)
-        request.subdomain = subdomain
-        request.is_superadmin_host = subdomain == getattr(
-            settings, "SUPERADMIN_SUBDOMAIN", "admin"
-        )
-        # Tenant from subdomain (may be None in local/dev where the auth user's
-        # company is the source of truth instead).
-        request.tenant = resolve_company_for_subdomain(subdomain)
+        ctx = host_context_from_request(request)
+        request.subdomain = ctx["subdomain"]
+        request.is_superadmin_host = ctx["is_superadmin_host"]
+        request.is_root_host = ctx["is_root_host"]
+        request.is_tenant_host = ctx["is_tenant_host"]
+        request.tenant = ctx["tenant_company"]
         return self.get_response(request)

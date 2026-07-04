@@ -1,11 +1,14 @@
-import { API_BASE_URL, IS_MOCK_MODE } from "@/services/config";
+import { IS_MOCK_MODE } from "@/services/config";
+import { resolveApiBase } from "@/services/tenantUrl";
 import { ApiError } from "./errors";
 
 const ACCESS_KEY = "poultry_hero_access_token";
 const REFRESH_KEY = "poultry_hero_refresh_token";
 
 export const API_CONFIG = {
-  baseUrl: API_BASE_URL,
+  get baseUrl() {
+    return resolveApiBase();
+  },
   useMock: IS_MOCK_MODE,
 };
 
@@ -36,7 +39,7 @@ export function clearTokens(): void {
 }
 
 function buildUrl(path: string, query?: Record<string, string | number | boolean | undefined | null>): string {
-  const base = (API_BASE_URL || "").replace(/\/$/, "");
+  const base = resolveApiBase().replace(/\/$/, "");
   const normalized = path.startsWith("/") ? path : `/${path}`;
   const url = `${base}/v1${normalized}`;
   if (!query) return url;

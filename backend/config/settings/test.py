@@ -19,3 +19,7 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 CORS_ALLOW_ALL_ORIGINS = True
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# Allow tenant/admin subdomain hosts in APIClient HTTP_HOST tests.
+ALLOWED_HOSTS = [".poultryhero.solutions", "testserver", "localhost", "127.0.0.1"]
+BASE_DOMAIN = "poultryhero.solutions"
