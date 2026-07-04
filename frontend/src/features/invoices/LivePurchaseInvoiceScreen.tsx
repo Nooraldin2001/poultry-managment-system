@@ -111,6 +111,33 @@ export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, o
     return created.id;
   };
 
+  const handleSaveDraft = async () => {
+    if (!supplierId) {
+      toast.error(isRTL ? "اختر المورد أولاً" : "Select a supplier first");
+      return;
+    }
+    setSaving(true);
+    setFieldErrors({});
+    setError(null);
+    try {
+      const id = await ensureDraft();
+      await patchDraftHeader("purchase", id, {
+        supplier: Number(supplierId),
+        supplier_invoice_number: supplierInvNo,
+        payment_method: paymentMethod,
+        amount_paid: amountPaid || "0",
+        notes,
+      });
+      toast.success(isRTL ? "تم حفظ المسودة" : "Draft saved");
+    } catch (err) {
+      if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
+      setError(err);
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل الحفظ" : "Save failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const addLine = async (productId: string) => {
     const prod = products.find((p) => p.id === productId);
     if (!prod) return;
@@ -208,6 +235,11 @@ export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, o
         <div className="bg-white rounded-2xl border p-4 space-y-2 text-sm">
           <div className="flex justify-between font-black"><span>{isRTL ? "الإجمالي" : "Total"}</span><span className="font-mono">AED {totals.total.toFixed(2)}</span></div>
           <input value={amountPaid} disabled={!isDraft} onChange={(e) => setAmountPaid(e.target.value)} className="w-full border rounded-xl px-2 py-2 font-mono" placeholder={isRTL ? "المدفوع" : "Paid"} />
+          {isDraft && (
+            <button type="button" disabled={saving || !supplierId} onClick={() => void handleSaveDraft()} className="w-full py-2 rounded-xl border border-[#0F2C59]/30 text-[#0F2C59] font-bold disabled:opacity-50">
+              {isRTL ? "حفظ مسودة" : "Save draft"}
+            </button>
+          )}
           {isDraft && canApprove && (
             <button type="button" disabled={saving || !lines.length} onClick={() => setShowApprove(true)} className="w-full py-3 rounded-xl bg-emerald-500 text-white font-bold flex items-center justify-center gap-2">
               <Check size={16} />{isRTL ? "اعتماد" : "Approve"}

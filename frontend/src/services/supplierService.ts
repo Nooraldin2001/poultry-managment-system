@@ -149,13 +149,59 @@ export async function listSupplierAgreements(supplierId: string): Promise<{ id: 
 export function buildSupplierCreatePayload(form: {
   nameAr: string;
   nameEn?: string;
-  phone?: string;
+  phone: string;
+  whatsapp?: string;
+  email?: string;
+  address?: string;
+  emirate?: string;
   trn?: string;
+  supplierType?: string;
+  openingBalance?: number;
+  openingBalanceType?: string;
+  paymentTermsDays?: number;
+  defaultPaymentMethod?: string;
+  trackBalance?: boolean;
+  notes?: string;
+  includeFinancials?: boolean;
 }): Record<string, unknown> {
-  return {
-    name_ar: form.nameAr,
-    name_en: form.nameEn ?? form.nameAr,
-    phone: form.phone ?? "",
-    trn: form.trn ?? "",
+  const payload: Record<string, unknown> = {
+    name_ar: form.nameAr.trim(),
+    name_en: (form.nameEn?.trim() || form.nameAr.trim()),
+    phone: form.phone.trim(),
+    supplier_type: form.supplierType ?? "credit",
+    track_balance: form.trackBalance !== false,
   };
+
+  const whatsapp = form.whatsapp?.trim();
+  if (whatsapp) payload.whatsapp = whatsapp;
+
+  const email = form.email?.trim();
+  if (email) payload.email = email;
+
+  const address = form.address?.trim();
+  if (address) payload.address = address;
+
+  const emirate = form.emirate?.trim();
+  if (emirate) payload.emirate = emirate;
+
+  const trn = form.trn?.trim();
+  if (trn) payload.trn = trn;
+
+  const notes = form.notes?.trim();
+  if (notes) payload.notes = notes;
+
+  if (form.defaultPaymentMethod) payload.default_payment_method = form.defaultPaymentMethod;
+
+  if (form.includeFinancials !== false) {
+    const obLabels: Record<string, string> = {
+      "للمورد علينا": "we_owe_supplier",
+      "على المورد": "supplier_owes_us",
+      "صفر": "zero",
+    };
+    payload.opening_balance_type = obLabels[form.openingBalanceType ?? ""] ?? "zero";
+    payload.opening_balance = String(Math.max(0, form.openingBalance ?? 0));
+    payload.payment_terms_days = form.paymentTermsDays ?? 0;
+  }
+
+  return payload;
 }

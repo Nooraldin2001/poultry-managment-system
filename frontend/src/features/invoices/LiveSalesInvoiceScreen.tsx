@@ -48,7 +48,7 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
   const [stockWarning, setStockWarning] = useState<string | null>(null);
   const [showApprove, setShowApprove] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
-  const [creditOverrideReason, setCreditOverrideReason] = useState("");
+  const [needsCreditOverride, setNeedsCreditOverride] = useState(false);
 
   const { items: customers, loading: loadingCustomers } = useCustomers();
   const { items: products, loading: loadingProducts } = useProducts();
@@ -189,14 +189,47 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
     setLines((prev) => prev.filter((l) => l.id !== line.id));
   };
 
-  const runStockCheck = async () => {
-    if (!docId) return;
+  const runStockCheck = async (): Promise<boolean> => {
+    const warnings: string[] = [];
+    for (const line of lines) {
+      try {
+        const res = await salesStockCheck({
+          product: Number(line.productId),
+          cartons: line.cartons,
+          pieces: line.pieces,
+          kg: line.kg,
+        });
+        if (!(res as { available?: boolean }).available) {
+          const avail = res as { available_kg?: string; available_cartons?: string };
+          warnings.push(`${line.productName}: ${isRTL ? "مخزون غير كافٍ" : "insufficient stock"} (${avail.available_kg ?? "?"} kg)`);
+        }
+      } catch (err) {
+        warnings.push(err instanceof ApiError ? err.message : String(err));
+      }
+    }
+    const msg = warnings.length ? warnings.join("; ") : null;
+    setStockWarning(msg);
+    return !msg;
+  };
+
+  const handleSaveDraft = async () => {
+    if (!customerId) {
+      toast.error(isRTL ? "اختر العميل أولاً" : "Select a customer first");
+      return;
+    }
+    setSaving(true);
+    setFieldErrors({});
+    setError(null);
     try {
-      const res = await salesStockCheck({ sales_invoice_id: Number(docId) });
-      const issues = (res as { issues?: string[] }).issues;
-      setStockWarning(issues?.length ? issues.join("; ") : null);
+      const id = await ensureDraft();
+      await saveHeader(id);
+      toast.success(isRTL ? "تم حفظ المسودة" : "Draft saved");
     } catch (err) {
-      setStockWarning(err instanceof ApiError ? err.message : null);
+      if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
+      setError(err);
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل الحفظ" : "Save failed"));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -205,13 +238,19 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
     setSaving(true);
     try {
       await runStockCheck();
-      await approveSale(docId, reason, creditOverrideReason ? { credit_limit_override_reason: creditOverrideReason } : undefined);
+      await approveSale(
+        docId,
+        reason,
+        needsCreditOverride ? { credit_override: true } : undefined,
+      );
       setStatus("approved");
       setShowApprove(false);
+      setNeedsCreditOverride(false);
       toast.success(isRTL ? "تم اعتماد الفاتورة" : "Invoice approved");
     } catch (err) {
       if (err instanceof ApiError && err.message.toLowerCase().includes("credit")) {
-        toast.error(err.message);
+        setNeedsCreditOverride(true);
+        toast.error(isRTL ? "تجاوز حد الائتمان — أعد المحاولة مع سبب التجاوز" : "Credit limit exceeded — retry with override reason");
       } else {
         toast.error(err instanceof ApiError ? err.message : "Approve failed");
       }
@@ -387,6 +426,16 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
             <input value={amountPaid} disabled={!isDraft} onChange={(e) => setAmountPaid(e.target.value)} className="w-full rounded-xl border px-2 py-2 font-mono" />
           </div>
           <div className="flex flex-col gap-2">
+            {isDraft && (
+              <button
+                type="button"
+                disabled={saving || !customerId}
+                onClick={() => void handleSaveDraft()}
+                className="w-full py-2 rounded-xl border border-[#0F2C59]/30 text-[#0F2C59] font-bold disabled:opacity-50"
+              >
+                {isRTL ? "حفظ مسودة" : "Save draft"}
+              </button>
+            )}
             {isDraft && canApprove && (
               <button
                 type="button"
@@ -415,12 +464,12 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
       {showApprove && (
         <ReasonModal
           lang={lang}
-          titleAr="اعتماد فاتورة البيع"
-          titleEn="Approve sales invoice"
+          titleAr={needsCreditOverride ? "تجاوز حد الائتمان" : "اعتماد فاتورة البيع"}
+          titleEn={needsCreditOverride ? "Credit limit override" : "Approve sales invoice"}
           confirmLabelAr="اعتماد"
           confirmLabelEn="Approve"
           loading={saving}
-          onClose={() => setShowApprove(false)}
+          onClose={() => { setShowApprove(false); setNeedsCreditOverride(false); }}
           onConfirm={handleApprove}
         />
       )}

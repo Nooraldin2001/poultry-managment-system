@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { useProducts, useProductDetail } from "@/hooks/api/useTenantResources";
 import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
 import { FormErrors } from "@/shared/components/FormErrors";
-import { createProduct, updateProduct, getProductRow, buildProductCreatePayload, listProductCategories } from "@/services/productService";
+import { createProduct, updateProduct, getProductRow, buildProductCreatePayload, listProductCategories, createProductCategory } from "@/services/productService";
 import { IS_MOCK_MODE } from "@/services/config";
 import { ApiError } from "@/services/api/errors";
 
@@ -409,19 +409,26 @@ export function AddProductScreen({ lang, role, onNavigate, productId }: { lang: 
   const [canSales, setCanSales] = useState(true);
   const [canPurchase, setCanPurchase] = useState(true);
   const [categories, setCategories] = useState<{ value: string; label: string }[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(!IS_MOCK_MODE);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [saveError, setSaveError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(Boolean(productId) && !IS_MOCK_MODE);
 
   useEffect(() => {
-    if (IS_MOCK_MODE) return;
-    void listProductCategories().then((rows) => {
-      setCategories(rows.filter((c) => c.active).map((c) => ({
-        value: String(c.id),
-        label: isRTL ? c.nameAr : c.nameEn,
-      })));
-    });
+    if (IS_MOCK_MODE) {
+      setCategoriesLoading(false);
+      return;
+    }
+    setCategoriesLoading(true);
+    void listProductCategories()
+      .then((rows) => {
+        setCategories(rows.filter((c) => c.active).map((c) => ({
+          value: String(c.id),
+          label: isRTL ? c.nameAr : c.nameEn,
+        })));
+      })
+      .finally(() => setCategoriesLoading(false));
   }, [isRTL]);
 
   useEffect(() => {
@@ -448,12 +455,23 @@ export function AddProductScreen({ lang, role, onNavigate, productId }: { lang: 
       .finally(() => setLoadingProduct(false));
   }, [productId]);
 
-  const categoryOptions = !IS_MOCK_MODE && categories.length > 0
-    ? [{ value: "", label: isRTL ? "اختر التصنيف" : "Select Category" }, ...categories]
-    : [{ value: "", label: isRTL ? "اختر التصنيف" : "Select Category" }, ...PROD_CATEGORIES.map(c => ({ value: c.key, label: isRTL ? c.ar : c.en }))];
+  const categoryOptions = IS_MOCK_MODE
+    ? [{ value: "", label: isRTL ? "اختر التصنيف" : "Select Category" }, ...PROD_CATEGORIES.map(c => ({ value: c.key, label: isRTL ? c.ar : c.en }))]
+    : [{ value: "", label: isRTL ? "اختر التصنيف" : "Select Category" }, ...categories];
 
   const handleSave = async (addAnother: boolean) => {
-    if (!nameAr || !cat) return;
+    if (!nameAr.trim() || !cat) {
+      toast.error(isRTL ? "أدخل الاسم والتصنيف" : "Name and category are required");
+      return;
+    }
+    if (!sku.trim()) {
+      toast.error(isRTL ? "رمز المنتج SKU مطلوب" : "Product SKU is required");
+      return;
+    }
+    if (type === "fixed" && (!grams.trim() || !ppc.trim() || parseFloat(grams) <= 0 || parseFloat(ppc) <= 0)) {
+      toast.error(isRTL ? "أدخل وزن الحبة والحبات في الكرتون" : "Weight per piece and pieces per carton are required");
+      return;
+    }
     if (IS_MOCK_MODE) {
       toast.success(isRTL ? "تم حفظ المنتج بنجاح" : "Product saved");
       if (addAnother) {
@@ -467,8 +485,9 @@ export function AddProductScreen({ lang, role, onNavigate, productId }: { lang: 
     setFieldErrors({});
     setSaving(true);
     const categoryId = Number(cat);
-    if (!categoryId) {
-      toast.error(isRTL ? "اختر تصنيفاً صالحاً" : "Select a valid category");
+    if (!categoryId || Number.isNaN(categoryId)) {
+      setSaving(false);
+      toast.error(isRTL ? "اختر تصنيفاً صالحاً من القائمة أو أنشئ تصنيفاً أولاً" : "Select a valid category or create one first");
       return;
     }
     try {
@@ -525,13 +544,20 @@ export function AddProductScreen({ lang, role, onNavigate, productId }: { lang: 
       </div>
       <FormErrors lang={lang} error={saveError} fieldErrors={fieldErrors} />
 
+      {!IS_MOCK_MODE && !categoriesLoading && categories.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-bold text-amber-800">{isRTL ? "لا توجد تصنيفات منتجات. أنشئ تصنيفاً قبل إضافة منتج." : "No product categories yet. Create a category before adding a product."}</p>
+          <Btn variant="secondary" size="sm" onClick={() => onNavigate("product-categories")}>{isRTL ? "إدارة التصنيفات" : "Manage Categories"}</Btn>
+        </div>
+      )}
+
       {/* A. Basic Info */}
       <Card className="p-5">
         <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "أ. المعلومات الأساسية" : "A. Basic Information"}</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FInput label={isRTL ? "اسم المنتج (عربي) *" : "Arabic Name *"} value={nameAr} onChange={setNameAr} placeholder={isRTL ? "مثال: 900 جرام" : "e.g. 900 GRAM"} required />
           <FInput label={isRTL ? "اسم المنتج (إنجليزي)" : "English Name"} value={nameEn} onChange={setNameEn} placeholder="e.g. 900 GRAM" />
-          <FInput label={isRTL ? "رمز المنتج / SKU" : "Product Code / SKU"} value={sku} onChange={setSku} placeholder="W-900" />
+          <FInput label={isRTL ? "رمز المنتج / SKU *" : "Product Code / SKU *"} value={sku} onChange={setSku} placeholder="W-900" required />
           <FSelect label={isRTL ? "التصنيف *" : "Category *"} value={cat} onChange={setCat} required
             options={categoryOptions} />
           <div>
@@ -659,7 +685,7 @@ export function AddProductScreen({ lang, role, onNavigate, productId }: { lang: 
         <Btn variant="outline" onClick={() => onNavigate("products")}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
         <div className="flex gap-2">
           {!isEdit && <Btn variant="secondary" disabled={saving} onClick={() => void handleSave(true)}>{isRTL ? "حفظ وإضافة آخر" : "Save & Add Another"}</Btn>}
-          <Btn disabled={!nameAr || !cat || saving} onClick={() => void handleSave(false)}><Check size={15} />{isEdit ? (isRTL ? "حفظ التعديلات" : "Save Changes") : (isRTL ? "حفظ المنتج" : "Save Product")}</Btn>
+          <Btn disabled={!nameAr.trim() || !cat || !sku.trim() || saving || (!IS_MOCK_MODE && categories.length === 0)} onClick={() => void handleSave(false)}><Check size={15} />{isEdit ? (isRTL ? "حفظ التعديلات" : "Save Changes") : (isRTL ? "حفظ المنتج" : "Save Product")}</Btn>
         </div>
       </div>
     </div>
@@ -894,7 +920,79 @@ export function ProductCategoriesScreen({ lang, role, onNavigate }: { lang: Lang
   const isRTL = isRTL_fn(lang);
   const [showAdd, setShowAdd] = useState(false);
   const [newCat, setNewCat] = useState("");
+  const [newCatEn, setNewCatEn] = useState("");
+  const [categories, setCategories] = useState(PROD_CATEGORIES.map(c => ({ ...c, id: c.key })));
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  const [saveError, setSaveError] = useState<unknown>(null);
   const canEdit = role === "owner";
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      try {
+        const rows = await listProductCategories();
+        if (!cancelled) {
+          setCategories(rows.map(c => ({
+            id: String(c.id),
+            key: c.key,
+            ar: c.nameAr,
+            en: c.nameEn,
+            count: c.count ?? 0,
+            active: c.active,
+          })));
+        }
+      } catch (err) {
+        if (!cancelled) setSaveError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleAddCategory = async () => {
+    if (!newCat.trim()) return;
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم إضافة التصنيف" : "Category added");
+      setShowAdd(false);
+      setNewCat("");
+      setNewCatEn("");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    setFieldErrors({});
+    try {
+      const created = await createProductCategory({ nameAr: newCat, nameEn: newCatEn || undefined });
+      setCategories(prev => [...prev, {
+        id: String(created.id),
+        key: created.key,
+        ar: created.nameAr,
+        en: created.nameEn,
+        count: 0,
+        active: created.active,
+      }]);
+      toast.success(isRTL ? "تم إنشاء التصنيف" : "Category created");
+      setShowAdd(false);
+      setNewCat("");
+      setNewCatEn("");
+    } catch (err) {
+      setSaveError(err);
+      if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل الحفظ" : "Save failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <LoadingState lang={lang} />;
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -904,13 +1002,18 @@ export function ProductCategoriesScreen({ lang, role, onNavigate }: { lang: Lang
         {canEdit && <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}><Plus size={14} />{isRTL ? "إضافة تصنيف" : "Add Category"}</Btn>}
       </div>
 
+      <FormErrors lang={lang} error={saveError} fieldErrors={fieldErrors} />
+
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2"><Info size={13} className="text-amber-500 shrink-0 mt-0.5" /><p className="text-xs font-bold text-amber-700">{isRTL ? "لا يمكن حذف تصنيف مستخدم في منتجات أو فواتير، يمكن إيقافه فقط." : "Cannot delete a category used in products or invoices — it can only be disabled."}</p></div>
 
       <Card className="overflow-hidden">
         <table className="w-full text-sm">
           <thead><tr className="bg-slate-50/80 border-b border-slate-200">{[isRTL?"التصنيف":"Category",isRTL?"الوصف":"Description",isRTL?"عدد المنتجات":"Products",isRTL?"الحالة":"Status",isRTL?"إجراءات":"Actions"].map((h,i)=><th key={i} className={`px-4 py-3 font-black text-xs text-slate-400 ${isRTL?"text-right":"text-left"}`}>{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {PROD_CATEGORIES.map(c => (
+            {categories.length === 0 && (
+              <tr><td colSpan={5} className="p-6"><EmptyState lang={lang} messageAr="لا توجد تصنيفات بعد" messageEn="No categories yet" compact /></td></tr>
+            )}
+            {categories.map(c => (
               <tr key={c.key} className={`hover:bg-slate-50/60 ${!c.active ? "opacity-60" : ""}`}>
                 <td className="px-4 py-3">
                   <div className="font-bold text-slate-800">{isRTL ? c.ar : c.en}</div>
@@ -937,11 +1040,11 @@ export function ProductCategoriesScreen({ lang, role, onNavigate }: { lang: Lang
             <h3 className="font-black text-[#0F2C59] mb-4 text-lg">{isRTL ? "إضافة تصنيف جديد" : "Add New Category"}</h3>
             <div className="space-y-3">
               <FInput label={isRTL ? "اسم التصنيف (عربي) *" : "Arabic Name *"} value={newCat} onChange={setNewCat} required />
-              <FInput label={isRTL ? "اسم التصنيف (إنجليزي)" : "English Name"} value="" onChange={() => {}} />
+              <FInput label={isRTL ? "اسم التصنيف (إنجليزي)" : "English Name"} value={newCatEn} onChange={setNewCatEn} />
             </div>
             <div className="flex gap-3 mt-4">
               <Btn variant="outline" onClick={() => setShowAdd(false)} className="flex-1 justify-center">{isRTL ? "إلغاء" : "Cancel"}</Btn>
-              <Btn disabled={!newCat} onClick={() => { toast.success(isRTL ? "تم إضافة التصنيف" : "Category added"); setShowAdd(false); }} className="flex-1 justify-center"><Check size={15} />{isRTL ? "حفظ" : "Save"}</Btn>
+              <Btn disabled={!newCat.trim() || saving} onClick={() => void handleAddCategory()} className="flex-1 justify-center"><Check size={15} />{isRTL ? "حفظ" : "Save"}</Btn>
             </div>
           </div>
         </div>

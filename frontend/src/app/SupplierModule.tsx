@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // POULTRY HERO — SUPPLIER PHASE: SUPPLIERS & ACCOUNTS WORKFLOW
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import {
   Plus, Search, Eye, Pencil, X, Check, ChevronRight, ChevronLeft,
@@ -17,7 +17,9 @@ import { IS_MOCK_MODE } from "@/services/config";
 import { useSupplierProfileTabs, type SupplierProfileTabKey } from "@/features/profiles/useSupplierProfileTabs";
 import { ProfileTabBody } from "@/features/profiles/ProfileTabState";
 import { LiveSupplierPaymentModal } from "@/features/payments/LivePaymentModals";
-import { ApiUnavailableState } from "@/shared/components/ApiStates";
+import { FormErrors } from "@/shared/components/FormErrors";
+import { ApiError } from "@/services/api/errors";
+import { createSupplier, buildSupplierCreatePayload } from "@/services/supplierService";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -417,6 +419,53 @@ export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; r
   const [defVat, setDefVat] = useState("ask"); const [defPpc, setDefPpc] = useState("10");
   const [defPurchaseMethod, setDefPurchaseMethod] = useState("piece");
   const [showAgreements, setShowAgreements] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  const [saveError, setSaveError] = useState<unknown>(null);
+  const [saving, setSaving] = useState(false);
+
+  const canCreate = role === "owner" || role === "accountant";
+
+  const handleSave = async (andPurchase: boolean) => {
+    if (!canCreate) {
+      toast.error(isRTL ? "ليس لديك صلاحية إضافة مورد" : "No permission to add suppliers");
+      return;
+    }
+    if (!nameAr.trim() || !phone.trim()) {
+      toast.error(isRTL ? "أدخل الاسم ورقم الهاتف" : "Name and phone are required");
+      return;
+    }
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم حفظ المورد" : "Supplier saved");
+      if (andPurchase) onNavigate("purchases-new");
+      else onNavigate("suppliers");
+      return;
+    }
+    setSaveError(null);
+    setFieldErrors({});
+    setSaving(true);
+    try {
+      const payload = buildSupplierCreatePayload({
+        nameAr, nameEn, phone, whatsapp, email, address, emirate, trn,
+        supplierType: suppType,
+        openingBalance: parseFloat(openBal) || 0,
+        openingBalanceType: openBalType,
+        paymentTermsDays: parseInt(payTerms, 10) || 0,
+        defaultPaymentMethod: payMethod,
+        trackBalance,
+        includeFinancials: canSetFinancials,
+      });
+      await createSupplier(payload);
+      toast.success(isRTL ? "تم إنشاء المورد بنجاح" : "Supplier created successfully");
+      if (andPurchase) onNavigate("purchases-new");
+      else onNavigate("suppliers");
+    } catch (err) {
+      setSaveError(err);
+      if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل الحفظ" : "Save failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const canSetFinancials = role === "owner" || role === "accountant";
   const EMIRATES = ["دبي", "أبوظبي", "الشارقة", "عجمان", "رأس الخيمة", "أم القيوين", "الفجيرة"].map(e => ({ value: e, label: e }));
@@ -436,6 +485,8 @@ export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; r
         <button onClick={() => onNavigate("suppliers")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "إضافة مورد جديد" : "Add New Supplier"}</h2>
       </div>
+
+      <FormErrors error={saveError} fieldErrors={fieldErrors} lang={lang} />
 
       {/* A. Basic Info */}
       <Card className="p-5">
@@ -538,8 +589,8 @@ export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; r
       <div className="flex flex-wrap gap-3 justify-between">
         <Btn variant="outline" onClick={() => onNavigate("suppliers")}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
         <div className="flex gap-2">
-          <Btn variant="secondary" onClick={() => { toast.success(isRTL ? "تم حفظ المورد" : "Supplier saved"); onNavigate("suppliers"); }}><Check size={15} />{isRTL ? "حفظ المورد" : "Save Supplier"}</Btn>
-          <Btn variant="green" onClick={() => { toast.success(isRTL ? "تم حفظ المورد وإنشاء فاتورة شراء" : "Saved & creating purchase invoice"); onNavigate("purchases-new"); }}><FileText size={15} />{isRTL ? "حفظ وإنشاء فاتورة شراء" : "Save & New Purchase"}</Btn>
+          <Btn variant="secondary" disabled={saving || !nameAr.trim() || !phone.trim()} onClick={() => void handleSave(false)}><Check size={15} />{isRTL ? "حفظ المورد" : "Save Supplier"}</Btn>
+          <Btn variant="green" disabled={saving || !nameAr.trim() || !phone.trim()} onClick={() => void handleSave(true)}><FileText size={15} />{isRTL ? "حفظ وإنشاء فاتورة شراء" : "Save & New Purchase"}</Btn>
         </div>
       </div>
     </div>

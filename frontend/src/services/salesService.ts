@@ -129,12 +129,12 @@ export async function updateSale(id: string, payload: Record<string, unknown>): 
 }
 
 export async function approveSale(id: string, reason?: string, extra?: Record<string, unknown>): Promise<SalesInvoiceRow> {
-  const row = await crud.action<ApiSalesList>(id, "approve/", { approval_reason: reason ?? "", ...extra });
+  const row = await crud.action<ApiSalesList>(id, "approve/", { reason: reason ?? "", ...extra });
   return mapApiSalesToRow(row);
 }
 
 export async function cancelSale(id: string, reason: string): Promise<SalesInvoiceRow> {
-  const row = await crud.action<ApiSalesList>(id, "cancel/", { cancel_reason: reason });
+  const row = await crud.action<ApiSalesList>(id, "cancel/", { reason });
   return mapApiSalesToRow(row);
 }
 
@@ -150,12 +150,33 @@ export async function getSalesSummary(filters?: ApiListFilters): Promise<Record<
   return out;
 }
 
-export async function salesPricePreview(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-  return request(ENDPOINTS.tenant.salesPricePreview, { method: "POST", body: payload });
+export async function salesPricePreview(query: {
+  customer: number;
+  product: number;
+  price_type?: string;
+}): Promise<Record<string, unknown>> {
+  const params: Record<string, string> = {
+    customer: String(query.customer),
+    product: String(query.product),
+  };
+  if (query.price_type) params.price_type = query.price_type;
+  return request(ENDPOINTS.tenant.salesPricePreview, { query: params });
 }
 
-export async function salesStockCheck(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-  return request(ENDPOINTS.tenant.salesStockCheck, { method: "POST", body: payload });
+export async function salesStockCheck(query: {
+  product: number;
+  cartons?: number;
+  pieces?: number;
+  kg?: number;
+}): Promise<Record<string, unknown>> {
+  return request(ENDPOINTS.tenant.salesStockCheck, {
+    query: {
+      product: String(query.product),
+      cartons: String(query.cartons ?? 0),
+      pieces: String(query.pieces ?? 0),
+      kg: String(query.kg ?? 0),
+    },
+  });
 }
 
 export async function getSalesPrintPreview(id: string): Promise<unknown> {

@@ -125,12 +125,12 @@ export async function updatePurchase(id: string, payload: Record<string, unknown
 }
 
 export async function approvePurchase(id: string, reason?: string): Promise<PurchaseInvoiceRow> {
-  const row = await crud.action<ApiPurchaseList>(id, "approve/", { approval_reason: reason ?? "" });
+  const row = await crud.action<ApiPurchaseList>(id, "approve/", { reason: reason ?? "" });
   return mapApiPurchaseToRow(row);
 }
 
 export async function cancelPurchase(id: string, reason: string): Promise<PurchaseInvoiceRow> {
-  const row = await crud.action<ApiPurchaseList>(id, "cancel/", { cancel_reason: reason });
+  const row = await crud.action<ApiPurchaseList>(id, "cancel/", { reason });
   return mapApiPurchaseToRow(row);
 }
 

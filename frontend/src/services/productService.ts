@@ -199,6 +199,35 @@ export async function listProductCategories(): Promise<ProductCategoryRow[]> {
   }));
 }
 
+function slugCategoryCode(name: string): string {
+  const base = name.trim().replace(/\s+/g, "_").replace(/[^\w-]/g, "").toUpperCase().slice(0, 28);
+  return base || `CAT${Date.now()}`;
+}
+
+export async function createProductCategory(form: {
+  nameAr: string;
+  nameEn?: string;
+  code?: string;
+}): Promise<ProductCategoryRow> {
+  const row = await request<ApiCategory>(ENDPOINTS.tenant.productCategories, {
+    method: "POST",
+    body: {
+      name_ar: form.nameAr.trim(),
+      name_en: (form.nameEn?.trim() || form.nameAr.trim()),
+      code: form.code?.trim() || slugCategoryCode(form.nameAr),
+      is_active: true,
+    },
+  });
+  return {
+    id: row.id,
+    key: String(row.id),
+    nameAr: row.name_ar,
+    nameEn: row.name_en,
+    active: row.is_active !== false,
+    count: 0,
+  };
+}
+
 export function buildProductCreatePayload(form: {
   nameAr: string;
   nameEn: string;
