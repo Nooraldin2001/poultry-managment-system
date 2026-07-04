@@ -14,8 +14,23 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend
 } from "recharts";
 import { toast } from "sonner";
-import { LoadingState, ErrorState, ApiUnavailableState } from "@/shared/components/ApiStates";
+import { LoadingState, ErrorState, ApiUnavailableState, EmptyState } from "@/shared/components/ApiStates";
 import { IS_MOCK_MODE } from "@/services/config";
+import {
+  EMPTY_REPORT_MSG,
+  liveOrMockChart,
+  liveOrMockRows,
+  mapDateBreakdownToTrend,
+  inventoryBalances,
+  mapInventoryBalancesToTableRows,
+  mapPaymentRecordsToTableRows,
+  mapPurchaseRecordsToTableRows,
+  mapSalesRecordsToTableRows,
+  reportBreakdown,
+  reportRecords,
+} from "@/features/reports/reportLiveData";
+import { listCustomerRows } from "@/services/customerService";
+import { listSupplierRows } from "@/services/supplierService";
 import { getReportsExportPayload } from "@/services/reportsService";
 import { ExportPayloadModal } from "@/features/export/ExportPayloadModal";
 import {
@@ -176,7 +191,18 @@ function DateFilterBar({ lang, from, to, onFrom, onTo, preset, onPreset }: {
   );
 }
 
-// ── SAMPLE DATA ────────────────────────────────────────────────────────────────
+function ReportEmptyPanel({ lang }: { lang: Lang }) {
+  const isRTL = lang === "ar";
+  return (
+    <EmptyState
+      lang={lang}
+      messageAr={EMPTY_REPORT_MSG.ar}
+      messageEn={EMPTY_REPORT_MSG.en}
+    />
+  );
+}
+
+// ── SAMPLE DATA (mock mode only — never shown in production live mode) ─────────
 const R_SALES_TREND = [
   { day: "الأحد", dayEn: "Sun", sales: 15200, purchases: 9800,  expenses: 620  },
   { day: "الاثنين",dayEn: "Mon", sales: 18300, purchases: 12100, expenses: 850  },
@@ -460,6 +486,14 @@ export function SalesReportScreen({ lang, role, onNavigate }: { lang: Lang; role
   if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
 
   const totals = (reportData.totals ?? {}) as Record<string, number>;
+  const salesTableRows = liveOrMockRows(
+    R_SALES_INVOICES,
+    mapSalesRecordsToTableRows(reportRecords(reportData)),
+  );
+  const salesTrend = liveOrMockChart(
+    R_SALES_TREND,
+    mapDateBreakdownToTrend(reportBreakdown(reportData, "by_date")),
+  );
   const kpis = IS_MOCK_MODE ? [
     { v: "AED 425,000", ar: "إجمالي المبيعات",   en: "Total Sales",      cls: "text-emerald-600" },
     { v: "AED 21,250",  ar: "إجمالي الضريبة",    en: "Total VAT",        cls: "text-[#0F2C59]" },
@@ -470,10 +504,10 @@ export function SalesReportScreen({ lang, role, onNavigate }: { lang: Lang; role
     { v: "14,530 KG",   ar: "إجمالي الكيلو",     en: "Total KG",         cls: "text-slate-700" },
     { v: "AED 2,125",   ar: "متوسط قيمة الفاتورة",en: "Avg Invoice",     cls: "text-violet-600" },
   ] : [
-    { v: `AED ${Number(totals.total_sales ?? 0).toLocaleString()}`, ar: "إجمالي المبيعات", en: "Total Sales", cls: "text-emerald-600" },
-    { v: `AED ${Number(totals.total_vat ?? 0).toLocaleString()}`, ar: "إجمالي الضريبة", en: "Total VAT", cls: "text-[#0F2C59]" },
-    { v: `AED ${Number(totals.total_paid ?? 0).toLocaleString()}`, ar: "إجمالي المدفوع", en: "Total Paid", cls: "text-emerald-600" },
-    { v: `AED ${Number(totals.total_remaining ?? 0).toLocaleString()}`, ar: "إجمالي المتبقي", en: "Total Remaining", cls: "text-red-500" },
+    { v: `AED ${Number(totals.total_amount ?? totals.total_sales ?? 0).toLocaleString()}`, ar: "إجمالي المبيعات", en: "Total Sales", cls: "text-emerald-600" },
+    { v: `AED ${Number(totals.vat_amount ?? totals.total_vat ?? 0).toLocaleString()}`, ar: "إجمالي الضريبة", en: "Total VAT", cls: "text-[#0F2C59]" },
+    { v: `AED ${Number(totals.amount_paid ?? totals.total_paid ?? 0).toLocaleString()}`, ar: "إجمالي المدفوع", en: "Total Paid", cls: "text-emerald-600" },
+    { v: `AED ${Number(totals.balance_due ?? totals.total_remaining ?? 0).toLocaleString()}`, ar: "إجمالي المتبقي", en: "Total Remaining", cls: "text-red-500" },
     { v: String(totals.total_cartons ?? 0), ar: "إجمالي الكراتين", en: "Total Cartons", cls: "text-slate-700" },
     { v: String(totals.total_pieces ?? 0), ar: "إجمالي الحبات", en: "Total Pieces", cls: "text-slate-700" },
     { v: `${Number(totals.total_kg ?? 0).toLocaleString()} KG`, ar: "إجمالي الكيلو", en: "Total KG", cls: "text-slate-700" },
@@ -500,8 +534,9 @@ export function SalesReportScreen({ lang, role, onNavigate }: { lang: Lang; role
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Card className="p-5 lg:col-span-2">
           <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "المبيعات خلال الفترة" : "Sales Over Period"}</h3>
+          {salesTrend.length === 0 ? <ReportEmptyPanel lang={lang} /> : (
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={R_SALES_TREND}>
+            <LineChart data={salesTrend}>
               <CartesianGrid key="sr-grid" strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis key="sr-x" dataKey={isRTL ? "day" : "dayEn"} tick={{ fontSize: 10, fill: "#94a3b8", fontFamily: "Cairo" }} axisLine={false} tickLine={false} />
               <YAxis key="sr-y" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
@@ -509,9 +544,12 @@ export function SalesReportScreen({ lang, role, onNavigate }: { lang: Lang; role
               <Line key="sr-sales" type="monotone" dataKey="sales" stroke="#22C55E" strokeWidth={2.5} dot={false} name={isRTL ? "المبيعات" : "Sales"} />
             </LineChart>
           </ResponsiveContainer>
+          )}
         </Card>
         <Card className="p-5">
           <h3 className="font-black text-[#0F2C59] mb-3 text-sm">{isRTL ? "طرق الدفع" : "Payment Methods"}</h3>
+          {IS_MOCK_MODE ? (
+          <>
           <ResponsiveContainer width="100%" height={150}>
             <PieChart>
               <Pie key="sr-pie" data={R_PAY_PIE} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={2}>
@@ -523,6 +561,8 @@ export function SalesReportScreen({ lang, role, onNavigate }: { lang: Lang; role
           <div className="space-y-1.5 mt-2">
             {R_PAY_PIE.map(p => <div key={p.name} className="flex items-center justify-between text-xs"><div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full" style={{ background: p.color }} /><span className="font-semibold text-slate-600">{isRTL ? p.name : p.nameEn}</span></div><span className="font-bold text-slate-700">{p.value}%</span></div>)}
           </div>
+          </>
+          ) : <ReportEmptyPanel lang={lang} />}
         </Card>
       </div>
 
@@ -533,11 +573,14 @@ export function SalesReportScreen({ lang, role, onNavigate }: { lang: Lang; role
             {TABS.map(([k, l]) => <button key={k} onClick={() => setReportTab(k)} className={`px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition-all ${reportTab === k ? "border-[#0F2C59] text-[#0F2C59]" : "border-transparent text-slate-400"}`}>{l}</button>)}
           </div>
         </div>
+        {salesTableRows.length === 0 ? (
+          <ReportEmptyPanel lang={lang} />
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-slate-50/80 border-b border-slate-200">{[isRTL?"رقم الفاتورة":"Invoice #",isRTL?"التاريخ":"Date",isRTL?"العميل":"Customer","KG",isRTL?"الإجمالي":"Total","VAT",isRTL?"المدفوع":"Paid",isRTL?"المتبقي":"Remaining",isRTL?"الحالة":"Status"].map((h,i)=><th key={i} className={`px-4 py-2.5 font-black text-xs text-slate-400 ${isRTL?"text-right":"text-left"}`}>{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {R_SALES_INVOICES.map(r => (
+              {salesTableRows.map(r => (
                 <tr key={r.id} className="hover:bg-slate-50/60">
                   <td className="px-4 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{r.id}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{r.date}</td>
@@ -553,6 +596,7 @@ export function SalesReportScreen({ lang, role, onNavigate }: { lang: Lang; role
             </tbody>
           </table>
         </div>
+        )}
       </Card>
     </div>
   );
@@ -583,8 +627,18 @@ export function PurchaseReportScreen({ lang, role, onNavigate }: { lang: Lang; r
   if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
 
   const totals = (reportData.totals ?? {}) as Record<string, number>;
+  const purchaseTableRows = liveOrMockRows(
+    R_PURCH_INVOICES,
+    mapPurchaseRecordsToTableRows(reportRecords(reportData)),
+  );
+  const purchaseBySupplier = liveOrMockChart(
+    R_SUPPLIERS.map((s) => ({ name: s.name.split(" ")[0], value: s.totalP })),
+    reportBreakdown(reportData, "by_supplier").map((r) => ({
+      name: String(r.supplier_name_snapshot ?? r.supplier_name ?? "").split(" ")[0] || "—",
+      value: Number(r.total ?? 0),
+    })),
+  );
   const kpis = IS_MOCK_MODE ? [
-    { v: "AED 298,000",  ar: "إجمالي المشتريات",       en: "Total Purchases",    cls: "text-[#0F2C59]" },
     { v: "AED 50,443",   ar: "مستحقات الموردين",       en: "Supplier Payables",  cls: "text-amber-600" },
     { v: "AED 247,557",  ar: "إجمالي المدفوع للموردين",en: "Total Paid",         cls: "text-emerald-600" },
     { v: "AED 50,443",   ar: "الرصيد غير المسدد",      en: "Remaining Balance",  cls: "text-red-500" },
@@ -618,8 +672,9 @@ export function PurchaseReportScreen({ lang, role, onNavigate }: { lang: Lang; r
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Card className="p-5 lg:col-span-2">
           <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "المشتريات حسب المورد" : "Purchases by Supplier"}</h3>
+          {purchaseBySupplier.length === 0 ? <ReportEmptyPanel lang={lang} /> : (
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={R_SUPPLIERS.map(s => ({ name: s.name.split(" ")[0], value: s.totalP }))} barSize={28}>
+            <BarChart data={purchaseBySupplier} barSize={28}>
               <CartesianGrid key="pr-grid" strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis key="pr-x" dataKey="name" tick={{ fontSize: 10, fill: "#94a3b8", fontFamily: "Cairo" }} axisLine={false} tickLine={false} />
               <YAxis key="pr-y" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
@@ -627,9 +682,12 @@ export function PurchaseReportScreen({ lang, role, onNavigate }: { lang: Lang; r
               <Bar key="pr-bar" dataKey="value" fill="#0F2C59" radius={[4,4,0,0]} name={isRTL ? "المشتريات" : "Purchases"} />
             </BarChart>
           </ResponsiveContainer>
+          )}
         </Card>
         <Card className="p-5">
           <h3 className="font-black text-[#0F2C59] mb-3 text-sm">{isRTL ? "حالة مدفوعات الموردين" : "Supplier Payment Status"}</h3>
+          {IS_MOCK_MODE ? (
+          <>
           <ResponsiveContainer width="100%" height={150}>
             <PieChart>
               <Pie key="pr-pie" data={R_SUPP_STATUS} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={2}>
@@ -641,14 +699,19 @@ export function PurchaseReportScreen({ lang, role, onNavigate }: { lang: Lang; r
           <div className="space-y-1.5 mt-2">
             {R_SUPP_STATUS.map(s => <div key={s.name} className="flex items-center justify-between text-xs"><div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} /><span className="font-semibold text-slate-600">{isRTL ? s.name : s.nameEn}</span></div><span className="font-bold text-slate-700">{s.value}%</span></div>)}
           </div>
+          </>
+          ) : <ReportEmptyPanel lang={lang} />}
         </Card>
       </div>
       <Card className="overflow-hidden">
+        {purchaseTableRows.length === 0 ? (
+          <ReportEmptyPanel lang={lang} />
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-slate-50/80 border-b border-slate-200">{[isRTL?"رقم الفاتورة":"Invoice #",isRTL?"رقم فاتورة المورد":"Supplier Inv",isRTL?"التاريخ":"Date",isRTL?"المورد":"Supplier","KG",isRTL?"إجمالي البضاعة":"Goods",isRTL?"الخصومات":"Deductions","VAT",isRTL?"صافي المستحق":"Net Payable",isRTL?"الحالة":"Status"].map((h,i)=><th key={i} className={`px-4 py-2.5 font-black text-xs text-slate-400 ${isRTL?"text-right":"text-left"}`}>{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {R_PURCH_INVOICES.map(r => (
+              {purchaseTableRows.map(r => (
                 <tr key={r.id} className="hover:bg-slate-50/60">
                   <td className="px-4 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{r.id}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-400">{r.suppInv}</td>
@@ -665,6 +728,7 @@ export function PurchaseReportScreen({ lang, role, onNavigate }: { lang: Lang; r
             </tbody>
           </table>
         </div>
+        )}
       </Card>
     </div>
   );
@@ -729,7 +793,9 @@ export function TaxReportScreen({ lang, role, onNavigate }: { lang: Lang; role: 
         </div>
       </div>
 
-      {/* Warnings */}
+      {/* Warnings + detail tables — mock samples only in dev mock mode */}
+      {IS_MOCK_MODE ? (
+      <>
       {R_VAT_SALES.filter(r => !r.trn).length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2">
           <AlertTriangle size={14} className="text-amber-500 shrink-0" />
@@ -782,6 +848,10 @@ export function TaxReportScreen({ lang, role, onNavigate }: { lang: Lang; role: 
           </table>
         </div>
       </Card>
+      </>
+      ) : (
+        <Card className="p-6"><ReportEmptyPanel lang={lang} /></Card>
+      )}
     </div>
   );
 }
@@ -863,12 +933,16 @@ export function ProfitReportScreen({ lang, role, onNavigate }: { lang: Lang; rol
         <Card className="p-4 bg-[#0F2C59]/5 border-[#0F2C59]/20">
           <div className="text-xs font-black text-slate-500 mb-2">{isRTL ? "معادلة إجمالي الربح" : "Gross Profit Formula"}</div>
           <div className="font-mono text-sm text-[#0F2C59] font-bold">{isRTL ? "المبيعات − تكلفة البضاعة FIFO" : "Sales − FIFO COGS"}</div>
-          <div className="font-mono text-base font-black text-[#0F2C59] mt-1">425,000 − 298,000 = <span className="text-emerald-600">127,000</span></div>
+          <div className="font-mono text-base font-black text-[#0F2C59] mt-1">
+            {Number(totals.total_sales ?? 0).toLocaleString()} − {Number(totals.cogs ?? 0).toLocaleString()} = <span className="text-emerald-600">{Number(totals.gross_profit ?? 0).toLocaleString()}</span>
+          </div>
         </Card>
         <Card className="p-4 bg-emerald-50 border-emerald-200">
           <div className="text-xs font-black text-slate-500 mb-2">{isRTL ? "معادلة صافي الربح" : "Net Profit Formula"}</div>
           <div className="font-mono text-sm text-emerald-700 font-bold">{isRTL ? "إجمالي الربح − المصروفات − الخصومات" : "Gross Profit − Expenses − Discounts"}</div>
-          <div className="font-mono text-base font-black text-emerald-700 mt-1">127,000 − 39,050 − 300 = <span>87,950</span></div>
+          <div className="font-mono text-base font-black text-emerald-700 mt-1">
+            {Number(totals.gross_profit ?? 0).toLocaleString()} − {(Number(totals.daily_expenses ?? 0) + Number(totals.monthly_expenses ?? 0) + Number(totals.collection_discounts ?? 0)).toLocaleString()} = <span>{Number(totals.net_profit ?? 0).toLocaleString()}</span>
+          </div>
         </Card>
       </div>
 
@@ -881,7 +955,9 @@ export function ProfitReportScreen({ lang, role, onNavigate }: { lang: Lang; rol
         </div>
       </div>
 
-      {/* Charts */}
+      {/* Charts + detail table — mock samples only in dev mock mode */}
+      {IS_MOCK_MODE ? (
+      <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <Card className="p-5">
           <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "الربح الشهري" : "Monthly Profit"}</h3>
@@ -935,6 +1011,10 @@ export function ProfitReportScreen({ lang, role, onNavigate }: { lang: Lang; rol
           </table>
         </div>
       </Card>
+      </>
+      ) : (
+        <Card className="p-6"><ReportEmptyPanel lang={lang} /></Card>
+      )}
     </div>
   );
 }
@@ -955,6 +1035,8 @@ export function CustomerReportScreen({ lang, role, onNavigate }: { lang: Lang; r
       </div>
       <DateFilterBar lang={lang} from={from} to={to} onFrom={setFrom} onTo={setTo} preset={preset} onPreset={setPreset} />
 
+      {IS_MOCK_MODE ? (
+      <>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[["AED 35,400",isRTL?"إجمالي مستحقات العملاء":"Total Receivables","text-red-500 bg-red-50"],["4",isRTL?"عملاء عليهم مديونية":"Customers With Balance","text-amber-600 bg-amber-50"],["1",isRTL?"تجاوزوا الحد الائتماني":"Exceeded Credit Limit","text-red-600 bg-red-50"],["AED 161,600",isRTL?"إجمالي التحصيلات":"Total Collections","text-emerald-600 bg-emerald-50"]].map(([v,l,c],i)=><Card key={i} className={`p-4 text-center ${c.split(" ")[1]}`}><div className={`text-xl font-black font-mono ${c.split(" ")[0]}`}>{v}</div><div className="text-[10px] font-bold text-slate-500 mt-0.5">{l}</div></Card>)}
       </div>
@@ -980,6 +1062,10 @@ export function CustomerReportScreen({ lang, role, onNavigate }: { lang: Lang; r
           </table>
         </div>
       </Card>
+      </>
+      ) : (
+        <Card className="p-6"><ReportEmptyPanel lang={lang} /></Card>
+      )}
     </div>
   );
 }
@@ -1000,6 +1086,8 @@ export function SupplierReportScreen({ lang, role, onNavigate }: { lang: Lang; r
       </div>
       <DateFilterBar lang={lang} from={from} to={to} onFrom={setFrom} onTo={setTo} preset={preset} onPreset={setPreset} />
 
+      {IS_MOCK_MODE ? (
+      <>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[["AED 50,443",isRTL?"إجمالي مستحقات الموردين":"Total Payables","text-amber-600 bg-amber-50"],["3",isRTL?"موردين لهم مستحقات":"Suppliers With Balance","text-amber-600 bg-amber-50"],["AED 142,500",isRTL?"إجمالي المشتريات":"Total Purchases","text-[#0F2C59] bg-[#0F2C59]/5"],["AED 92,057",isRTL?"إجمالي الدفعات":"Total Payments","text-emerald-600 bg-emerald-50"],["AED 1,300",isRTL?"إجمالي الخصومات":"Total Deductions","text-blue-600 bg-blue-50"],["4",isRTL?"فواتير غير مسددة":"Unpaid Invoices","text-red-500 bg-red-50"]].map(([v,l,c],i)=><Card key={i} className={`p-4 text-center ${c.split(" ")[1]}`}><div className={`text-xl font-black font-mono ${c.split(" ")[0]}`}>{v}</div><div className="text-[10px] font-bold text-slate-500 mt-0.5">{l}</div></Card>)}
       </div>
@@ -1024,6 +1112,10 @@ export function SupplierReportScreen({ lang, role, onNavigate }: { lang: Lang; r
           </table>
         </div>
       </Card>
+      </>
+      ) : (
+        <Card className="p-6"><ReportEmptyPanel lang={lang} /></Card>
+      )}
     </div>
   );
 }
@@ -1032,17 +1124,44 @@ export function SupplierReportScreen({ lang, role, onNavigate }: { lang: Lang; r
 export function StatementsScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
   const [tab, setTab] = useState<"customers" | "suppliers">("customers");
-  const [selectedCust, setSelectedCust] = useState("مطعم الخليج");
-  const [selectedSupp, setSelectedSupp] = useState("WESTLAND FOODSTUFF");
+  const [selectedCust, setSelectedCust] = useState("");
+  const [selectedSupp, setSelectedSupp] = useState("");
   const [from, setFrom] = useState("2025-01-01");
   const [to, setTo] = useState("2025-01-31");
+  const [customers, setCustomers] = useState<{ value: string; label: string }[]>([]);
+  const [suppliers, setSuppliers] = useState<{ value: string; label: string }[]>([]);
+  const [partiesLoading, setPartiesLoading] = useState(!IS_MOCK_MODE);
   const canExport = role !== "cashier";
 
-  const RECENT_EXPORTS = [
+  useEffect(() => {
+    if (IS_MOCK_MODE) {
+      setCustomers(R_CUSTOMERS.map((c) => ({ value: c.name, label: c.name })));
+      setSuppliers(R_SUPPLIERS.map((s) => ({ value: s.name, label: s.name })));
+      setSelectedCust(R_CUSTOMERS[0]?.name ?? "");
+      setSelectedSupp(R_SUPPLIERS[0]?.name ?? "");
+      return;
+    }
+    let cancelled = false;
+    setPartiesLoading(true);
+    Promise.all([listCustomerRows(), listSupplierRows()])
+      .then(([custRows, suppRows]) => {
+        if (cancelled) return;
+        const custOpts = custRows.map((c) => ({ value: c.name, label: c.name }));
+        const suppOpts = suppRows.map((s) => ({ value: s.name, label: s.name }));
+        setCustomers(custOpts);
+        setSuppliers(suppOpts);
+        setSelectedCust(custOpts[0]?.value ?? "");
+        setSelectedSupp(suppOpts[0]?.value ?? "");
+      })
+      .finally(() => { if (!cancelled) setPartiesLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const RECENT_EXPORTS = IS_MOCK_MODE ? [
     { date: "2025-01-28", type: isRTL ? "عميل" : "Customer",  name: "مطعم الخليج",         period: "يناير 2025", by: "أحمد (مالك)" },
     { date: "2025-01-27", type: isRTL ? "مورد" : "Supplier",  name: "WESTLAND FOODSTUFF",  period: "يناير 2025", by: "أحمد (مالك)" },
     { date: "2025-01-25", type: isRTL ? "عميل" : "Customer",  name: "Prime Fresh Meat LLC", period: "يناير 2025", by: "أحمد (مالك)" },
-  ];
+  ] : [];
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -1062,9 +1181,7 @@ export function StatementsScreen({ lang, role, onNavigate }: { lang: Lang; role:
             <FSelect label={tab === "customers" ? (isRTL ? "اختر العميل" : "Select Customer") : (isRTL ? "اختر المورد" : "Select Supplier")}
               value={tab === "customers" ? selectedCust : selectedSupp}
               onChange={tab === "customers" ? setSelectedCust : setSelectedSupp}
-              options={tab === "customers"
-                ? R_CUSTOMERS.map(c => ({ value: c.name, label: c.name }))
-                : R_SUPPLIERS.map(s => ({ value: s.name, label: s.name }))} />
+              options={tab === "customers" ? customers : suppliers} />
             <FInput label={isRTL ? "من تاريخ" : "From Date"} type="date" value={from} onChange={setFrom} />
             <FInput label={isRTL ? "إلى تاريخ" : "To Date"} type="date" value={to} onChange={setTo} />
           </div>
@@ -1086,7 +1203,11 @@ export function StatementsScreen({ lang, role, onNavigate }: { lang: Lang; role:
           <h3 className="font-black text-[#0F2C59] text-sm">{isRTL ? "آخر الكشوف المُصدَّرة" : "Recently Exported Statements"}</h3>
         </div>
         <div className="divide-y divide-slate-50">
-          {RECENT_EXPORTS.map((r, i) => (
+          {partiesLoading ? (
+            <div className="p-6"><LoadingState lang={lang} compact /></div>
+          ) : RECENT_EXPORTS.length === 0 ? (
+            <ReportEmptyPanel lang={lang} />
+          ) : RECENT_EXPORTS.map((r, i) => (
             <div key={i} className="px-5 py-3 flex items-center justify-between">
               <div>
                 <div className="font-bold text-slate-800 text-sm">{r.name}</div>
@@ -1129,17 +1250,25 @@ export function InventoryReportScreen({ lang, role, onNavigate }: { lang: Lang; 
   if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
 
   const totals = (reportData.totals ?? {}) as Record<string, number>;
+  const stockRows = liveOrMockRows(
+    [
+      { name: "900 جرام", ct: 34, kg: 306, minCt: 20, status: "available", fifo: 12.25, lastP: "2025-01-28", lastS: "2025-01-28" },
+      { name: "1000 جرام", ct: 8, kg: 80, minCt: 20, status: "low", fifo: 12.50, lastP: "2025-01-27", lastS: "2025-01-28" },
+      { name: "1100 جرام", ct: 24, kg: 264, minCt: 15, status: "available", fifo: 13.00, lastP: "2025-01-25", lastS: "2025-01-27" },
+      { name: "1200 جرام", ct: 0, kg: 0, minCt: 15, status: "out", fifo: 13.25, lastP: "2025-01-20", lastS: "2025-01-22" },
+      { name: "كبدة", ct: 0, kg: 13, minCt: 0, status: "available", fifo: 3.50, lastP: "2025-01-28", lastS: "2025-01-28" },
+    ],
+    mapInventoryBalancesToTableRows(inventoryBalances(reportData)),
+  );
   const inventoryKpis = IS_MOCK_MODE
     ? [["103 كرتونة",isRTL?"الكراتين المتاحة":"Available Cartons","text-[#0F2C59] bg-[#0F2C59]/5"],["1,123 KG",isRTL?"الكيلو المتاح":"Available KG","text-[#0F2C59] bg-[#0F2C59]/5"],["AED 128,450",isRTL?"قيمة المخزون التقديرية":"Est. Inventory Value","text-emerald-600 bg-emerald-50"],["2",isRTL?"منتجات منخفضة":"Low Stock","text-amber-600 bg-amber-50"],["1",isRTL?"نفدت من المخزون":"Out of Stock","text-red-500 bg-red-50"],["4,200 KG",isRTL?"مضاف خلال الفترة":"Added This Period","text-emerald-600 bg-emerald-50"],["836 KG",isRTL?"مخصوم خلال الفترة":"Deducted This Period","text-red-500 bg-red-50"],["11",isRTL?"منتجات في الكتالوج":"Products in Catalog","text-slate-600 bg-slate-100"]]
     : [
-      [String(totals.available_cartons ?? 0), isRTL ? "الكراتين المتاحة" : "Available Cartons", "text-[#0F2C59] bg-[#0F2C59]/5"],
-      [`${Number(totals.available_kg ?? 0).toLocaleString()} KG`, isRTL ? "الكيلو المتاح" : "Available KG", "text-[#0F2C59] bg-[#0F2C59]/5"],
-      [`AED ${Number(totals.inventory_value ?? 0).toLocaleString()}`, isRTL ? "قيمة المخزون التقديرية" : "Est. Inventory Value", "text-emerald-600 bg-emerald-50"],
+      [String(totals.total_cartons ?? 0), isRTL ? "الكراتين المتاحة" : "Available Cartons", "text-[#0F2C59] bg-[#0F2C59]/5"],
+      [`${Number(totals.total_kg ?? 0).toLocaleString()} KG`, isRTL ? "الكيلو المتاح" : "Available KG", "text-[#0F2C59] bg-[#0F2C59]/5"],
+      [`AED ${Number(totals.total_fifo_value ?? 0).toLocaleString()}`, isRTL ? "قيمة المخزون التقديرية" : "Est. Inventory Value", "text-emerald-600 bg-emerald-50"],
       [String(totals.low_stock_count ?? 0), isRTL ? "منتجات منخفضة" : "Low Stock", "text-amber-600 bg-amber-50"],
       [String(totals.out_of_stock_count ?? 0), isRTL ? "نفدت من المخزون" : "Out of Stock", "text-red-500 bg-red-50"],
-      [`${Number(totals.added_kg ?? 0).toLocaleString()} KG`, isRTL ? "مضاف خلال الفترة" : "Added This Period", "text-emerald-600 bg-emerald-50"],
-      [`${Number(totals.deducted_kg ?? 0).toLocaleString()} KG`, isRTL ? "مخصوم خلال الفترة" : "Deducted This Period", "text-red-500 bg-red-50"],
-      [String(totals.product_count ?? 0), isRTL ? "منتجات في الكتالوج" : "Products in Catalog", "text-slate-600 bg-slate-100"],
+      [String(stockRows.length), isRTL ? "منتجات في الكتالوج" : "Products in Catalog", "text-slate-600 bg-slate-100"],
     ];
 
   return (
@@ -1160,17 +1289,14 @@ export function InventoryReportScreen({ lang, role, onNavigate }: { lang: Lang; 
 
       <Card>
         <div className="px-5 py-3 border-b border-slate-100 font-black text-[#0F2C59] text-sm">{isRTL ? "المخزون الحالي" : "Current Stock"}</div>
+        {stockRows.length === 0 ? (
+          <ReportEmptyPanel lang={lang} />
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-slate-50/80 border-b border-slate-200">{[isRTL?"المنتج":"Product",isRTL?"الكراتين":"Cartons","KG",isRTL?"الحد الأدنى":"Min Level",isRTL?"الحالة":"Status",isRTL?"تكلفة FIFO":"FIFO Cost",isRTL?"آخر شراء":"Last Purchase",isRTL?"آخر بيع":"Last Sale"].map((h,i)=><th key={i} className={`px-4 py-2.5 font-black text-xs text-slate-400 ${isRTL?"text-right":"text-left"}`}>{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {[
-                { name: "900 جرام", ct: 34, kg: 306, minCt: 20, status: "available", fifo: 12.25, lastP: "2025-01-28", lastS: "2025-01-28" },
-                { name: "1000 جرام", ct: 8, kg: 80, minCt: 20, status: "low", fifo: 12.50, lastP: "2025-01-27", lastS: "2025-01-28" },
-                { name: "1100 جرام", ct: 24, kg: 264, minCt: 15, status: "available", fifo: 13.00, lastP: "2025-01-25", lastS: "2025-01-27" },
-                { name: "1200 جرام", ct: 0, kg: 0, minCt: 15, status: "out", fifo: 13.25, lastP: "2025-01-20", lastS: "2025-01-22" },
-                { name: "كبدة", ct: 0, kg: 13, minCt: 0, status: "available", fifo: 3.50, lastP: "2025-01-28", lastS: "2025-01-28" },
-              ].map((p, i) => (
+              {stockRows.map((p, i) => (
                 <tr key={i} className={`hover:bg-slate-50/60 ${p.status === "out" ? "bg-red-50/20" : ""}`}>
                   <td className="px-4 py-2.5 font-bold text-slate-800 text-xs">{p.name}</td>
                   <td className="px-4 py-2.5 font-mono font-bold text-[#0F2C59] text-xs">{p.ct || "—"}</td>
@@ -1185,6 +1311,7 @@ export function InventoryReportScreen({ lang, role, onNavigate }: { lang: Lang; 
             </tbody>
           </table>
         </div>
+        )}
       </Card>
     </div>
   );
@@ -1230,6 +1357,7 @@ export function ReportBuilderScreen({ lang, role, onNavigate }: { lang: Lang; ro
           <span className="text-xs text-slate-400 font-semibold">{isRTL ? "أول 5 سجلات" : "First 5 records"}</span>
         </div>
         <div className="overflow-x-auto">
+          {IS_MOCK_MODE ? (
           <table className="w-full text-sm">
             <thead><tr className="bg-slate-50/80 border-b border-slate-200">{[isRTL?"التاريخ":"Date",isRTL?"المرجع":"Reference",source==="sales"?(isRTL?"العميل":"Customer"):source==="purchases"?(isRTL?"المورد":"Supplier"):(isRTL?"المنتج":"Product"),isRTL?"المبلغ":"Amount",isRTL?"الحالة":"Status"].map((h,i)=><th key={i} className={`px-4 py-2.5 font-black text-xs text-slate-400 ${isRTL?"text-right":"text-left"}`}>{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
@@ -1244,6 +1372,7 @@ export function ReportBuilderScreen({ lang, role, onNavigate }: { lang: Lang; ro
               ))}
             </tbody>
           </table>
+          ) : <ReportEmptyPanel lang={lang} />}
         </div>
       </Card>
 

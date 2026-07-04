@@ -2627,10 +2627,10 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
   const showProfit = isOwner;
 
   const lowStock = IS_MOCK_MODE ? T_PRODUCTS.filter(p => p.cartons < p.minStock) : [];
-  const totalCustomer = live ? parseAmount(summary.customer_receivables) : T_CUSTOMERS.reduce((s, c) => s + c.balance, 0);
-  const totalSupplier = live ? parseAmount(summary.supplier_payables) : T_SUPPLIERS.reduce((s, c) => s + c.balance, 0);
-  const totalCartons = live ? parseAmount(summary.inventory_kg) : T_PRODUCTS.reduce((s, p) => s + p.cartons, 0);
-  const totalWeight = live ? parseAmount(summary.inventory_kg) : T_PRODUCTS.reduce((s, p) => s + p.weightKg, 0);
+  const totalCustomer = live ? parseAmount(summary.customer_receivables) : (IS_MOCK_MODE ? T_CUSTOMERS.reduce((s, c) => s + c.balance, 0) : 0);
+  const totalSupplier = live ? parseAmount(summary.supplier_payables) : (IS_MOCK_MODE ? T_SUPPLIERS.reduce((s, c) => s + c.balance, 0) : 0);
+  const totalCartons = live ? parseAmount(summary.inventory_kg) : (IS_MOCK_MODE ? T_PRODUCTS.reduce((s, p) => s + p.cartons, 0) : 0);
+  const totalWeight = live ? parseAmount(summary.inventory_kg) : (IS_MOCK_MODE ? T_PRODUCTS.reduce((s, p) => s + p.weightKg, 0) : 0);
   const lowStockCount = live ? (summary.low_stock_count ?? 0) : lowStock.length;
   const todaySales = live ? parseAmount(summary.total_sales) : demoNum(18450);
   const todayPurchases = live ? parseAmount(summary.total_purchases) : demoNum(11200);
@@ -2658,6 +2658,11 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
       }))
     : IS_MOCK_MODE ? T_MONTHLY_PROFIT : [];
   const payPie = IS_MOCK_MODE ? T_PAY_PIE : [];
+  const salesInvoiceCount = live ? (summary.sales_invoice_count ?? 0) : (IS_MOCK_MODE ? 3 : 0);
+  const purchaseInvoiceCount = live ? (summary.purchase_invoice_count ?? 0) : (IS_MOCK_MODE ? 2 : 0);
+  const overdueCustomerCount = live
+    ? (summary.overdue_customer_balance_count ?? 0)
+    : (IS_MOCK_MODE ? T_CUSTOMERS.filter((c) => c.overdue).length : 0);
 
   const quickActions: { ar: string; en: string; icon: ElementType; color: string; nav?: TenantScreen }[] = [
     { ar: "عرض سعر جديد",      en: "New Quotation",     icon: Tag,          color: "bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200", nav: "quotations-new" },
@@ -2866,10 +2871,10 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
             <div className="text-xs text-slate-500 mt-1">{isRTL ? `${totalCartons.toLocaleString()} كرتونة متوفرة` : `${totalCartons.toLocaleString()} cartons available`}</div>
           </div>
           {/* Customer overdue */}
-          {showFinancials && <div className={`rounded-2xl p-4 ${T_CUSTOMERS.filter(c => c.overdue).length === 0 ? "bg-emerald-50 border border-emerald-200" : "bg-red-50 border border-red-200"}`}>
+          {showFinancials && <div className={`rounded-2xl p-4 ${overdueCustomerCount === 0 ? "bg-emerald-50 border border-emerald-200" : "bg-red-50 border border-red-200"}`}>
             <div className="text-xs font-bold text-slate-500 mb-1">{isRTL ? "مدفوعات العملاء" : "Customer Payments"}</div>
-            <div className={`text-lg font-black ${T_CUSTOMERS.filter(c => c.overdue).length === 0 ? "text-emerald-700" : "text-red-700"}`}>{T_CUSTOMERS.filter(c => c.overdue).length} {isRTL ? "متأخر" : "Overdue"}</div>
-            <div className="text-xs text-red-500 font-bold mt-1">AED {T_CUSTOMERS.filter(c => c.overdue).reduce((s, c) => s + c.balance, 0).toLocaleString()}</div>
+            <div className={`text-lg font-black ${overdueCustomerCount === 0 ? "text-emerald-700" : "text-red-700"}`}>{overdueCustomerCount} {isRTL ? "متأخر" : "Overdue"}</div>
+            <div className="text-xs text-red-500 font-bold mt-1">AED {totalCustomer.toLocaleString()}</div>
           </div>}
           {/* Tax */}
           {showFinancials && <div className="bg-slate-50 rounded-2xl p-4">
@@ -2892,13 +2897,13 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
           </div>
           {/* Summary row */}
           <div className="px-5 py-3 grid grid-cols-4 gap-2 border-b border-slate-50">
-            {[[todaySales.toLocaleString(), isRTL ? "إجمالي المبيعات" : "Total Sales", "text-emerald-600"], ["3", isRTL ? "عدد الفواتير" : "Invoices", "text-[#0F2C59]"], ["10,050", isRTL ? "نقدي + بنكي" : "Cash + Bank", "text-blue-600"], ["8,400", isRTL ? "آجل" : "Credit", "text-amber-600"]].map(([v, l, c], i) => (
+            {[[todaySales.toLocaleString(), isRTL ? "إجمالي المبيعات" : "Total Sales", "text-emerald-600"], [String(salesInvoiceCount), isRTL ? "عدد الفواتير" : "Invoices", "text-[#0F2C59]"], ["0", isRTL ? "نقدي + بنكي" : "Cash + Bank", "text-blue-600"], ["0", isRTL ? "آجل" : "Credit", "text-amber-600"]].map(([v, l, c], i) => (
               <div key={i} className="text-center"><div className={`text-base font-black font-mono ${c}`}>AED {v}</div><div className="text-[10px] text-slate-400 font-bold leading-tight mt-0.5">{l}</div></div>
             ))}
           </div>
           {/* Invoices table */}
           <div className="divide-y divide-slate-50">
-            {T_INVOICES.map(inv => (
+            {IS_MOCK_MODE ? T_INVOICES.map(inv => (
               <div key={inv.id} className="px-5 py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -2916,7 +2921,9 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
                   <button className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><Printer size={13} /></button>
                 </div>
               </div>
-            ))}
+            )) : salesInvoiceCount === 0 ? (
+              <div className="p-6"><ProductionEmptyState lang={lang} compact messageAr={EMPTY_MESSAGES.noData.ar} messageEn={EMPTY_MESSAGES.noData.en} /></div>
+            ) : null}
           </div>
         </Card>
 
@@ -2928,7 +2935,7 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
               <span className="text-xs font-black text-red-500">AED {totalCustomer.toLocaleString()}</span>
             </div>
             <div className="divide-y divide-slate-50">
-              {T_CUSTOMERS.map(c => (
+              {IS_MOCK_MODE ? T_CUSTOMERS.map(c => (
                 <div key={c.id} className="px-5 py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="font-bold text-sm text-slate-800 truncate">{isRTL ? c.name : c.nameEn}</div>
@@ -2938,7 +2945,9 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
                     <div className={`font-mono font-black text-sm ${c.overdue ? "text-red-500" : "text-amber-600"}`}>AED {c.balance.toLocaleString()}</div>
                   </div>
                 </div>
-              ))}
+              )) : totalCustomer === 0 ? (
+                <div className="p-6"><ProductionEmptyState lang={lang} compact messageAr={EMPTY_MESSAGES.noData.ar} messageEn={EMPTY_MESSAGES.noData.en} /></div>
+              ) : null}
             </div>
             <div className="p-4">
               <Btn variant="green" size="sm" className="w-full justify-center"><Wallet size={14} />{isRTL ? "تسجيل تحصيل" : "Record Collection"}</Btn>
@@ -2956,12 +2965,12 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
               <button onClick={() => onNavigate("purchases")} className="text-xs font-black text-[#0F2C59] hover:underline">{isRTL ? "عرض الكل" : "View All"}</button>
             </div>
             <div className="px-5 py-3 grid grid-cols-3 gap-2 border-b border-slate-50">
-              {[[todayPurchases.toLocaleString(), isRTL ? "إجمالي المشتريات" : "Total Purchases", "text-[#0F2C59]"], ["2", isRTL ? "عدد الفواتير" : "Invoices", "text-slate-600"], ["2,800", isRTL ? "نقدي + بنكي" : "Cash + Bank", "text-blue-600"]].map(([v, l, c], i) => (
+              {[[todayPurchases.toLocaleString(), isRTL ? "إجمالي المشتريات" : "Total Purchases", "text-[#0F2C59]"], [String(purchaseInvoiceCount), isRTL ? "عدد الفواتير" : "Invoices", "text-slate-600"], ["0", isRTL ? "نقدي + بنكي" : "Cash + Bank", "text-blue-600"]].map(([v, l, c], i) => (
                 <div key={i} className="text-center"><div className={`text-base font-black font-mono ${c}`}>AED {v}</div><div className="text-[10px] text-slate-400 font-bold mt-0.5">{l}</div></div>
               ))}
             </div>
             <div className="divide-y divide-slate-50">
-              {T_PURCHASES.map(p => (
+              {IS_MOCK_MODE ? T_PURCHASES.map(p => (
                 <div key={p.id} className="px-5 py-3 flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2"><span className="font-mono text-xs text-slate-400">{p.id}</span><span className="font-bold text-sm text-slate-800">{isRTL ? p.supplier : p.supplierEn}</span></div>
@@ -2969,7 +2978,9 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
                   </div>
                   <div className="text-end shrink-0"><div className="font-mono font-black text-sm text-[#0F2C59]">AED {p.total.toLocaleString()}</div><PayMBadge method={p.method} lang={lang} /></div>
                 </div>
-              ))}
+              )) : purchaseInvoiceCount === 0 ? (
+                <div className="p-6"><ProductionEmptyState lang={lang} compact messageAr={EMPTY_MESSAGES.noData.ar} messageEn={EMPTY_MESSAGES.noData.en} /></div>
+              ) : null}
             </div>
           </Card>
           {/* Supplier Balances */}
@@ -2979,7 +2990,7 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
               <span className="text-xs font-black text-amber-600">AED {totalSupplier.toLocaleString()}</span>
             </div>
             <div className="divide-y divide-slate-50">
-              {T_SUPPLIERS.map(s => (
+              {IS_MOCK_MODE ? T_SUPPLIERS.map(s => (
                 <div key={s.id} className="px-5 py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="font-bold text-sm text-slate-800 truncate">{isRTL ? s.name : s.nameEn}</div>
@@ -2987,7 +2998,9 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
                   </div>
                   <div className={`font-mono font-black text-sm shrink-0 ${s.overdue ? "text-red-500" : "text-amber-600"}`}>AED {s.balance.toLocaleString()}</div>
                 </div>
-              ))}
+              )) : totalSupplier === 0 ? (
+                <div className="p-6"><ProductionEmptyState lang={lang} compact messageAr={EMPTY_MESSAGES.noData.ar} messageEn={EMPTY_MESSAGES.noData.en} /></div>
+              ) : null}
             </div>
             <div className="p-4"><Btn variant="secondary" size="sm" className="w-full justify-center"><Truck size={14} />{isRTL ? "دفع لمورد" : "Pay Supplier"}</Btn></div>
           </Card>
@@ -3000,7 +3013,7 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
           <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "ملخص المخزون" : "Inventory Summary"}</h3>
           {/* Stock bars */}
           <div className="space-y-3 mb-5">
-            {T_PRODUCTS.map(p => {
+            {IS_MOCK_MODE ? T_PRODUCTS.map(p => {
               const pct = Math.min(100, Math.round((p.cartons / (p.minStock * 3)) * 100));
               const isLow = p.cartons < p.minStock;
               return (
@@ -3012,7 +3025,9 @@ function TenantDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: T
                   <div className="w-full bg-slate-100 rounded-full h-2"><div className={`h-2 rounded-full ${isLow ? "bg-red-400" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} /></div>
                 </div>
               );
-            })}
+            }) : totalCartons === 0 ? (
+              <ProductionEmptyState lang={lang} compact messageAr={EMPTY_MESSAGES.noData.ar} messageEn={EMPTY_MESSAGES.noData.en} />
+            ) : null}
           </div>
           {/* Totals */}
           <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-2xl p-3">

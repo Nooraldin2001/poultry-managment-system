@@ -7,9 +7,22 @@
 
 ## Final status
 
-# **GO WITH CONDITIONS**
+# **NO-GO**
 
-Company creation and Super Admin flows are fixed and deployed. **Tenant subdomain routing is blocked by Nginx/SSL infrastructure** — not application code.
+Customer creation fix (`ded78f1`) is **deployed** to production but **not manually verified** (no owner login in agent session). Reports demo-data fix is **not deployed** (local changes only). DB audit/purge not run.
+
+---
+
+## Production status (2026-07-04 evening)
+
+| Item | Status |
+|------|--------|
+| VPS deploy (`ded78f1`) | **Done** — bundle `index-dMIyB4tH.js`, mock safety pass |
+| First View health | **Pass** — `{"status":"ok","service":"poultryhero-api"}` |
+| Tenant login API | **Pass** — JSON responses (not DisallowedHost) |
+| Customer create UI fix | **Deployed** — manual POST 201 smoke **pending** |
+| Reports demo fix | **Not deployed** — commit + push + redeploy required |
+| DB purge dry-run | **Not run** |
 
 ---
 
@@ -37,7 +50,7 @@ Company creation and Super Admin flows are fixed and deployed. **Tenant subdomai
 | API base same-origin on tenant host | Fixed |
 | Backend login host guards | Fixed |
 | Admin tenant-access-denied | Fixed |
-| Tenant customer create (live API) | Fixed (pending deploy) |
+| Tenant customer create (live API) | **Deployed** (`ded78f1`) — manual verification pending |
 
 ---
 
@@ -48,6 +61,18 @@ Company creation and Super Admin flows are fixed and deployed. **Tenant subdomai
 **Cause:** `CreateCustomerScreen` never called `POST /api/v1/tenant/customers/`.
 
 **Fix:** Frontend wired to live API with validation errors and list refetch on success. Deploy required before production verification.
+
+---
+
+## Reports demo data blocker (fixed in code)
+
+**Symptom:** First View reports showed fake customers/suppliers/invoices (مطعم الخليج, WESTLAND, AED sample totals) after login.
+
+**Cause:** **Frontend mock fallback** — `ReportsModule.tsx` and tenant dashboard sections rendered hardcoded `R_*` / `T_*` sample arrays regardless of `IS_MOCK_MODE=false`. Live API KPIs were fetched but charts/tables always used demo rows.
+
+**Fix:** Reports use `liveOrMockRows` / API `records` only in live mode; empty/zero states when API returns no data. Mock samples gated behind `IS_MOCK_MODE`. Backend `purge_tenant_demo_data` command added for scoped DB cleanup (dry-run default).
+
+**DB vs frontend:** Primary issue was **frontend**; DB purge not yet run on production.
 
 ---
 

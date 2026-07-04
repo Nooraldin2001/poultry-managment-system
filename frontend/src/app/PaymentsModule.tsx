@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // POULTRY HERO — PAYMENTS & RECEIPTS CENTER MODULE (self-contained)
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import {
   Plus, X, Check, ChevronRight, ChevronLeft, ChevronDown,
@@ -23,6 +23,11 @@ import { LiveCustomerCollectionModal, LiveSupplierPaymentModal } from "@/feature
 import { LiveCustomerRefundScreen, LiveSupplierRefundScreen, LiveCancelPaymentModal } from "@/features/payments/LiveRefundScreens";
 import { LivePrintPreviewScreen } from "@/features/print/LivePrintPreviewScreen";
 import { getPaymentMovementPrintPreviewRaw } from "@/services/paymentService";
+import { getPaymentsReport } from "@/services/reportsService";
+import {
+  mapPaymentRecordsToTableRows,
+  reportRecords,
+} from "@/features/reports/reportLiveData";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -959,11 +964,56 @@ export function PaymentMethodSummaryScreen({ lang, role, onNavigate }: { lang: L
 // ── SCREEN: PAYMENTS REPORT ────────────────────────────────────────────────────
 export function PaymentsReportScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
-  const totalIn = MOCK_PAY_MOVEMENTS.filter(m => m.dir === "in").reduce((s, m) => s + m.amount, 0);
-  const totalOut = MOCK_PAY_MOVEMENTS.filter(m => m.dir === "out" && m.type === "supplier_payment").reduce((s, m) => s + m.amount, 0);
-  const totalColl = MOCK_PAY_MOVEMENTS.filter(m => m.type === "collection").reduce((s, m) => s + m.amount, 0);
-  const totalRefCust = MOCK_PAY_MOVEMENTS.filter(m => m.type === "customer_refund").reduce((s, m) => s + m.amount, 0);
-  const totalRefSupp = MOCK_PAY_MOVEMENTS.filter(m => m.type === "supplier_refund").reduce((s, m) => s + m.amount, 0);
+  const [reportData, setReportData] = useState<Record<string, unknown>>({});
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoading(true);
+    getPaymentsReport({})
+      .then((data) => { if (!cancelled) setReportData(data); })
+      .catch((err) => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!IS_MOCK_MODE && loading) return <LoadingState lang={lang} />;
+  if (!IS_MOCK_MODE && error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const totals = (reportData.totals ?? {}) as Record<string, number>;
+  const movementRows: PayMovement[] = IS_MOCK_MODE
+    ? MOCK_PAY_MOVEMENTS
+    : mapPaymentRecordsToTableRows(reportRecords(reportData)).map((r) => ({
+        id: r.id,
+        date: r.date,
+        type: r.type as MovType,
+        typeAr: "",
+        typeEn: r.type,
+        party: r.party,
+        amount: r.amount,
+        dir: r.dir as MovDir,
+        method: r.method as PayMethod,
+        ref: "",
+        receipt: r.receipt,
+        invoice: "",
+        user: "",
+        status: (r.status === "posted" || r.status === "active" ? "active" : "cancelled") as "active" | "cancelled",
+      }));
+
+  const totalColl = IS_MOCK_MODE
+    ? MOCK_PAY_MOVEMENTS.filter((m) => m.type === "collection").reduce((s, m) => s + m.amount, 0)
+    : Number(totals.total_collections ?? 0);
+  const totalOut = IS_MOCK_MODE
+    ? MOCK_PAY_MOVEMENTS.filter((m) => m.dir === "out" && m.type === "supplier_payment").reduce((s, m) => s + m.amount, 0)
+    : Number(totals.total_supplier_payments ?? 0);
+  const totalRefCust = IS_MOCK_MODE
+    ? MOCK_PAY_MOVEMENTS.filter((m) => m.type === "customer_refund").reduce((s, m) => s + m.amount, 0)
+    : Number(totals.customer_refunds ?? 0);
+  const totalRefSupp = IS_MOCK_MODE
+    ? MOCK_PAY_MOVEMENTS.filter((m) => m.type === "supplier_refund").reduce((s, m) => s + m.amount, 0)
+    : Number(totals.supplier_refunds ?? 0);
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -983,19 +1033,22 @@ export function PaymentsReportScreen({ lang, role, onNavigate }: { lang: Lang; r
       </div>
       {/* Movements table */}
       <Card className="overflow-hidden">
+        {movementRows.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 font-bold text-sm">{isRTL ? "لا توجد بيانات حقيقية بعد" : "No real data yet"}</div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-slate-50/80 border-b border-slate-200">{[isRTL?"التاريخ":"Date",isRTL?"رقم الحركة":"#",isRTL?"النوع":"Type",isRTL?"الطرف":"Party",isRTL?"المبلغ":"Amount",isRTL?"الاتجاه":"Direction",isRTL?"الطريقة":"Method",isRTL?"الإيصال":"Receipt",isRTL?"الحالة":"Status"].map((h,i)=><th key={i} className={`px-4 py-2.5 font-black text-xs text-slate-400 ${isRTL?"text-right":"text-left"}`}>{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {MOCK_PAY_MOVEMENTS.map(m=>(
+              {movementRows.map(m=>(
                 <tr key={m.id} className="hover:bg-slate-50/60">
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{m.date.split(" ")[0]}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-[#0F2C59] font-bold">{m.id}</td>
-                  <td className="px-4 py-2.5"><MovTypeBadge type={m.type} lang={lang} /></td>
+                  <td className="px-4 py-2.5"><MovTypeBadge type={m.type as MovType} lang={lang} /></td>
                   <td className="px-4 py-2.5 font-bold text-slate-800 text-xs">{m.party}</td>
                   <td className="px-4 py-2.5 font-mono font-black text-xs"><span className={m.dir==="in"?"text-emerald-600":m.dir==="out"?"text-red-500":"text-amber-600"}>{m.dir==="out"?"−":m.dir==="in"?"+":"~"}AED {m.amount.toLocaleString()}</span></td>
-                  <td className="px-4 py-2.5"><DirBadge dir={m.dir} lang={lang} /></td>
-                  <td className="px-4 py-2.5"><MethodBadge method={m.method} lang={lang} /></td>
+                  <td className="px-4 py-2.5"><DirBadge dir={m.dir as MovDir} lang={lang} /></td>
+                  <td className="px-4 py-2.5"><MethodBadge method={m.method as PayMethod | ""} lang={lang} /></td>
                   <td className="px-4 py-2.5 font-mono text-xs text-violet-600">{m.receipt||"—"}</td>
                   <td className="px-4 py-2.5"><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.status==="active"?"bg-emerald-100 text-emerald-700":"bg-slate-100 text-slate-500"}`}>{m.status==="active"?(isRTL?"نشط":"Active"):(isRTL?"ملغي":"Cancelled")}</span></td>
                 </tr>
@@ -1003,6 +1056,7 @@ export function PaymentsReportScreen({ lang, role, onNavigate }: { lang: Lang; r
             </tbody>
           </table>
         </div>
+        )}
       </Card>
     </div>
   );

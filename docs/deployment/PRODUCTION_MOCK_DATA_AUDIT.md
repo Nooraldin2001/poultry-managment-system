@@ -149,3 +149,67 @@ corepack pnpm run build       # pass
 
 - `bash scripts/check_no_production_mock_data.sh` — ✅ run on Linux VPS (2026-07-02), result: `OK: no production mock-data hazards found.`
 
+---
+
+## Phase 4C update — First View production blockers (2026-07-04)
+
+### Root causes
+
+| Blocker | Root cause | Source |
+|---------|------------|--------|
+| Add Customer does nothing | `CreateCustomerScreen` never called `POST /api/v1/tenant/customers/` — toast-only fake success | Frontend UI bug |
+| Reports show demo data | `ReportsModule.tsx` always rendered hardcoded `R_*` sample arrays; dashboard listed `T_*` mock rows in live mode | **Frontend mock fallback** (not DB) |
+
+### Fixes applied
+
+| File | Change |
+|------|--------|
+| `frontend/src/app/CustomerModule.tsx` | `handleSave` → `createCustomer()` with loading, validation, list refetch |
+| `frontend/src/features/reports/reportLiveData.ts` | Live/mock helpers, mappers, `EMPTY_REPORT_MSG` |
+| `frontend/src/app/ReportsModule.tsx` | All report screens: API data or empty state in live mode |
+| `frontend/src/app/PaymentsModule.tsx` | Payments report from `getPaymentsReport()` |
+| `frontend/src/app/App.tsx` | Tenant dashboard mock lists gated; empty states in live mode |
+| `backend/apps/core/management/commands/purge_tenant_demo_data.py` | Scoped demo purge (dry-run default) |
+| `backend/apps/core/management/commands/reset_tenant_operational_data.py` | Dangerous full ops reset (confirm required) |
+
+### Production rule enforced
+
+In live mode (`VITE_USE_MOCK_DATA=false`, prod build):
+
+- API success with data → show real data
+- API success with empty → show “No real data yet” / zero KPIs
+- API failure → `ErrorState` / `ApiUnavailableState` / `PermissionDeniedState`
+- **Never** merge or fallback to mock report rows
+
+### Checks (local, 2026-07-04)
+
+```bash
+cd frontend && corepack pnpm run typecheck && corepack pnpm run build  # pass
+cd backend && python manage.py check && python -m pytest tests/test_customers.py tests/test_tenant_demo_commands.py tests/test_reports.py  # 50 passed
+bash scripts/check_no_production_mock_data.sh  # OK
+```
+
+### VPS cleanup (not yet executed)
+
+```bash
+python manage.py purge_tenant_demo_data --company-subdomain firstview --dry-run
+# Review output; only if demo-pattern rows:
+python manage.py purge_tenant_demo_data --company-subdomain firstview --confirm-delete-demo-data
+```
+
+---
+
+## Production bundle audit (2026-07-04 evening)
+
+Deployed asset: `index-dMIyB4tH.js` at commit **`ded78f1`** (customer fix only).
+
+| String / indicator | Count in prod bundle | Meaning |
+|--------------------|---------------------:|---------|
+| `tenant/customers` | 6 | Customer live API wired in deployed build |
+| `مطعم الخليج` | 19 | Demo report strings still present — reports fix **not deployed** |
+| `WESTLAND` | 18 | Same |
+| `No real data yet` | 1 | Partial empty-state copy |
+| Reports fix runtime helpers | 0 | Local `reportLiveData.ts` changes not on VPS |
+
+**Conclusion:** Demo report data source on current production is **frontend mock fallback** in the pre-fix reports bundle. DB purge not assessed (dry-run not run).
+

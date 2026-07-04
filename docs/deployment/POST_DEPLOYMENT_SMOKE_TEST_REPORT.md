@@ -230,3 +230,103 @@ Live service layer existed (`customerService.createCustomer`, `buildCustomerCrea
 - `POST /api/v1/tenant/customers/` → **201** with real customer JSON
 - New customer visible in list immediately and after browser refresh
 - Validation errors shown on form (missing `name_ar` / `phone`)
+
+---
+
+## Part J — Reports demo data + First View cleanup (2026-07-04)
+
+| Step | Result | Notes |
+|---|---|---|
+| Reports show fake names (مطعم الخليج, WESTLAND, etc.) | **Fail (pre-fix)** | Hardcoded `R_*` sample arrays rendered even when `IS_MOCK_MODE=false` |
+| Reports use live API only | **Fixed in code** | `ReportsModule.tsx`, `PaymentsModule.tsx`, tenant dashboard sections |
+| DB demo data purge dry-run | **Not run** | Requires VPS SSH (`purge_tenant_demo_data --company-subdomain firstview --dry-run`) |
+| DB demo data purge confirm | **Not run** | Pending dry-run review |
+
+### Root cause — reports demo data
+
+**Frontend mock fallback**, not primary DB seed data. `ReportsModule.tsx` fetched live KPI totals from the API but **always rendered** hardcoded sample arrays (`R_SALES_INVOICES`, `R_CUSTOMERS`, `R_SALES_TREND`, etc.) for charts and tables. Tenant dashboard sections in `App.tsx` also listed `T_INVOICES`, `T_CUSTOMERS`, `T_SUPPLIERS`, `T_PRODUCTS` without `IS_MOCK_MODE` guards.
+
+### Fix in repo
+
+| File | Change |
+|------|--------|
+| `frontend/src/features/reports/reportLiveData.ts` | `liveOrMockRows`, `liveOrMockChart`, mappers, `EMPTY_REPORT_MSG` |
+| `frontend/src/app/ReportsModule.tsx` | Sales/purchase/tax/profit/inventory use API `records`/`breakdowns`; mock samples only when `IS_MOCK_MODE`; empty panel in live mode |
+| `frontend/src/app/PaymentsModule.tsx` | `PaymentsReportScreen` wired to `getPaymentsReport()` |
+| `frontend/src/app/App.tsx` | Dashboard invoice/customer/supplier/inventory lists gated; zeros/empty states in live mode |
+
+### Backend cleanup commands (added, not executed on prod)
+
+```bash
+python manage.py purge_tenant_demo_data --company-subdomain firstview --dry-run
+python manage.py purge_tenant_demo_data --company-subdomain firstview --confirm-delete-demo-data
+python manage.py reset_tenant_operational_data --company-subdomain firstview --dry-run  # dangerous; only if tenant has no real ops data
+```
+
+### Local checks (2026-07-04)
+
+| Check | Result |
+|---|---|
+| `corepack pnpm run typecheck` | **Pass** |
+| `corepack pnpm run build` | **Pass** |
+| `python manage.py check` | **Pass** |
+| `pytest tests/test_customers.py tests/test_tenant_demo_commands.py tests/test_reports.py` | **50 passed** |
+| `bash scripts/check_no_production_mock_data.sh` | **Pass** |
+
+### After deploy — manual smoke (First View)
+
+1. Login at `https://firstview.poultryhero.solutions`
+2. Open Reports → verify zeros / “No real data yet”, not demo names
+3. Add Customer → verify `POST 201`, row in list, persists after refresh
+4. Run purge dry-run on VPS; confirm only demo-pattern rows before `--confirm-delete-demo-data`
+
+**Launch stance:** **NO-GO** until deploy + manual First View ERP smoke passes.
+
+---
+
+## Part K — Production deploy + verification (2026-07-04 evening)
+
+### Deploy status
+
+| Item | Result | Notes |
+|---|---|---|
+| `git pull origin main` + `deploy_vps.sh` | **Pass** | VPS deploy completed (user SSH session); bundle `index-dMIyB4tH.js` built 2026-07-04 ~17:41 UTC |
+| Deployed commit | **`ded78f1`** | Customer creation fix (`CreateCustomerScreen` → live POST) |
+| Backend restart / Nginx reload | **Pass** | Per deploy script output |
+| Mock safety on VPS | **Pass** | `OK: no production mock-data hazards found.` |
+| Reports demo-data fix | **Not deployed** | Local uncommitted changes (`ReportsModule.tsx`, `App.tsx`, `PaymentsModule.tsx`, `reportLiveData.ts`) — not on `origin/main` |
+
+### URL / health verification (external curl)
+
+| URL | Result |
+|---|---|
+| `https://firstview.poultryhero.solutions` | **200** — Poultry Hero tenant login UI |
+| `https://firstview.poultryhero.solutions/api/v1/health/` | **200** — `{"status":"ok","service":"poultryhero-api"}` |
+| `POST /api/v1/auth/login/` (bad creds) | **JSON 401** — `No active account found…` (not DisallowedHost HTML 400) |
+| `POST /api/v1/tenant/customers/` (no auth) | **JSON 401** — `Authentication credentials were not provided.` |
+
+### Customer creation — production verification
+
+| Step | Result | Notes |
+|---|---|---|
+| Add Customer sends live POST | **Likely pass (deployed code)** | Bundle contains `tenant/customers` API paths (6 refs); `ded78f1` wires `createCustomer()` |
+| Manual UI smoke (Smoke Test Customer) | **Not run** | Requires First View owner login — credentials not available to agent |
+| POST → 201 + list refresh + persist | **Pending** | Owner must confirm in DevTools after login |
+
+### Reports demo data — production audit
+
+| Check | Result |
+|---|---|
+| Demo strings in deployed bundle | **Present** — `مطعم الخليج` (19×), `WESTLAND` (18×), `INV-2025-0086` (9×) in `index-dMIyB4tH.js` |
+| Reports fix (`liveOrMockRows`, gated mock) | **Not in production bundle** — fix is local-only, pending commit + push + deploy |
+| Demo data source (current prod) | **Frontend mock fallback** (pre-fix bundle still live for reports UI) |
+| DB counts / purge dry-run | **Not run** — agent SSH key auth denied |
+
+### Required next deploy (reports fix)
+
+```bash
+# After commit + push reports changes to main:
+cd /var/www/poultryhero && git pull origin main && bash scripts/deploy_vps.sh
+```
+
+**Launch stance:** **NO-GO** — customer fix deployed but not manually verified; reports demo fix not deployed; DB audit not run.
