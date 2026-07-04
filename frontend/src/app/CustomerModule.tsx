@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // POULTRY HERO — CUSTOMER PHASE: CUSTOMERS & ACCOUNTS WORKFLOW
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Plus, Search, Eye, Pencil, X, Check, ChevronRight, ChevronLeft,
@@ -14,6 +14,13 @@ import { useCustomers, useCustomerDetail } from "@/hooks/api/useTenantResources"
 import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
 import { toModuleCustomer } from "./moduleMappers";
 import { IS_MOCK_MODE } from "@/services/config";
+import {
+  buildCustomerCreatePayload,
+  createCustomer,
+  listCustomerCategories,
+} from "@/services/customerService";
+import { ApiError } from "@/services/api/errors";
+import { FormErrors } from "@/shared/components/FormErrors";
 import { useCustomerProfileTabs, type CustomerProfileTabKey } from "@/features/profiles/useCustomerProfileTabs";
 import { ProfileTabBody } from "@/features/profiles/ProfileTabState";
 import { LiveCustomerCollectionModal } from "@/features/payments/LivePaymentModals";
@@ -374,32 +381,109 @@ export function CustomersListScreen({ lang, role, onNavigate, setSelectedCustome
 }
 
 // ── SCREEN: CREATE / EDIT CUSTOMER ─────────────────────────────────────────────
-export function CreateCustomerScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+export function CreateCustomerScreen({ lang, role, onNavigate, setSelectedCustomer }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; setSelectedCustomer?: (id: string) => void;
+}) {
   const isRTL = lang === "ar";
   const [nameAr, setNameAr] = useState(""); const [nameEn, setNameEn] = useState("");
   const [phone, setPhone] = useState(""); const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState(""); const [trn, setTrn] = useState("");
   const [address, setAddress] = useState(""); const [emirate, setEmirate] = useState("");
   const [custType, setCustType] = useState<CustType>("credit");
-  const [category, setCategory] = useState("restaurant");
+  const [category, setCategory] = useState("");
   const [active, setActive] = useState(true);
   const [openBal, setOpenBal] = useState("0"); const [openBalType, setOpenBalType] = useState("على العميل");
   const [creditLimit, setCreditLimit] = useState("15000");
   const [payTerms, setPayTerms] = useState("30"); const [blockOnExceed, setBlockOnExceed] = useState(true); const [allowOverride, setAllowOverride] = useState(true);
+  const [categoryOptions, setCategoryOptions] = useState<{ value: string; label: string }[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  const [saveError, setSaveError] = useState<unknown>(null);
+  const [saving, setSaving] = useState(false);
 
-  const canSetFinancials = role === "owner" || role === "accountant";
+  const canCreate = role === "owner" || role === "accountant";
+  const canSetFinancials = canCreate;
 
   const EMIRATES = ["دبي", "أبوظبي", "الشارقة", "عجمان", "رأس الخيمة", "أم القيوين", "الفجيرة"].map(e => ({ value: e, label: e }));
-  const CATEGORIES = [
+  const FALLBACK_CATEGORIES = [
     { value: "restaurant", label: isRTL ? "مطعم" : "Restaurant" },
     { value: "supermarket", label: isRTL ? "سوبر ماركت" : "Supermarket" },
     { value: "butcher", label: isRTL ? "ملحمة" : "Butcher" },
     { value: "hotel", label: isRTL ? "فندق" : "Hotel" },
     { value: "kitchen", label: isRTL ? "مطبخ" : "Kitchen" },
-    { value: "cash", label: isRTL ? "عميل كاش" : "Cash Customer" },
-    { value: "credit", label: isRTL ? "عميل آجل" : "Credit Customer" },
     { value: "other", label: isRTL ? "أخرى" : "Other" },
   ];
+  const categorySelectOptions = categoryOptions.length > 0
+    ? [{ value: "", label: isRTL ? "بدون تصنيف" : "No category" }, ...categoryOptions]
+    : [{ value: "", label: isRTL ? "بدون تصنيف" : "No category" }, ...FALLBACK_CATEGORIES];
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    void listCustomerCategories().then((rows) => {
+      const active = rows.filter((c) => c.active).map((c) => ({
+        value: String(c.id),
+        label: isRTL ? c.nameAr : c.nameEn,
+      }));
+      setCategoryOptions(active);
+    });
+  }, [isRTL]);
+
+  const handleSave = async (andInvoice: boolean) => {
+    if (!canCreate) {
+      toast.error(isRTL ? "ليس لديك صلاحية إضافة عميل" : "No permission to add customers");
+      return;
+    }
+    if (!nameAr.trim() || !phone.trim()) {
+      toast.error(isRTL ? "أدخل الاسم ورقم الهاتف" : "Name and phone are required");
+      return;
+    }
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم حفظ العميل" : "Customer saved");
+      if (andInvoice) onNavigate("sales-new");
+      else onNavigate("customers");
+      return;
+    }
+    setSaveError(null);
+    setFieldErrors({});
+    setSaving(true);
+    try {
+      const categoryId = category && /^\d+$/.test(category) ? Number(category) : undefined;
+      const payload = buildCustomerCreatePayload({
+        nameAr,
+        nameEn,
+        phone,
+        whatsapp,
+        email,
+        address,
+        emirate,
+        trn,
+        customerType: custType,
+        categoryId,
+        openingBalance: parseFloat(openBal) || 0,
+        openingBalanceType: openBalType,
+        creditLimit: custType === "credit" ? parseFloat(creditLimit) || 0 : 0,
+        paymentTermsDays: parseInt(payTerms, 10) || 0,
+        blockSalesWhenCreditExceeded: blockOnExceed,
+        allowAdminCreditOverride: allowOverride,
+        includeFinancials: canSetFinancials,
+      });
+      const row = await createCustomer(payload);
+      toast.success(isRTL ? "تم إنشاء العميل بنجاح" : "Customer created successfully");
+      if (andInvoice) {
+        setSelectedCustomer?.(row.id);
+        onNavigate("sales-new");
+      } else {
+        onNavigate("customers");
+      }
+    } catch (err) {
+      setSaveError(err);
+      if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل إنشاء العميل" : "Failed to create customer"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!canCreate) return <PermissionDeniedState lang={lang} />;
 
   return (
     <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-5">
@@ -407,6 +491,7 @@ export function CreateCustomerScreen({ lang, role, onNavigate }: { lang: Lang; r
         <button onClick={() => onNavigate("customers")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "إضافة عميل جديد" : "Add New Customer"}</h2>
       </div>
+      <FormErrors lang={lang} error={saveError} fieldErrors={fieldErrors} />
 
       {/* A. Basic Info */}
       <Card className="p-5">
@@ -435,7 +520,7 @@ export function CreateCustomerScreen({ lang, role, onNavigate }: { lang: Lang; r
               ))}
             </div>
           </div>
-          <FSelect label={isRTL ? "التصنيف" : "Category"} value={category} onChange={setCategory} options={CATEGORIES} />
+          <FSelect label={isRTL ? "التصنيف" : "Category"} value={category} onChange={setCategory} options={categorySelectOptions} />
           <div className="flex items-center justify-between py-2.5 border-t border-slate-100">
             <span className="text-sm font-bold text-slate-700">{isRTL ? "العميل نشط" : "Customer Active"}</span>
             <button onClick={() => setActive(v => !v)} className={`w-10 h-[22px] rounded-full flex items-center transition-all ${active ? "bg-[#0F2C59]" : "bg-slate-300"}`}>
@@ -492,8 +577,8 @@ export function CreateCustomerScreen({ lang, role, onNavigate }: { lang: Lang; r
       <div className="flex flex-wrap gap-3 justify-between">
         <Btn variant="outline" onClick={() => onNavigate("customers")}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
         <div className="flex gap-2">
-          <Btn variant="secondary" onClick={() => { toast.success(isRTL ? "تم حفظ العميل" : "Customer saved"); onNavigate("customers"); }}><Check size={15} />{isRTL ? "حفظ العميل" : "Save Customer"}</Btn>
-          <Btn variant="green" onClick={() => { toast.success(isRTL ? "تم حفظ العميل وإنشاء فاتورة" : "Saved & creating invoice"); onNavigate("sales-new"); }}><FileText size={15} />{isRTL ? "حفظ وإنشاء فاتورة بيع" : "Save & New Invoice"}</Btn>
+          <Btn variant="secondary" disabled={saving || !nameAr.trim() || !phone.trim()} onClick={() => void handleSave(false)}><Check size={15} />{isRTL ? "حفظ العميل" : "Save Customer"}</Btn>
+          <Btn variant="green" disabled={saving || !nameAr.trim() || !phone.trim()} onClick={() => void handleSave(true)}><FileText size={15} />{isRTL ? "حفظ وإنشاء فاتورة بيع" : "Save & New Invoice"}</Btn>
         </div>
       </div>
     </div>

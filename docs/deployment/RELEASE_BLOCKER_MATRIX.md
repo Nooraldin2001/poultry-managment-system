@@ -15,6 +15,7 @@
 | Admin vs tenant login | Fixed in code | No | Backend + frontend guards | Deploy backend + frontend |
 | Company detail (live) | Fixed in code | No | Uses `getCompanyById` | Deploy frontend |
 | Tenant ERP smoke | Blocked | **Yes** | Pending deploy + infra + manual test | Full smoke after deploy |
+| Tenant customer create | Fixed in code | **Yes*** | UI was toast-only (no API) | Deploy frontend + smoke POST |
 | Mock Safety | Pass | No | Script passes | Re-run after deploy |
 
 \* Pending production deploy verification.

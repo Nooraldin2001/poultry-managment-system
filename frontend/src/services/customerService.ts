@@ -210,20 +210,120 @@ export async function getCustomerSpecialPrices(id: string): Promise<CustomerSpec
   }));
 }
 
+export interface CustomerCategoryRow {
+  id: number;
+  nameAr: string;
+  nameEn: string;
+  code: string;
+  active: boolean;
+}
+
+export async function listCustomerCategories(): Promise<CustomerCategoryRow[]> {
+  if (IS_MOCK_MODE) return [];
+  const res = await request<{ results?: ApiCustomerCategory[] } | ApiCustomerCategory[]>(
+    ENDPOINTS.tenant.customerCategories,
+  );
+  const rows = Array.isArray(res) ? res : (res.results ?? []);
+  return rows.map((c) => ({
+    id: c.id,
+    nameAr: c.name_ar,
+    nameEn: c.name_en || c.name_ar,
+    code: c.code,
+    active: c.is_active !== false,
+  }));
+}
+
+interface ApiCustomerCategory {
+  id: number;
+  name_ar: string;
+  name_en?: string;
+  code: string;
+  is_active?: boolean;
+}
+
+function mapOpeningBalanceType(raw: string): string {
+  const labels: Record<string, string> = {
+    "على العميل": "customer_owes_us",
+    "للعميل": "we_owe_customer",
+    "صفر": "zero",
+    Debit: "customer_owes_us",
+    Credit: "we_owe_customer",
+    Zero: "zero",
+  };
+  return labels[raw] ?? raw;
+}
+
 export function buildCustomerCreatePayload(form: {
   nameAr: string;
   nameEn?: string;
   phone: string;
+  whatsapp?: string;
+  email?: string;
+  address?: string;
+  emirate?: string;
   trn?: string;
   customerType?: string;
+  categoryId?: number;
   creditLimit?: number;
+  openingBalance?: number;
+  openingBalanceType?: string;
+  paymentTermsDays?: number;
+  blockSalesWhenCreditExceeded?: boolean;
+  allowAdminCreditOverride?: boolean;
+  notes?: string;
+  includeFinancials?: boolean;
 }): Record<string, unknown> {
-  return {
-    name_ar: form.nameAr,
-    name_en: form.nameEn ?? form.nameAr,
-    phone: form.phone,
-    trn: form.trn ?? "",
-    customer_type: form.customerType ?? "credit",
-    credit_limit: form.creditLimit != null ? String(form.creditLimit) : "0",
+  const payload: Record<string, unknown> = {
+    name_ar: form.nameAr.trim(),
+    name_en: (form.nameEn?.trim() || form.nameAr.trim()),
+    phone: form.phone.trim(),
+    customer_type: form.customerType ?? "cash",
   };
+
+  const whatsapp = form.whatsapp?.trim();
+  if (whatsapp) payload.whatsapp = whatsapp;
+
+  const email = form.email?.trim();
+  if (email) payload.email = email;
+
+  const address = form.address?.trim();
+  if (address) payload.address = address;
+
+  const emirate = form.emirate?.trim();
+  if (emirate) payload.emirate = emirate;
+
+  const trn = form.trn?.trim();
+  if (trn) payload.trn = trn;
+
+  if (form.categoryId != null && form.categoryId > 0) {
+    payload.category = form.categoryId;
+  }
+
+  const notes = form.notes?.trim();
+  if (notes) payload.notes = notes;
+
+  if (form.includeFinancials !== false) {
+    const obType = mapOpeningBalanceType(form.openingBalanceType ?? "zero");
+    const obAmount = form.openingBalance ?? 0;
+    payload.opening_balance_type = obType;
+    payload.opening_balance = String(obAmount >= 0 ? obAmount : 0);
+
+    if (form.customerType === "credit") {
+      payload.credit_limit = String(form.creditLimit ?? 0);
+      if (form.blockSalesWhenCreditExceeded != null) {
+        payload.block_sales_when_credit_exceeded = form.blockSalesWhenCreditExceeded;
+      }
+      if (form.allowAdminCreditOverride != null) {
+        payload.allow_admin_credit_override = form.allowAdminCreditOverride;
+      }
+    } else {
+      payload.credit_limit = "0";
+    }
+
+    if (form.paymentTermsDays != null && form.paymentTermsDays >= 0) {
+      payload.payment_terms_days = form.paymentTermsDays;
+    }
+  }
+
+  return payload;
 }

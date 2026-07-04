@@ -168,6 +168,34 @@ def test_inactive_customer_reactivation(api, owner):
     assert resp.json()["is_active"] is True
 
 
+def test_create_customer_missing_required_fields(api, owner):
+    api.force_authenticate(user=owner)
+    resp = api.post("/api/v1/tenant/customers/", {"phone": "+971500000001"}, format="json")
+    assert resp.status_code == 400
+    assert "name_ar" in resp.json()
+
+    resp = api.post("/api/v1/tenant/customers/", {"name_ar": "Test"}, format="json")
+    assert resp.status_code == 400
+    assert "phone" in resp.json()
+
+
+def test_list_includes_newly_created_customer(api, owner):
+    api.force_authenticate(user=owner)
+    create = _create_customer(api, name_ar="Smoke List Customer", phone="+971500000099")
+    assert create.status_code == 201, create.content
+    cid = create.json()["id"]
+    resp = api.get("/api/v1/tenant/customers/")
+    assert resp.status_code == 200
+    ids = [row["id"] for row in resp.json()["results"]]
+    assert cid in ids
+
+
+def test_cashier_cannot_create_customer(api, cashier):
+    api.force_authenticate(user=cashier)
+    resp = _create_customer(api, name_ar="Blocked", phone="+971500000088")
+    assert resp.status_code == 403
+
+
 def test_cannot_disable_customer_with_balance_without_reason(api, owner):
     api.force_authenticate(user=owner)
     cid = _create_customer(

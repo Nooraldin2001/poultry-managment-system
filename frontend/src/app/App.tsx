@@ -3391,7 +3391,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           )}
           {tScreen === "purchases-detail"  && <PurchDetailScreen lang={lang} role={role} onNavigate={navTenant} purchaseId={selectedPurchaseId || undefined} />}
           {tScreen === "customers"          && <CustomersListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedCustomer={setSelectedCustomerId} />}
-          {tScreen === "customers-create"  && <CreateCustomerScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "customers-create"  && <CreateCustomerScreen lang={lang} role={role} onNavigate={navTenant} setSelectedCustomer={setSelectedCustomerId} />}
           {tScreen === "customers-profile" && <CustomerProfileScreen lang={lang} role={role} onNavigate={navTenant} customerId={selectedCustomerId} />}
           {tScreen === "customers-statement"&& <CustomerStatementScreen lang={lang} customerId={selectedCustomerId} onNavigate={navTenant} />}
           {tScreen === "payments"                  && <PaymentsOverviewScreen lang={lang} role={role} onNavigate={navTenant} />}

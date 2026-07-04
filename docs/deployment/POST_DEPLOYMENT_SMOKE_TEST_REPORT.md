@@ -200,3 +200,33 @@ python manage.py seed_permissions
 - Health: `{"status":"ok","service":"poultryhero-api"}`
 - Wrong password: JSON `401` with DRF detail
 - Valid First View tenant: JSON `200` + JWT; `/api/v1/auth/me/` returns First View company context
+
+---
+
+## Part I — Tenant customer creation (2026-07-04)
+
+| Step | Result | Notes |
+|---|---|---|
+| Add Customer form submits | **Fail (pre-fix)** | UI-only toast; **no POST** sent |
+| Customer appears in list | **Fail (pre-fix)** | Nothing persisted |
+| Visible error on failure | **Fail (pre-fix)** | Fake success toast |
+
+### Root cause (code)
+
+`CreateCustomerScreen` in `frontend/src/app/CustomerModule.tsx` called `toast.success()` and navigated back **without** calling `createCustomer()` / `POST /api/v1/tenant/customers/`.
+
+Live service layer existed (`customerService.createCustomer`, `buildCustomerCreatePayload`) but was **never wired** from the UI — same pattern as the old company wizard fake success.
+
+### Fix in repo
+
+- Wire `handleSave` → `createCustomer(buildCustomerCreatePayload(...))`
+- Loading/disabled submit, `FormErrors` for DRF validation, permission denied for cashier
+- Expanded payload mapper (`name_ar`, `phone`, optional fields, opening balance enums)
+- Load customer categories from `GET /api/v1/tenant/customer-categories/` when available (category optional)
+- List refreshes on return (screen remount refetches `GET /api/v1/tenant/customers/`)
+
+### After deploy expected
+
+- `POST /api/v1/tenant/customers/` → **201** with real customer JSON
+- New customer visible in list immediately and after browser refresh
+- Validation errors shown on form (missing `name_ar` / `phone`)

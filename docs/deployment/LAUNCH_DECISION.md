@@ -37,6 +37,17 @@ Company creation and Super Admin flows are fixed and deployed. **Tenant subdomai
 | API base same-origin on tenant host | Fixed |
 | Backend login host guards | Fixed |
 | Admin tenant-access-denied | Fixed |
+| Tenant customer create (live API) | Fixed (pending deploy) |
+
+---
+
+## Customer creation blocker (fixed in code)
+
+**Symptom:** Add Customer showed success but no row appeared — no network POST.
+
+**Cause:** `CreateCustomerScreen` never called `POST /api/v1/tenant/customers/`.
+
+**Fix:** Frontend wired to live API with validation errors and list refetch on success. Deploy required before production verification.
 
 ---
 
