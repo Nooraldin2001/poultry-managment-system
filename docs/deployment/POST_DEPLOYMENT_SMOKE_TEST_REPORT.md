@@ -153,3 +153,50 @@ python manage.py seed_permissions
 | Mock safety / URL health | **Pass** |
 
 **Launch stance:** **NO-GO** until company provisioning works end-to-end and tenant smoke can run.
+
+---
+
+## Part H — Tenant subdomain login (2026-07-04)
+
+| Step | Result | Notes |
+|---|---|---|
+| `https://firstview.poultryhero.solutions` loads Poultry Hero | **Pass** | After Nginx wildcard fix |
+| Same-origin API base | **Pass** | `POST /api/v1/auth/login/` on tenant host |
+| Login / health API | **Fail (pre-fix deploy)** | Django HTML **400**, not JSON |
+
+### Exact 400 response body (captured)
+
+**Request method:** `POST`  
+**Request URL:** `https://firstview.poultryhero.solutions/api/v1/auth/login/` (same-origin)  
+**Request payload keys:** `email`, `password`  
+**Response status:** `400 Bad Request`  
+**Response content-type:** `text/html` (Django error page, not DRF JSON)  
+**Response body:**
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Bad Request (400)</title>
+</head>
+<body>
+  <h1>Bad Request (400)</h1><p></p>
+</body>
+</html>
+```
+
+**Also observed on:** `GET https://firstview.poultryhero.solutions/api/v1/health/` (same HTML 400).
+
+**Root cause:** Django `DisallowedHost` — production `ALLOWED_HOSTS` missing `.poultryhero.solutions`, so tenant subdomain API requests are rejected before auth runs.
+
+**Fix in repo (pending VPS deploy):**
+
+- `backend/config/settings/production.py` — auto-append `.poultryhero.solutions` to `ALLOWED_HOSTS`
+- `scripts/fix_production_allowed_hosts.sh` — patch `.env` + restart backend
+- Frontend/backend auth contract already uses `email` (`User.USERNAME_FIELD = "email"`)
+
+**After deploy expected:**
+
+- Health: `{"status":"ok","service":"poultryhero-api"}`
+- Wrong password: JSON `401` with DRF detail
+- Valid First View tenant: JSON `200` + JWT; `/api/v1/auth/me/` returns First View company context

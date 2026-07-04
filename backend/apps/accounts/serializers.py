@@ -59,6 +59,8 @@ class UserMeSerializer(serializers.ModelSerializer):
 class LoginSerializer(TokenObtainPairSerializer):
     """JWT login that also blocks suspended tenants and returns user payload."""
 
+    username_field = "email"
+
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
@@ -71,6 +73,11 @@ class LoginSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
         user = self.user
         request = self.context.get("request")
+
+        if not user.is_active:
+            raise serializers.ValidationError(
+                {"detail": "This user account is inactive."}
+            )
 
         if request is not None:
             ctx = host_context_from_request(request)
@@ -105,14 +112,14 @@ class LoginSerializer(TokenObtainPairSerializer):
                         raise serializers.ValidationError(
                             {
                                 "detail": (
-                                    "You do not have access to this company workspace."
+                                    "This user does not belong to this company workspace."
                                 )
                             }
                         )
 
         if user.company_id is not None and not user.company.is_operational:
             raise serializers.ValidationError(
-                {"detail": "This company account is suspended. Contact support."}
+                {"detail": "This company is inactive."}
             )
         data["user"] = UserMeSerializer(user, context=self.context).data
         return data

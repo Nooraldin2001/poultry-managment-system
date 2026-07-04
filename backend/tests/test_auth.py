@@ -50,4 +50,4 @@ def test_suspended_company_blocks_login(api, owner, company):
         format="json",
     )
     assert resp.status_code == 400
-    assert "suspended" in str(resp.json()).lower()
+    assert "inactive" in str(resp.json()).lower()

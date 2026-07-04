@@ -46,7 +46,7 @@ def test_tenant_user_blocked_on_wrong_subdomain(api, owner, other_company):
         HTTP_HOST="competitor.poultryhero.solutions",
     )
     assert resp.status_code == 400
-    assert "do not have access" in _detail(resp).lower()
+    assert "does not belong" in _detail(resp).lower()
 
 
 def test_tenant_user_blocked_on_unknown_subdomain(api, owner):

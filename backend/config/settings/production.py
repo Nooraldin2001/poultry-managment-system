@@ -6,7 +6,16 @@ from .base import env
 DEBUG = False
 
 # DJANGO_ALLOWED_HOSTS must be set, e.g. ".poultryhero.solutions"
-ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")
+ALLOWED_HOSTS = list(env("DJANGO_ALLOWED_HOSTS"))
+
+# Always allow all tenant workspace subdomains ({sub}.BASE_DOMAIN).
+# Without ".poultryhero.solutions", requests like firstview.poultryhero.solutions
+# hit Django DisallowedHost and return HTML 400 (browser shows failed /api/ calls).
+_base_domain = env("BASE_DOMAIN", default="poultryhero.solutions").strip().lower()
+if _base_domain:
+    _wildcard_host = f".{_base_domain}"
+    if _wildcard_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_wildcard_host)
 
 # Security hardening
 SECURE_SSL_REDIRECT = True

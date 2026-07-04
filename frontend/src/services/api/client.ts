@@ -52,6 +52,15 @@ function buildUrl(path: string, query?: Record<string, string | number | boolean
 }
 
 function parseDrfErrors(data: unknown): { message: string; fieldErrors: Record<string, string[]> } {
+  if (typeof data === "string") {
+    if (data.includes("<title>Bad Request (400)</title>")) {
+      return {
+        message: "This workspace host is not allowed by the server. Contact support.",
+        fieldErrors: {},
+      };
+    }
+    return { message: data.slice(0, 200) || "Request failed", fieldErrors: {} };
+  }
   if (!data || typeof data !== "object") {
     return { message: "Request failed", fieldErrors: {} };
   }
