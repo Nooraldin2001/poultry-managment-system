@@ -3535,7 +3535,10 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
     : resolveTenantCompany(user, companyId, companies);
   // Tenant navigation boundary: screens declare `onNavigate: (s: string) => void`,
   // so wrap the typed setter once here instead of casting at every call site.
-  const navTenant = (s: string) => setTScreen(s as TenantScreen);
+  const navTenant = (s: string) => {
+    if (s === "purchases-new") setSelectedPurchaseId("");
+    setTScreen(s as TenantScreen);
+  };
 
   // TENANT_TITLES extracted to src/app/navigation/screenTitles.ts
 
@@ -3566,7 +3569,9 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "sales-preview"&& <SalesPreviewScreen lang={lang} onNavigate={navTenant} role={role} salesId={selectedSalesId || undefined} />}
           {tScreen === "sales-detail" && <SalesDetailScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} salesId={selectedSalesId || undefined} />}
           {(tScreen === "purchases" || tScreen === "purchases-list") && <PurchListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedPurchaseId={setSelectedPurchaseId} />}
-          {tScreen === "purchases-new"     && <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} purchaseId={selectedPurchaseId || undefined} onSaved={setSelectedPurchaseId} />}
+          {tScreen === "purchases-new"     && <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} onSaved={setSelectedPurchaseId} />}
+          {tScreen === "purchases-edit"    && selectedPurchaseId && <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} purchaseId={selectedPurchaseId} onSaved={setSelectedPurchaseId} />}
+          {tScreen === "purchases-edit"    && !selectedPurchaseId && <EmptyState lang={lang} messageAr="اختر فاتورة شراء من القائمة" messageEn="Select a purchase invoice from the list" />}
           {tScreen === "purchases-preview" && (
             !IS_MOCK_MODE ? (
               selectedPurchaseId ? (
@@ -3623,7 +3628,8 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "qa-summary"             && <QASummaryScreen lang={lang} onNavigate={navTenant} />}
           {tScreen === "products"               && <ProductsListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedProductId={setSelectedProductId} />}
           {tScreen === "products-new"           && <AddProductScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {tScreen === "products-edit"          && <AddProductScreen lang={lang} role={role} onNavigate={navTenant} productId={selectedProductId} />}
+          {tScreen === "products-edit"          && selectedProductId && <AddProductScreen lang={lang} role={role} onNavigate={navTenant} productId={selectedProductId} />}
+          {tScreen === "products-edit"          && !selectedProductId && <EmptyState lang={lang} messageAr="اختر منتجاً من القائمة" messageEn="Select a product from the list" />}
           {tScreen === "product-detail"         && <ProductDetailScreen lang={lang} role={role} onNavigate={navTenant} productId={selectedProductId} />}
           {tScreen === "product-categories"     && <ProductCategoriesScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "products-bulk-setup"    && <BulkProductSetupScreen lang={lang} role={role} onNavigate={navTenant} />}
@@ -3675,9 +3681,11 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "expenses-report"    && <ExpensesReportScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "expense-detail"     && <ExpenseDetailScreen lang={lang} role={role} onNavigate={navTenant} expenseId={selectedExpenseId} />}
           {tScreen === "expense-voucher"    && <ExpenseVoucherScreen lang={lang} onNavigate={navTenant} expenseId={selectedExpenseId} />}
-          {tScreen === "suppliers"          && <SuppliersListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedSupplier={setSelectedSupplierId} />}
-          {tScreen === "suppliers-new"     && <CreateSupplierScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {tScreen === "supplier-profile"  && <SupplierProfileScreen lang={lang} role={role} onNavigate={navTenant} supplierId={selectedSupplierId} />}
+          {tScreen === "suppliers"          && <SuppliersListScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} setSelectedSupplier={setSelectedSupplierId} />}
+          {tScreen === "suppliers-new"     && <CreateSupplierScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} />}
+          {tScreen === "suppliers-edit"    && selectedSupplierId && <CreateSupplierScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} supplierId={selectedSupplierId} />}
+          {tScreen === "suppliers-edit"    && !selectedSupplierId && <EmptyState lang={lang} messageAr="اختر مورداً من القائمة" messageEn="Select a supplier from the list" />}
+          {tScreen === "supplier-profile"  && <SupplierProfileScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} supplierId={selectedSupplierId} />}
           {tScreen === "supplier-statement"&& <SupplierStatementScreen lang={lang} supplierId={selectedSupplierId} onNavigate={navTenant} />}
           {(tScreen === "inventory") && <InventoryOverviewScreen lang={lang} role={role} onNavigate={navTenant} selectedProductId={invProductId} setSelectedProductId={setInvProductId} />}
           {tScreen === "inventory-product"    && <InvProductDetailScreen lang={lang} role={role} onNavigate={navTenant} productId={invProductId} />}

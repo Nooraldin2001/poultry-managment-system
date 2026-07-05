@@ -7,6 +7,7 @@
 
 | Layer | Problem |
 | --- | --- |
+| **List edit action** | Row pencil opened `products-new` (create) without `productId` — always POST, never edit |
 | Backend | `PATCH` requires `reason` when price, weight, or pieces-per-carton change |
 | Frontend payload | Edit sent full create payload (including UI-only fields) without `reason` → **400** |
 | Form hydration | Zero prices and min carton/kg fields not loaded from API |
@@ -17,7 +18,7 @@
 | Area | Change |
 | --- | --- |
 | Service | `buildProductUpdatePayload()`, `productFormNeedsReason()`, `ProductFormSnapshot` diff |
-| ProductModule | Edit mode uses PATCH payload; `ReasonModal` when price/carton fields change |
+| ProductModule | List edit → `products-edit` with `setSelectedProductId`; ReasonModal on sensitive PATCH |
 | Hydration | Load `minCt`, `minKg`, zero prices, category, product type from GET detail |
 | Refresh | Refetch list/detail after successful save |
 

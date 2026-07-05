@@ -19,7 +19,8 @@ import { ProfileTabBody } from "@/features/profiles/ProfileTabState";
 import { LiveSupplierPaymentModal } from "@/features/payments/LivePaymentModals";
 import { FormErrors } from "@/shared/components/FormErrors";
 import { ApiError } from "@/services/api/errors";
-import { createSupplier, buildSupplierCreatePayload } from "@/services/supplierService";
+import { createSupplier, updateSupplier, getSupplierDetail, buildSupplierCreatePayload, buildSupplierUpdatePayload } from "@/services/supplierService";
+import { canCreateSupplier, canEditSupplier } from "@/shared/utils/permissions";
 import { getSupplierStatementReport } from "@/services/reportsService";
 import { getDefaultStatementDateRange } from "@/shared/utils/dateRanges";
 import { parseAmount } from "@/services/crud/parse";
@@ -29,10 +30,10 @@ type Lang = "ar" | "en";
 type TenantRole = "owner" | "accountant" | "cashier";
 type TenantScreen =
   | "dashboard" | "sales" | "sales-list" | "sales-new" | "sales-preview" | "sales-detail"
-  | "purchases" | "purchases-list" | "purchases-new" | "purchases-preview" | "purchases-detail"
+  | "purchases" | "purchases-list" | "purchases-new" | "purchases-edit" | "purchases-preview" | "purchases-detail"
   | "inventory" | "inventory-product" | "inventory-stocktaking" | "inventory-alerts" | "inventory-movement" | "inventory-valuation"
   | "customers" | "customers-create" | "customers-profile" | "customers-statement"
-  | "suppliers" | "suppliers-new" | "supplier-profile" | "supplier-statement"
+  | "suppliers" | "suppliers-new" | "suppliers-edit" | "supplier-profile" | "supplier-statement"
   | "quotations" | "payments" | "expenses" | "accounts" | "tax" | "reports" | "users" | "settings";
 type SuppType = "credit" | "cash" | "bank";
 type SuppStatus = "has_payable" | "active" | "clear" | "inactive";
@@ -241,8 +242,8 @@ function enrichSupplier(m: ReturnType<typeof toModuleSupplier>, mock?: Supplier)
 }
 
 // ── SCREEN: SUPPLIERS LIST ─────────────────────────────────────────────────────
-export function SuppliersListScreen({ lang, role, onNavigate, setSelectedSupplier }: {
-  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void;
+export function SuppliersListScreen({ lang, role, permissions = [], onNavigate, setSelectedSupplier }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void;
   setSelectedSupplier: (id: string) => void;
 }) {
   const isRTL = lang === "ar";
@@ -250,7 +251,8 @@ export function SuppliersListScreen({ lang, role, onNavigate, setSelectedSupplie
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  const canCreate = role === "owner" || role === "accountant";
+  const canCreate = canCreateSupplier(role, permissions);
+  const canEdit = canEditSupplier(role, permissions);
   const canPay = role === "owner" || role === "accountant";
 
   const { items: supplierRows, loading, error, forbidden, reload } = useSuppliers(
@@ -360,7 +362,7 @@ export function SuppliersListScreen({ lang, role, onNavigate, setSelectedSupplie
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button onClick={() => { setSelectedSupplier(s.id); onNavigate("supplier-profile"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#0F2C59] hover:text-white transition-all" title={isRTL ? "عرض الملف" : "View Profile"}><Eye size={13} /></button>
-                        {canCreate && <button onClick={() => { setSelectedSupplier(s.id); onNavigate("suppliers-new"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all"><Pencil size={13} /></button>}
+                        {canEdit && <button onClick={() => { setSelectedSupplier(s.id); onNavigate("suppliers-edit"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all" title={isRTL ? "تعديل" : "Edit"}><Pencil size={13} /></button>}
                         <button onClick={() => onNavigate("purchases-new")} className="p-1.5 rounded-lg text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all" title={isRTL ? "إنشاء فاتورة شراء" : "New Purchase"}><FileText size={13} /></button>
                       </div>
                     </td>
@@ -406,12 +408,16 @@ export function SuppliersListScreen({ lang, role, onNavigate, setSelectedSupplie
 }
 
 // ── SCREEN: CREATE / EDIT SUPPLIER ─────────────────────────────────────────────
-export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+export function CreateSupplierScreen({ lang, role, permissions = [], onNavigate, supplierId }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; supplierId?: string;
+}) {
   const isRTL = lang === "ar";
+  const isEdit = Boolean(supplierId);
   const [nameAr, setNameAr] = useState(""); const [nameEn, setNameEn] = useState("");
   const [phone, setPhone] = useState(""); const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState(""); const [trn, setTrn] = useState("");
   const [address, setAddress] = useState(""); const [emirate, setEmirate] = useState("");
+  const [notes, setNotes] = useState("");
   const [suppType, setSuppType] = useState<SuppType>("credit");
   const [category, setCategory] = useState("food_company");
   const [active, setActive] = useState(true);
@@ -425,12 +431,47 @@ export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; r
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [saveError, setSaveError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
+  const [loadingSupplier, setLoadingSupplier] = useState(Boolean(supplierId) && !IS_MOCK_MODE);
 
-  const canCreate = role === "owner" || role === "accountant";
+  const canCreate = canCreateSupplier(role, permissions);
+  const canEdit = canEditSupplier(role, permissions);
+  const canAccess = isEdit ? canEdit : canCreate;
+  const canSetFinancials = canAccess && !isEdit;
+
+  useEffect(() => {
+    if (!supplierId || IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoadingSupplier(true);
+    void getSupplierDetail(supplierId)
+      .then((detail) => {
+        if (cancelled || !detail) return;
+        setNameAr(detail.nameAr);
+        setNameEn(detail.nameEn);
+        setPhone(detail.phone);
+        setWhatsapp(detail.whatsapp);
+        setEmail(detail.email);
+        setTrn(detail.trn);
+        setAddress(detail.address);
+        setEmirate(detail.emirate);
+        setNotes(detail.notes);
+        setSuppType((detail.supplierType as SuppType) || "credit");
+        setActive(detail.isActive);
+        setPayTerms(String(detail.paymentTermsDays));
+        setPayMethod(detail.defaultPaymentMethod || "bank");
+        setTrackBalance(detail.trackBalance);
+      })
+      .catch((err) => {
+        if (!cancelled) setSaveError(err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSupplier(false);
+      });
+    return () => { cancelled = true; };
+  }, [supplierId]);
 
   const handleSave = async (andPurchase: boolean) => {
-    if (!canCreate) {
-      toast.error(isRTL ? "ليس لديك صلاحية إضافة مورد" : "No permission to add suppliers");
+    if (!canAccess) {
+      toast.error(isRTL ? "ليس لديك صلاحية" : "Permission denied");
       return;
     }
     if (!nameAr.trim() || !phone.trim()) {
@@ -440,27 +481,42 @@ export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; r
     if (IS_MOCK_MODE) {
       toast.success(isRTL ? "تم حفظ المورد" : "Supplier saved");
       if (andPurchase) onNavigate("purchases-new");
-      else onNavigate("suppliers");
+      else onNavigate(isEdit ? "supplier-profile" : "suppliers");
       return;
     }
     setSaveError(null);
     setFieldErrors({});
     setSaving(true);
     try {
-      const payload = buildSupplierCreatePayload({
-        nameAr, nameEn, phone, whatsapp, email, address, emirate, trn,
-        supplierType: suppType,
-        openingBalance: parseFloat(openBal) || 0,
-        openingBalanceType: openBalType,
-        paymentTermsDays: parseInt(payTerms, 10) || 0,
-        defaultPaymentMethod: payMethod,
-        trackBalance,
-        includeFinancials: canSetFinancials,
-      });
-      await createSupplier(payload);
-      toast.success(isRTL ? "تم إنشاء المورد بنجاح" : "Supplier created successfully");
-      if (andPurchase) onNavigate("purchases-new");
-      else onNavigate("suppliers");
+      if (isEdit && supplierId) {
+        const payload = buildSupplierUpdatePayload({
+          nameAr, nameEn, phone, whatsapp, email, address, emirate, trn,
+          supplierType: suppType,
+          paymentTermsDays: parseInt(payTerms, 10) || 0,
+          defaultPaymentMethod: payMethod,
+          trackBalance,
+          notes,
+        });
+        await updateSupplier(supplierId, payload);
+        toast.success(isRTL ? "تم تحديث بيانات المورد بنجاح" : "Supplier updated successfully");
+        onNavigate("supplier-profile");
+      } else {
+        const payload = buildSupplierCreatePayload({
+          nameAr, nameEn, phone, whatsapp, email, address, emirate, trn,
+          supplierType: suppType,
+          openingBalance: parseFloat(openBal) || 0,
+          openingBalanceType: openBalType,
+          paymentTermsDays: parseInt(payTerms, 10) || 0,
+          defaultPaymentMethod: payMethod,
+          trackBalance,
+          includeFinancials: canSetFinancials,
+          notes,
+        });
+        await createSupplier(payload);
+        toast.success(isRTL ? "تم إنشاء المورد بنجاح" : "Supplier created successfully");
+        if (andPurchase) onNavigate("purchases-new");
+        else onNavigate("suppliers");
+      }
     } catch (err) {
       setSaveError(err);
       if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
@@ -469,8 +525,6 @@ export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; r
       setSaving(false);
     }
   };
-
-  const canSetFinancials = role === "owner" || role === "accountant";
   const EMIRATES = ["دبي", "أبوظبي", "الشارقة", "عجمان", "رأس الخيمة", "أم القيوين", "الفجيرة"].map(e => ({ value: e, label: e }));
   const CATEGORIES = [
     { value: "food_company", label: isRTL ? "شركة مواد غذائية" : "Food Company" },
@@ -482,11 +536,13 @@ export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; r
     { value: "other",        label: isRTL ? "أخرى" : "Other" },
   ];
 
+  if (loadingSupplier) return <LoadingState lang={lang} />;
+
   return (
     <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-5">
       <div className="flex items-center gap-3">
-        <button onClick={() => onNavigate("suppliers")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
-        <h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "إضافة مورد جديد" : "Add New Supplier"}</h2>
+        <button onClick={() => onNavigate(isEdit ? "supplier-profile" : "suppliers")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
+        <h2 className="text-xl font-black text-[#0F2C59]">{isEdit ? (isRTL ? "تعديل بيانات المورد" : "Edit Supplier") : (isRTL ? "إضافة مورد جديد" : "Add New Supplier")}</h2>
       </div>
 
       <FormErrors error={saveError} fieldErrors={fieldErrors} lang={lang} />
@@ -529,6 +585,7 @@ export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; r
       </Card>
 
       {/* C. Financial Settings */}
+      {!isEdit && (
       <Card className="p-5">
         <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "ج. الإعدادات المالية" : "C. Financial Settings"}</h3>
         {!canSetFinancials && <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2 mb-4"><Info size={14} className="text-amber-500" /><span className="text-xs font-bold text-amber-700">{isRTL ? "ليس لديك صلاحية تعديل الإعدادات المالية" : "No permission to edit financial settings"}</span></div>}
@@ -555,6 +612,27 @@ export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; r
         </div>
         {suppType === "cash" && <div className="mt-2 bg-slate-50 border border-slate-200 rounded-xl p-3 flex gap-2"><Info size={13} className="text-slate-400 shrink-0 mt-0.5" /><p className="text-xs font-semibold text-slate-500">{isRTL ? "يمكن عدم متابعة رصيد مورد الكاش إذا لم تكن هناك مستحقات أو دفعات آجلة." : "Cash supplier balance tracking can be disabled if there are no payables or deferred payments."}</p></div>}
       </Card>
+      )}
+      {isEdit && (
+      <Card className="p-5">
+        <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "ج. إعدادات الدفع" : "C. Payment Settings"}</h3>
+        <div className="bg-[#0F2C59]/5 border border-[#0F2C59]/15 rounded-xl p-3 flex gap-2 mb-4">
+          <Info size={14} className="text-[#0F2C59]/60 shrink-0 mt-0.5" />
+          <p className="text-xs font-semibold text-slate-500">
+            {isRTL
+              ? "لا يمكن تعديل الرصيد الافتتاحي من هنا. استخدم إجراء الرصيد الافتتاحي من ملف المورد."
+              : "Opening balance cannot be changed here. Use the opening-balance action from the supplier profile."}
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FSelect label={isRTL ? "شروط الدفع الافتراضية" : "Default Payment Terms"} value={payTerms} onChange={v => canAccess && setPayTerms(v)}
+            options={[{ value: "0", label: isRTL ? "فوري" : "Immediate" }, { value: "7", label: isRTL ? "7 أيام" : "7 days" }, { value: "15", label: isRTL ? "15 يوم" : "15 days" }, { value: "30", label: isRTL ? "30 يوم" : "30 days" }]} />
+          <FSelect label={isRTL ? "طريقة الدفع الافتراضية" : "Default Payment Method"} value={payMethod} onChange={v => canAccess && setPayMethod(v)}
+            options={[{ value: "bank", label: isRTL ? "حساب بنكي" : "Bank Transfer" }, { value: "cash", label: isRTL ? "كاش" : "Cash" }, { value: "cheque", label: isRTL ? "شيك" : "Cheque" }, { value: "other", label: isRTL ? "أخرى" : "Other" }]} />
+        </div>
+        <div className="mt-4"><FInput label={isRTL ? "ملاحظات" : "Notes"} value={notes} onChange={setNotes} /></div>
+      </Card>
+      )}
 
       {/* D. Supplier Agreement Defaults */}
       <Card className="overflow-hidden">
@@ -590,10 +668,16 @@ export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; r
 
       {/* Actions */}
       <div className="flex flex-wrap gap-3 justify-between">
-        <Btn variant="outline" onClick={() => onNavigate("suppliers")}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
+        <Btn variant="outline" onClick={() => onNavigate(isEdit ? "supplier-profile" : "suppliers")}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
         <div className="flex gap-2">
-          <Btn variant="secondary" disabled={saving || !nameAr.trim() || !phone.trim()} onClick={() => void handleSave(false)}><Check size={15} />{isRTL ? "حفظ المورد" : "Save Supplier"}</Btn>
-          <Btn variant="green" disabled={saving || !nameAr.trim() || !phone.trim()} onClick={() => void handleSave(true)}><FileText size={15} />{isRTL ? "حفظ وإنشاء فاتورة شراء" : "Save & New Purchase"}</Btn>
+          {isEdit ? (
+            <Btn variant="primary" disabled={saving || !nameAr.trim() || !phone.trim() || !canAccess} onClick={() => void handleSave(false)}><Check size={15} />{isRTL ? "حفظ التعديلات" : "Save Changes"}</Btn>
+          ) : (
+            <>
+              <Btn variant="secondary" disabled={saving || !nameAr.trim() || !phone.trim() || !canAccess} onClick={() => void handleSave(false)}><Check size={15} />{isRTL ? "حفظ المورد" : "Save Supplier"}</Btn>
+              <Btn variant="green" disabled={saving || !nameAr.trim() || !phone.trim() || !canAccess} onClick={() => void handleSave(true)}><FileText size={15} />{isRTL ? "حفظ وإنشاء فاتورة شراء" : "Save & New Purchase"}</Btn>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -601,8 +685,8 @@ export function CreateSupplierScreen({ lang, role, onNavigate }: { lang: Lang; r
 }
 
 // ── SCREEN: SUPPLIER PROFILE ───────────────────────────────────────────────────
-export function SupplierProfileScreen({ lang, role, onNavigate, supplierId }: {
-  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; supplierId: string;
+export function SupplierProfileScreen({ lang, role, permissions = [], onNavigate, supplierId }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; supplierId: string;
 }) {
   const isRTL = lang === "ar";
   const [tab, setTab] = useState("overview");
@@ -622,7 +706,7 @@ export function SupplierProfileScreen({ lang, role, onNavigate, supplierId }: {
   if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
   const s = row ? enrichSupplier(toModuleSupplier(row), IS_MOCK_MODE ? MOCK_SUPPLIERS.find((m) => m.id === row.id) : undefined) : null;
   if (!s) return <EmptyState lang={lang} messageAr="لا يوجد موردون بعد" messageEn="No suppliers yet" />;
-  const canEdit = role === "owner" || role === "accountant";
+  const canEdit = canEditSupplier(role, permissions);
   const canPay = role === "owner" || role === "accountant";
   const totalPurchases = IS_MOCK_MODE
     ? SUPP_INVOICES.reduce((sum, i) => sum + i.netPayable, 0)
@@ -688,7 +772,7 @@ export function SupplierProfileScreen({ lang, role, onNavigate, supplierId }: {
         <Btn size="sm" variant="primary" onClick={() => onNavigate("purchases-new")}><FileText size={13} />{isRTL ? "إنشاء فاتورة شراء" : "New Purchase"}</Btn>
         {canPay ? <Btn size="sm" variant="amber" onClick={() => setShowPay(true)}><Wallet size={13} />{isRTL ? "تسجيل دفعة للمورد" : "Record Payment"}</Btn> : <PermBtn lang={lang}><Wallet size={13} />{isRTL ? "تسجيل دفعة للمورد" : "Record Payment"}</PermBtn>}
         <Btn size="sm" variant="secondary" onClick={() => setTab("statement")}><FileText size={13} />{isRTL ? "كشف حساب" : "Statement"}</Btn>
-        {canEdit && <Btn size="sm" variant="outline" onClick={() => onNavigate("suppliers-new")}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
+        {canEdit && <Btn size="sm" variant="outline" onClick={() => onNavigate("suppliers-edit")}><Pencil size={13} />{isRTL ? "تعديل بيانات المورد" : "Edit Supplier"}</Btn>}
         <PremiumBtn lang={lang}>{isRTL ? "إرسال واتساب" : "Send WhatsApp"}</PremiumBtn>
       </Card>
 

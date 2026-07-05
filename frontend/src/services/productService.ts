@@ -311,6 +311,17 @@ export type ProductFormSnapshot = {
   minKg?: number;
 };
 
+function normMoney(value: unknown): string {
+  const n = parseFloat(String(value ?? "0"));
+  return Number.isNaN(n) ? "0.00" : n.toFixed(2);
+}
+
+function payloadValuesEqual(key: string, a: unknown, b: unknown): boolean {
+  const moneyKeys = new Set(["sales_price", "purchase_price", "minimum_stock_cartons", "minimum_stock_kg"]);
+  if (moneyKeys.has(key)) return normMoney(a) === normMoney(b);
+  return a === b;
+}
+
 export function buildProductUpdatePayload(
   form: ProductFormSnapshot,
   loaded?: ProductFormSnapshot | null,
@@ -324,7 +335,7 @@ export function buildProductUpdatePayload(
   const payload: Record<string, unknown> = {};
   const loadedPayload = buildProductFormPayload(loaded);
   for (const [key, value] of Object.entries(full)) {
-    if (loadedPayload[key] !== value) {
+    if (!payloadValuesEqual(key, loadedPayload[key], value)) {
       payload[key] = value;
     }
   }

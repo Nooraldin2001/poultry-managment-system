@@ -654,5 +654,23 @@ Example: 500g × 10 ppc × 10 cartons = **50 KG** (100 pieces).
 
 **Launch stance (Phase 5):** **NO-GO** until deploy + First View owner verification.
 
-See: [PRODUCT_MODULE_AUDIT.md](./PRODUCT_MODULE_AUDIT.md), [EXPENSE_MODULE_AUDIT.md](./EXPENSE_MODULE_AUDIT.md), [CUSTOMER_MODULE_AUDIT.md](./CUSTOMER_MODULE_AUDIT.md).
+See: [PRODUCT_MODULE_AUDIT.md](./PRODUCT_MODULE_AUDIT.md), [EXPENSE_MODULE_AUDIT.md](./EXPENSE_MODULE_AUDIT.md), [CUSTOMER_MODULE_AUDIT.md](./CUSTOMER_MODULE_AUDIT.md), [PURCHASE_MODULE_AUDIT.md](./PURCHASE_MODULE_AUDIT.md), [SUPPLIER_MODULE_AUDIT.md](./SUPPLIER_MODULE_AUDIT.md).
+
+---
+
+## Phase 6 — Purchase Not Found, product/supplier edit (2026-07-05)
+
+| Issue | Root cause | Fix |
+|---|---|---|
+| فاتورة المشتريات Not Found | Stale `selectedPurchaseId` on `purchases-new` triggered detail GET 404 | Clear ID on new purchase; `purchases-edit` route for drafts; `NotFoundState` |
+| تعديل المنتجات | List **Edit** opened `products-new` without product ID | Route to `products-edit` with `setSelectedProductId` |
+| تعديل الموردين | No edit route; edit opened create form (POST only) | `suppliers-edit` + PATCH via `buildSupplierUpdatePayload` |
+
+| Check | Result |
+|---|---|
+| `pytest` purchases/products/suppliers/inventory | **96 passed** |
+| `pnpm run typecheck` / `build` | **Pass** |
+| Commit + push | **Pending** (this commit) |
+| VPS deploy | **Pending** |
+| First View credentialed smoke | **Pending deploy** |
 

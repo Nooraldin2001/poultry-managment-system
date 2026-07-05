@@ -7,7 +7,7 @@ import type { TenantScreen } from "@/shared/types";
 import { IS_MOCK_MODE } from "@/services/config";
 import { useSuppliers, useProducts } from "@/hooks/api/useTenantResources";
 import { getPurchaseDetail, approvePurchase, cancelPurchase } from "@/services/purchaseService";
-import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState, NotFoundState } from "@/shared/components/ApiStates";
 import { FormErrors } from "@/shared/components/FormErrors";
 import { ApiError } from "@/services/api/errors";
 import type { InvoiceLineDraft } from "./types";
@@ -65,16 +65,34 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [showApprove, setShowApprove] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
+  const [notFound, setNotFound] = useState(false);
 
   const { items: suppliers, loading: loadingSuppliers } = useSuppliers();
   const { items: products, loading: loadingProducts } = useProducts();
 
+  const resetDraft = useCallback(() => {
+    setDocId("");
+    setSupplierId("");
+    setSupplierInvNo("");
+    setLines([]);
+    setStatus("draft");
+    setInvoiceNumber("");
+    setPaymentMethod("bank_transfer");
+    setAmountPaid("0");
+    setNotes("");
+    setVatEnabled(false);
+    setError(null);
+    setFieldErrors({});
+    setNotFound(false);
+  }, []);
+
   const loadDoc = useCallback(async () => {
     if (!invoiceId || IS_MOCK_MODE) return;
     setLoadingDoc(true);
+    setNotFound(false);
+    setError(null);
     try {
       const detail = await getPurchaseDetail(invoiceId);
-      if (!detail) throw new ApiError("Not found", { status: 404 });
       setDocId(detail.invoice.id);
       setSupplierId(detail.invoice.supplierId);
       setInvoiceNumber(detail.invoice.number);
@@ -90,22 +108,32 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
           pieces: l.pieces ?? l.qty,
           kg: l.kg ?? l.qty,
           unitPrice: l.price,
-          priceType: "piece",
+          priceType: (l.unit as InvoiceLineDraft["priceType"]) || "kg",
           vatRate: 5,
           lineSubtotal: l.total,
           lineTotal: l.total,
         })),
       );
     } catch (err) {
-      setError(err);
+      if (err instanceof ApiError && err.status === 404) {
+        setNotFound(true);
+        resetDraft();
+      } else {
+        setError(err);
+      }
     } finally {
       setLoadingDoc(false);
     }
-  }, [invoiceId]);
+  }, [invoiceId, resetDraft]);
 
   useEffect(() => {
+    if (!invoiceId) {
+      resetDraft();
+      setLoadingDoc(false);
+      return;
+    }
     void loadDoc();
-  }, [loadDoc]);
+  }, [invoiceId, loadDoc, resetDraft]);
 
   const totals = useMemo(() => {
     const subtotal = lines.reduce((s, l) => s + l.lineSubtotal, 0);
@@ -252,6 +280,20 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
 
   if (!IS_MOCK_MODE && ApiError.isForbidden(error)) return <PermissionDeniedState lang={lang} />;
   if (loadingDoc || loadingSuppliers || loadingProducts) return <LoadingState lang={lang} />;
+  if (notFound) {
+    return (
+      <div className="p-3 lg:p-6 max-w-screen-xl mx-auto">
+        <NotFoundState
+          lang={lang}
+          messageAr="فاتورة الشراء غير موجودة أو تم حذفها"
+          messageEn="Purchase invoice was not found"
+          backLabelAr="رجوع إلى المشتريات"
+          backLabelEn="Back to Purchases"
+          onBack={() => onNavigate("purchases-list")}
+        />
+      </div>
+    );
+  }
   if (error && !docId && invoiceId) return <ErrorState lang={lang} error={error} onRetry={() => void loadDoc()} />;
 
   const isDraft = status === "draft";

@@ -14,7 +14,9 @@
 | Product edit (code) | **Fixed** | No | Reason modal + PATCH payload mapper | Deploy + smoke |
 | Expense create (code) | **Fixed** | No | Live POST + list mapper fix | Deploy + smoke |
 | Expense category create (code) | **Fixed** | No | Auto `code` on POST | Deploy + smoke |
-| Carton/KG auto-calc (code) | **Fixed** | No | `lineQuantities.ts` sales + purchase | Deploy + smoke |
+| Purchase Not Found (code) | **Fixed** | No | Stale ID on new purchase cleared | Deploy + smoke |
+| Product list edit (code) | **Fixed** | No | `products-edit` route + ID | Deploy + smoke |
+| Supplier edit (code) | **Fixed** | No | `suppliers-edit` + PATCH | Deploy + smoke |
 | Customer opening balance (code) | **Fixed** | No | Profile modal + opening-balance POST | Deploy + smoke |
 | Customer create (verified) | **Pending** | **Yes** | No owner login in agent session | Manual POST 201 smoke |
 | Product create (code) | **Fixed** | No | `c7d747a` — live POST, category/SKU validation | Deploy + smoke |

@@ -2,6 +2,7 @@ import { IS_MOCK_MODE } from "@/services/config";
 import { createCrudService } from "@/services/crud/createCrudService";
 import { parseAmount } from "@/services/crud/parse";
 import type { ApiListFilters } from "@/services/crud/types";
+import { ApiError } from "./api/errors";
 import { request } from "./api/client";
 import { ENDPOINTS } from "./api/endpoints";
 import type { PurchaseInvoiceLineRow, PurchaseInvoiceRow } from "@/shared/types/entities";
@@ -112,17 +113,15 @@ export async function getPurchaseRow(id: string): Promise<PurchaseInvoiceRow | n
   }
 }
 
-export async function getPurchaseDetail(id: string): Promise<{ invoice: PurchaseInvoiceRow; lines: PurchaseInvoiceLineRow[] } | null> {
-  if (IS_MOCK_MODE) return null;
-  try {
-    const row = (await crud.retrieve(id)) as ApiPurchaseDetail;
-    return {
-      invoice: mapApiPurchaseToRow(row),
-      lines: (row.lines ?? []).map(mapPurchaseLine),
-    };
-  } catch {
-    return null;
+export async function getPurchaseDetail(id: string): Promise<{ invoice: PurchaseInvoiceRow; lines: PurchaseInvoiceLineRow[] }> {
+  if (IS_MOCK_MODE) {
+    throw new ApiError("Not found", { status: 404 });
   }
+  const row = (await crud.retrieve(id)) as ApiPurchaseDetail;
+  return {
+    invoice: mapApiPurchaseToRow(row),
+    lines: (row.lines ?? []).map(mapPurchaseLine),
+  };
 }
 
 export async function createPurchase(payload: Record<string, unknown>): Promise<PurchaseInvoiceRow> {

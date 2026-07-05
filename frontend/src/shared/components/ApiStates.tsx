@@ -75,6 +75,44 @@ export function ErrorState({
   );
 }
 
+export function NotFoundState({
+  lang,
+  messageAr,
+  messageEn,
+  onBack,
+  backLabelAr,
+  backLabelEn,
+  compact = false,
+}: {
+  lang: Lang;
+  messageAr?: string;
+  messageEn?: string;
+  onBack?: () => void;
+  backLabelAr?: string;
+  backLabelEn?: string;
+  compact?: boolean;
+}) {
+  const isRTL = lang === "ar";
+  return (
+    <div className={`flex flex-col items-center justify-center text-center gap-4 ${compact ? "py-8" : "py-14"}`}>
+      <p className="text-sm font-bold text-slate-600 max-w-md">
+        {isRTL
+          ? (messageAr ?? "العنصر غير موجود أو تم حذفه")
+          : (messageEn ?? "The item was not found or may have been deleted")}
+      </p>
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          className="px-4 py-2 rounded-xl border border-[#0F2C59]/30 text-[#0F2C59] text-sm font-bold hover:bg-[#0F2C59]/5"
+        >
+          {isRTL ? (backLabelAr ?? "رجوع") : (backLabelEn ?? "Go back")}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function PermissionDeniedState({ lang, compact = false }: { lang: Lang; compact?: boolean }) {
   const isRTL = lang === "ar";
   return (

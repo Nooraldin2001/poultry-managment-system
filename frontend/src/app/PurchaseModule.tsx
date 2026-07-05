@@ -23,7 +23,7 @@ type Lang = "ar" | "en";
 type TenantRole = "owner" | "accountant" | "cashier";
 type TenantScreen =
   | "dashboard" | "sales" | "sales-list" | "sales-new" | "sales-preview" | "sales-detail"
-  | "purchases" | "purchases-list" | "purchases-new" | "purchases-preview" | "purchases-detail"
+  | "purchases" | "purchases-list" | "purchases-new" | "purchases-edit" | "purchases-preview" | "purchases-detail"
   | "quotations" | "inventory" | "customers" | "suppliers" | "payments"
   | "expenses" | "accounts" | "tax" | "reports" | "users" | "settings";
 
@@ -301,7 +301,7 @@ export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId 
   };
   const openEdit = (recordId: string) => {
     setSelectedPurchaseId?.(recordId);
-    onNavigate("purchases-new");
+    onNavigate("purchases-edit");
   };
   const openPrint = (recordId: string) => {
     setSelectedPurchaseId?.(recordId);
@@ -314,7 +314,7 @@ export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId 
         <button className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-[#0F2C59] transition-colors">
           <Settings size={13} />{isRTL ? "إعدادات ترقيم فواتير الشراء" : "Purchase Numbering Settings"}
         </button>
-        <Btn variant="primary" onClick={() => onNavigate("purchases-new")}><Plus size={15} />{isRTL ? "فاتورة شراء جديدة" : "New Purchase Invoice"}</Btn>
+        <Btn variant="primary" onClick={() => { setSelectedPurchaseId?.(""); onNavigate("purchases-new"); }}><Plus size={15} />{isRTL ? "فاتورة شراء جديدة" : "New Purchase Invoice"}</Btn>
       </div>
 
       <Card className="p-4">

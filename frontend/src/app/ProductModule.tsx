@@ -332,7 +332,7 @@ export function ProductsListScreen({ lang, role, onNavigate, setSelectedProductI
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-1">
                           <button onClick={() => { setSelectedProductId(p.id); onNavigate("product-detail"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#0F2C59] hover:text-white transition-all"><Eye size={13} /></button>
-                          {canEdit && <button onClick={() => onNavigate("products-new")} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all"><Pencil size={13} /></button>}
+                          {canEdit && <button onClick={() => { setSelectedProductId(p.id); onNavigate("products-edit"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all"><Pencil size={13} /></button>}
                         </div>
                       </td>
                     </tr>

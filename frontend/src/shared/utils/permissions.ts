@@ -45,6 +45,24 @@ export function canEditCustomerOpeningBalance(role: TenantRole, permissions: str
   return role === "accountant";
 }
 
+/** True when the user may edit tenant suppliers. */
+export function canEditSupplier(role: TenantRole, permissions: string[]): boolean {
+  if (role === "owner") return true;
+  if (permissions.length > 0) {
+    return permissions.includes("suppliers.edit");
+  }
+  return role === "accountant";
+}
+
+/** True when the user may create tenant suppliers. */
+export function canCreateSupplier(role: TenantRole, permissions: string[]): boolean {
+  if (role === "owner") return true;
+  if (permissions.length > 0) {
+    return permissions.includes("suppliers.create");
+  }
+  return role === "accountant";
+}
+
 /** True when the user may override purchase line prices. */
 export function canOverridePurchasePrice(role: TenantRole, permissions: string[]): boolean {
   if (role === "owner") return true;

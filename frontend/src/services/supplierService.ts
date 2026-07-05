@@ -22,6 +22,37 @@ interface ApiSupplierList {
 interface ApiSupplierDetail extends ApiSupplierList {
   trn?: string;
   address?: string;
+  email?: string;
+  whatsapp?: string;
+  emirate?: string;
+  supplier_type?: string;
+  category?: number | null;
+  opening_balance?: string;
+  opening_balance_type?: string;
+  payment_terms_days?: number;
+  default_payment_method?: string;
+  track_balance?: boolean;
+  notes?: string;
+}
+
+export interface SupplierFormValues {
+  nameAr: string;
+  nameEn: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  address: string;
+  emirate: string;
+  trn: string;
+  supplierType: string;
+  categoryId?: number;
+  openingBalance: number;
+  openingBalanceType: string;
+  paymentTermsDays: number;
+  defaultPaymentMethod: string;
+  trackBalance: boolean;
+  notes: string;
+  isActive: boolean;
 }
 
 export function mapApiSupplierToRow(row: ApiSupplierList): SupplierRow {
@@ -53,6 +84,48 @@ export async function getSupplierRow(id: string): Promise<SupplierRow | null> {
   try {
     const row = await crud.retrieve(id);
     return mapApiSupplierToRow(row);
+  } catch {
+    return null;
+  }
+}
+
+function reverseOpeningBalanceType(api: string): string {
+  const labels: Record<string, string> = {
+    we_owe_supplier: "للمورد علينا",
+    supplier_owes_us: "على المورد",
+    zero: "صفر",
+  };
+  return labels[api] ?? api;
+}
+
+export function mapApiSupplierDetailToForm(row: ApiSupplierDetail): SupplierFormValues {
+  return {
+    nameAr: row.name_ar,
+    nameEn: row.name_en ?? "",
+    phone: row.phone ?? "",
+    whatsapp: row.whatsapp ?? "",
+    email: row.email ?? "",
+    address: row.address ?? "",
+    emirate: row.emirate ?? "",
+    trn: row.trn ?? "",
+    supplierType: row.supplier_type ?? "credit",
+    categoryId: row.category ?? undefined,
+    openingBalance: parseAmount(row.opening_balance),
+    openingBalanceType: reverseOpeningBalanceType(row.opening_balance_type ?? "zero"),
+    paymentTermsDays: row.payment_terms_days ?? 0,
+    defaultPaymentMethod: row.default_payment_method ?? "bank_transfer",
+    trackBalance: row.track_balance !== false,
+    notes: row.notes ?? "",
+    isActive: row.is_active !== false,
+  };
+}
+
+/** Load full supplier detail for edit form prefill. */
+export async function getSupplierDetail(id: string): Promise<SupplierFormValues | null> {
+  if (IS_MOCK_MODE) return null;
+  try {
+    const row = await crud.retrieve(id);
+    return mapApiSupplierDetailToForm(row);
   } catch {
     return null;
   }
@@ -201,6 +274,57 @@ export function buildSupplierCreatePayload(form: {
     payload.opening_balance_type = obLabels[form.openingBalanceType ?? ""] ?? "zero";
     payload.opening_balance = String(Math.max(0, form.openingBalance ?? 0));
     payload.payment_terms_days = form.paymentTermsDays ?? 0;
+  }
+
+  return payload;
+}
+
+/** PATCH payload for supplier profile edits (excludes opening balance — use dedicated endpoint). */
+export function buildSupplierUpdatePayload(form: {
+  nameAr: string;
+  nameEn?: string;
+  phone: string;
+  whatsapp?: string;
+  email?: string;
+  address?: string;
+  emirate?: string;
+  trn?: string;
+  supplierType?: string;
+  categoryId?: number | null;
+  paymentTermsDays?: number;
+  defaultPaymentMethod?: string;
+  trackBalance?: boolean;
+  notes?: string;
+}): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    name_ar: form.nameAr.trim(),
+    name_en: (form.nameEn?.trim() || form.nameAr.trim()),
+    phone: form.phone.trim(),
+    supplier_type: form.supplierType ?? "credit",
+    track_balance: form.trackBalance !== false,
+    email: form.email?.trim() ?? "",
+    address: form.address?.trim() ?? "",
+    notes: form.notes?.trim() ?? "",
+  };
+
+  payload.whatsapp = form.whatsapp?.trim() ?? "";
+
+  const emirate = form.emirate?.trim();
+  if (emirate) payload.emirate = emirate;
+
+  const trn = form.trn?.trim();
+  if (trn) payload.trn = trn;
+
+  if (form.categoryId != null && form.categoryId > 0) {
+    payload.category = form.categoryId;
+  } else {
+    payload.category = null;
+  }
+
+  if (form.defaultPaymentMethod) payload.default_payment_method = form.defaultPaymentMethod;
+
+  if (form.paymentTermsDays != null && form.paymentTermsDays >= 0) {
+    payload.payment_terms_days = form.paymentTermsDays;
   }
 
   return payload;

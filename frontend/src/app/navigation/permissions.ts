@@ -27,6 +27,7 @@ const SCREEN_PERMISSION: Partial<Record<TenantScreen, string>> = {
   "sales-new": "sales.create",
   "sales-detail": "sales.view",
   "purchases-new": "purchases.create",
+  "purchases-edit": "purchases.create",
   "purchases-detail": "purchases.view",
   "quotations-new": "quotations.create",
   "quotation-detail": "quotations.view",
@@ -35,6 +36,8 @@ const SCREEN_PERMISSION: Partial<Record<TenantScreen, string>> = {
   "product-detail": "products.view",
   "customers-create": "customers.create",
   "customers-edit": "customers.edit",
+  "suppliers-new": "suppliers.create",
+  "suppliers-edit": "suppliers.edit",
   "inventory-valuation": "inventory.view_valuation",
   "inventory-stocktaking": "inventory.manage",
   "tax-warnings": "tax.view",
@@ -53,7 +56,7 @@ const SCREEN_PERMISSION: Partial<Record<TenantScreen, string>> = {
 
 /** Role-based fallback when permissions array is empty (dev/mock). */
 const CASHIER_DENIED_SCREENS: TenantScreen[] = [
-  "purchases", "purchases-list", "purchases-new", "purchases-preview", "purchases-detail",
+  "purchases", "purchases-list", "purchases-new", "purchases-edit", "purchases-preview", "purchases-detail",
   "accounts", "tax", "tax-sales", "tax-purchases", "tax-net", "tax-warnings", "tax-audit",
   "tax-credit-notes", "tax-non-taxable", "tax-settings", "tax-export-preview",
   "reports", "reports-daily", "reports-sales", "reports-purchases", "reports-inventory",
@@ -62,6 +65,7 @@ const CASHIER_DENIED_SCREENS: TenantScreen[] = [
   "settings-roles", "settings-vat", "settings-numbering", "settings-print-templates",
   "products-new", "product-categories", "products-bulk-setup", "products-byproducts", "products-import-export",
   "customers-create", "customers-edit",
+  "suppliers-edit",
 ];
 
 const ACCOUNTANT_DENIED_SCREENS: TenantScreen[] = ["users", "settings-user-new", "settings-roles"];

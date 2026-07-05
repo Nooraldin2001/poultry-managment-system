@@ -10,6 +10,7 @@ Tenant: `firstview` — `https://firstview.poultryhero.solutions`
 
 | Issue | Root cause | Fix |
 |-------|------------|-----|
+| **Not Found on New Purchase** | Stale `selectedPurchaseId` passed to `purchases-new` → `GET /purchases/{id}/` 404 | Clear ID on new navigation; split `purchases-edit` for draft edit; `NotFoundState` for missing invoices |
 | PDF/download opens raw 404 | (1) Print button navigated to preview **without** `selectedPurchaseId` → fell back to mock `PurchPreviewScreen`; (2) Backend had **no** `GET .../print-preview/` for purchases | Set purchase id before navigate; added backend endpoint; live mode never shows mock preview |
 | Demo purchase visible (`WESTLAND`, `Al Wataniya`) | (1) Mock `PurchPreviewScreen` shown in live mode when id missing; (2) Possible DB-seeded demo purchases/suppliers | Route guard + `purge_tenant_demo_data --module purchases` |
 | Purchase list demo rows | Live API list is correct; demo rows were mock preview fallback or DB seed | Same as above |
