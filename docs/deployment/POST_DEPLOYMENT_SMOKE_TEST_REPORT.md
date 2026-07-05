@@ -365,3 +365,65 @@ cd /var/www/poultryhero && git pull origin main && bash scripts/deploy_vps.sh
 | Reports | Empty/zero only | Pending |
 
 **Launch stance:** **NO-GO** until owner completes manual smoke on First View.
+
+---
+
+## Part M — Purchase PDF 404 + demo purge (2026-07-05)
+
+### Commit / deploy
+
+| Item | Result | Notes |
+|---|---|---|
+| Commit | **`0998fa0`** | Purchase print-preview API, frontend print routing, purge `--module purchases`, invoice `{ reason }` fix |
+| Pushed to `origin/main` | **Pass** | 2026-07-05 |
+| VPS deploy | **Not run** | Agent SSH: `Permission denied (publickey)` |
+| First View bundle (curl) | **`index-DLgOG8Hc.js`** | Pre-`0998fa0` — new bundle will be `index-BhOKFWGr.js` after deploy |
+
+### PDF 404 root cause (reproduced / confirmed)
+
+| Finding | Detail |
+|---|---|
+| Clicked control | List/detail **Print / Save PDF** (`Printer` icon) |
+| Failure mode (pre-fix prod) | (1) `openPrint()` did not set `selectedPurchaseId` → live mode fell back to mock `PurchPreviewScreen` (WESTLAND / Al Wataniya demo); (2) `GET /api/v1/tenant/purchases/{id}/print-preview/` **404** on prod (endpoint not deployed) |
+| Request type | In-app route `purchases-preview` + API JSON (not raw `/pdf` URL) |
+| Auth | API requires tenant JWT (401 without token) |
+| Prod endpoint check (2026-07-05) | `GET …/purchases/1/print-preview/` → **404** (expected until deploy) |
+
+### Fix (Option 1 — print preview + browser Save as PDF)
+
+- Backend: `GET /api/v1/tenant/purchases/{id}/print-preview/` → JSON via `build_purchase_print_preview()`
+- Frontend: `openPrint(recordId)` sets id then navigates; live mode never shows mock preview; labels **Print / Save PDF** / **طباعة / حفظ PDF**
+- Missing id → `EmptyState`; API failure → `ApiUnavailableState` / `ErrorState`
+
+### Local checks (2026-07-05)
+
+| Check | Result |
+|---|---|
+| `pytest tests/test_purchases.py tests/test_tenant_demo_commands.py` | **38 passed** |
+| `corepack pnpm run typecheck` | **Pass** |
+| `corepack pnpm run build` | **Pass** → `index-BhOKFWGr.js` |
+| `bash scripts/check_no_production_mock_data.sh` | **Pass** |
+
+### Demo purchase cleanup — **not executed on VPS**
+
+```bash
+cd /var/www/poultryhero/backend
+source /var/www/poultryhero/.venv/bin/activate
+export DJANGO_SETTINGS_MODULE=config.settings.production
+python manage.py purge_tenant_demo_data --company-subdomain firstview --module purchases --dry-run
+# review output, then:
+python manage.py purge_tenant_demo_data --company-subdomain firstview --module purchases --confirm-delete-demo-data
+```
+
+### Required deploy + smoke
+
+```bash
+cd /var/www/poultryhero && git pull origin main && bash scripts/deploy_vps.sh
+bash scripts/check_no_production_mock_data.sh
+```
+
+1. Purchases → Print / Save PDF → no 404, live company/supplier data, browser Save as PDF works
+2. After purge → demo WESTLAND / Wataniya / `PUR-2025-0042` gone from list and reports
+3. Create purchase → approve → inventory + supplier balance update
+
+**Launch stance:** **NO-GO** — fix committed and pushed; VPS deploy, DB purge, and owner smoke pending.
