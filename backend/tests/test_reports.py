@@ -373,6 +373,26 @@ def test_tax_summary_bridge_available(company, owner):
     assert "net_vat" in bridge
 
 
+def test_no_vat_purchase_has_zero_input_vat_in_tax_bridge(company, owner):
+    supplier = _supplier(company, trn="")
+    product = _product(company, sku="TAX0")
+    inv = purchase_services.create_purchase_invoice(
+        company=company, supplier=supplier, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": PurchaseLineType.PRODUCT,
+            "quantity_kg": Decimal("50"), "unit_price": Decimal("10"),
+            "price_type": "kg", "vat_rate": Decimal("0"),
+        }],
+    )
+    purchase_services.approve_purchase_invoice(invoice=inv, user=owner, reason="approve")
+    bridge = services.get_tax_summary_bridge(
+        company, date_from=date.today(), date_to=date.today(),
+    )
+    assert bridge["available"] is True
+    assert bridge["input_vat"] == Decimal("0")
+
+
 # ── Export payload ────────────────────────────────────────────────────────────
 def test_export_payload_structure(company, owner):
     _approved_sale(company, owner)

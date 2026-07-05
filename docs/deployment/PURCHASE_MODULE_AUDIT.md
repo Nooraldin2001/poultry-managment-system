@@ -10,6 +10,7 @@ Tenant: `firstview` — `https://firstview.poultryhero.solutions`
 
 | Issue | Root cause | Fix |
 |-------|------------|-----|
+| **Purchases not adding to stock / VAT required** | Line `vatRate` hardcoded 5; header VAT not PATCHed; cartons-only lines saved with `kg=0`; no inventory refetch after approve | VAT toggle + zero rates; backend quantity normalize on approve; `tenantRefresh` event |
 | **Not Found on New Purchase** | Stale `selectedPurchaseId` passed to `purchases-new` → `GET /purchases/{id}/` 404 | Clear ID on new navigation; split `purchases-edit` for draft edit; `NotFoundState` for missing invoices |
 | PDF/download opens raw 404 | (1) Print button navigated to preview **without** `selectedPurchaseId` → fell back to mock `PurchPreviewScreen`; (2) Backend had **no** `GET .../print-preview/` for purchases | Set purchase id before navigate; added backend endpoint; live mode never shows mock preview |
 | Demo purchase visible (`WESTLAND`, `Al Wataniya`) | (1) Mock `PurchPreviewScreen` shown in live mode when id missing; (2) Possible DB-seeded demo purchases/suppliers | Route guard + `purge_tenant_demo_data --module purchases` |
@@ -69,7 +70,9 @@ Approved demo purchases are **cancelled first** (reverses inventory/supplier led
 | New draft | `POST /api/v1/tenant/purchases/` via `LivePurchaseInvoiceScreen` | OK |
 | Save draft | Header POST/PATCH | OK |
 | Line add/edit/delete | `POST/PATCH/DELETE .../lines/` | OK |
-| Approve | `POST .../approve/` body `{ "reason" }` | OK |
+| Approve | `POST .../approve/` body `{ "reason" }` | OK — persists lines + normalizes KG |
+| No-VAT purchase | Header/line `vat_rate: 0`; no TRN required | **Fixed** Phase 9 |
+| VAT toggle UI | `بدون ضريبة` / `No VAT` | **Fixed** Phase 9 |
 | Cancel | `POST .../cancel/` body `{ "reason" }` | OK |
 | Print/PDF | `GET .../print-preview/` + browser print | **Fixed** |
 | Detail (live) | `LivePurchaseInvoiceScreen` | OK (simplified vs mock tabs) |

@@ -708,3 +708,50 @@ See [SALES_MODULE_AUDIT.md](./SALES_MODULE_AUDIT.md).
 
 See [REPORTS_MODULE_AUDIT.md](./REPORTS_MODULE_AUDIT.md).
 
+---
+
+## Phase 9 — Purchase no-VAT + inventory on approve (2026-07-05)
+
+**Client report (AR):** `المشتريات مش بتضاف للمخزون وانا بشتري بدون ضريبة make the vat optional as the sales invoices`
+
+| Issue | Root cause | Fix |
+|---|---|---|
+| VAT required / wrong totals on no-VAT purchase | `LivePurchaseInvoiceScreen` hardcoded line `vatRate: 5`; no VAT toggle UI; header `vat_rate` not PATCHed on save/approve | VAT toggle (`بدون ضريبة` / `No VAT`); line/header `vat_rate: 0`; subtotal/VAT/total sidebar |
+| Header VAT ignored in totals when off | Backend summed stale line VAT when header `vat_rate=0` | `recalculate_purchase_invoice`: header VAT off → line VAT forced to 0, invoice `vat_amount=0` |
+| Inventory not increasing after approve | Cartons saved without derived KG (fixed-weight); UI never refetched inventory | Backend `_normalize_line_quantities_for_stock()` on approve; frontend `notifyTenantDataChanged()` refreshes inventory/purchases/suppliers lists |
+
+### API exercised (local tests)
+
+| Action | Endpoint | Payload |
+|---|---|---|
+| Create no-VAT draft | `POST /api/v1/tenant/purchases/` | `vat_rate: "0.00"`, line `vat_rate: "0.00"` |
+| Approve | `POST /api/v1/tenant/purchases/{id}/approve/` | `{ "reason": "received" }` |
+
+### Inventory proof (pytest)
+
+| Scenario | Before | After approve |
+|---|---|---|
+| No-VAT purchase 100 kg | `available_kg=0` | `available_kg=100`, FIFO layer + `PURCHASE_APPROVED` movement |
+| Cartons-only fixed-weight (10 ct) | `available_kg=0` | `available_kg=100` (derived from product weight) |
+| Draft no-VAT | unchanged | unchanged until approve |
+| Double approve | — | ValidationError (no double stock) |
+
+### Supplier / tax proof
+
+| Check | Result |
+|---|---|
+| Supplier balance after no-VAT approve | `current_balance == subtotal` (no VAT) |
+| Tax bridge `input_vat` for no-VAT purchase | `0` |
+
+### Checks
+
+| Check | Result |
+|---|---|
+| `pytest tests/test_purchases.py tests/test_inventory.py tests/test_reports.py` | **112 passed** |
+| `python manage.py check` | **Pass** |
+| `pnpm run typecheck` / `build` | **Pass** |
+| VPS deploy | **Pending** — run in active SSH session |
+| First View credentialed smoke | **Pending deploy** — create no-VAT purchase → approve → verify stock |
+
+See [PURCHASE_MODULE_AUDIT.md](./PURCHASE_MODULE_AUDIT.md), [INVENTORY_SIDE_EFFECTS_AUDIT.md](./INVENTORY_SIDE_EFFECTS_AUDIT.md), [TAX_MODULE_AUDIT.md](./TAX_MODULE_AUDIT.md).
+

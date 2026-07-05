@@ -35,6 +35,7 @@ from apps.inventory import services as inventory_services
 from apps.inventory.models import MovementType, StockSourceType
 from apps.inventory.services import StockConsumedError
 from apps.permissions.services import has_permission
+from apps.products.models import ProductType
 from apps.suppliers.models import Supplier, SupplierSpecialPrice
 from apps.suppliers import services as supplier_services
 
@@ -144,12 +145,14 @@ def recalculate_purchase_invoice(invoice) -> PurchaseInvoice:
     lines = list(invoice.lines.all())
     adjustments = list(invoice.adjustments.all())
 
+    header_vat_enabled = _d(invoice.vat_rate) > 0
     subtotal = ZERO
     for line in lines:
+        line_vat_rate = line.vat_rate if header_vat_enabled else ZERO
         line.line_subtotal, line.vat_amount, line.line_total = _line_money(
             price_type=line.price_type, unit_price=line.unit_price,
             cartons=line.quantity_cartons, pieces=line.quantity_pieces,
-            kg=line.quantity_kg, vat_rate=line.vat_rate,
+            kg=line.quantity_kg, vat_rate=line_vat_rate,
         )
         line.save(update_fields=["line_subtotal", "vat_amount", "line_total", "updated_at"])
         subtotal += line.line_subtotal
@@ -162,10 +165,10 @@ def recalculate_purchase_invoice(invoice) -> PurchaseInvoice:
         taxable = ZERO
     taxable = taxable.quantize(MONEY_Q)
 
-    if _d(invoice.vat_rate) > 0:
+    if header_vat_enabled:
         vat = calc.vat_amount(taxable, invoice.vat_rate)
     else:
-        vat = sum((_d(line.vat_amount) for line in lines), ZERO).quantize(MONEY_Q)
+        vat = ZERO
 
     invoice.subtotal = subtotal.quantize(MONEY_Q)
     invoice.adjustment_total = payable_adjustment.quantize(MONEY_Q)
@@ -338,6 +341,60 @@ def _create_adjustment(company, invoice, data, *, created_by=None) -> PurchaseAd
     )
 
 
+def _normalize_line_quantities_for_stock(line: PurchaseInvoiceLine) -> bool:
+    """Derive missing pieces/kg from cartons for fixed-weight stock lines."""
+    product = line.product
+    if not product or not line.is_stock_tracked:
+        return False
+
+    cartons = _d(line.quantity_cartons)
+    pieces = _d(line.quantity_pieces)
+    kg = _d(line.quantity_kg)
+    if cartons <= 0 and pieces <= 0 and kg <= 0:
+        return False
+
+    changed = False
+    if product.product_type == ProductType.FIXED_WEIGHT:
+        if cartons > 0:
+            if pieces <= 0:
+                line.quantity_pieces = _d(product.calculate_pieces(int(cartons)))
+                changed = True
+            if kg <= 0:
+                line.quantity_kg = product.calculate_kg(cartons)
+                changed = True
+    if changed:
+        line.save(update_fields=["quantity_pieces", "quantity_kg", "updated_at"])
+    return changed
+
+
+def _validate_lines_for_approval(lines) -> None:
+    """Reject approval when stock-tracked lines lack usable quantity."""
+    for line in lines:
+        if not line.is_stock_tracked:
+            continue
+        if not line.has_quantity:
+            raise ValidationError(
+                {
+                    "lines": (
+                        f"Stock-tracked line '{line.product_name_snapshot}' "
+                        "requires cartons, pieces, or kg before approval."
+                    )
+                }
+            )
+        if (
+            line.product.product_type == ProductType.MOVING_WEIGHT
+            and _d(line.quantity_kg) <= 0
+        ):
+            raise ValidationError(
+                {
+                    "quantity_kg": (
+                        f"Moving-weight product '{line.product_name_snapshot}' "
+                        "requires KG greater than zero."
+                    )
+                }
+            )
+
+
 # ── Approval ────────────────────────────────────────────────────────────────
 @transaction.atomic
 def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
@@ -361,6 +418,15 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
 
     recalculate_purchase_invoice(invoice)
     lines = list(invoice.lines.select_related("product").all())
+
+    normalized = False
+    for line in lines:
+        normalized = _normalize_line_quantities_for_stock(line) or normalized
+    if normalized:
+        recalculate_purchase_invoice(invoice)
+        lines = list(invoice.lines.select_related("product").all())
+
+    _validate_lines_for_approval(lines)
 
     # Allocate increase_inventory_cost adjustments across product lines (by
     # subtotal) so unit_cost_per_kg reflects the true landed cost.

@@ -17,6 +17,7 @@ import { applyLineTotals } from "./lineTotals";
 import { deriveQuantitiesFromCartons } from "./lineQuantities";
 import { PurchaseLinePriceCell } from "./PurchaseLinePriceCell";
 import { canOverridePurchasePrice } from "@/shared/utils/permissions";
+import { notifyTenantDataChanged } from "@/shared/utils/tenantRefresh";
 import { ReasonModal } from "./ReasonModal";
 import { parseAmount } from "@/services/crud/parse";
 import type { ProductRow } from "@/shared/types/entities";
@@ -42,10 +43,13 @@ type Props = {
   onNavigate: (s: TenantScreen) => void;
   invoiceId?: string | null;
   onSaved?: (id: string) => void;
+  onApproved?: () => void;
   onOpenPrint?: () => void;
 };
 
-export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavigate, invoiceId, onSaved, onOpenPrint }: Props) {
+const DEFAULT_VAT_RATE = 5;
+
+export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavigate, invoiceId, onSaved, onApproved, onOpenPrint }: Props) {
   const isRTL = lang === "ar";
   const canApprove = role === "owner" || role === "accountant";
   const canEditPrice = canOverridePurchasePrice(role, permissions);
@@ -98,6 +102,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       setInvoiceNumber(detail.invoice.number);
       setStatus(detail.invoice.status);
       setAmountPaid(String(detail.invoice.paid));
+      setVatEnabled(detail.invoice.vat > 0);
       setLines(
         detail.lines.map((l) => ({
           id: l.id,
@@ -109,8 +114,8 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
           kg: l.kg ?? l.qty,
           unitPrice: l.price,
           priceType: (l.unit as InvoiceLineDraft["priceType"]) || "kg",
-          vatRate: 5,
-          lineSubtotal: l.total,
+          vatRate: l.vatRate ?? (detail.invoice.vat > 0 ? DEFAULT_VAT_RATE : 0),
+          lineSubtotal: l.subtotal ?? l.total,
           lineTotal: l.total,
         })),
       );
@@ -137,11 +142,24 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
 
   const totals = useMemo(() => {
     const subtotal = lines.reduce((s, l) => s + l.lineSubtotal, 0);
-    const vat = vatEnabled ? Math.round(subtotal * 5) / 100 : 0;
+    const vat = vatEnabled ? Math.round(subtotal * DEFAULT_VAT_RATE) / 100 : 0;
     const total = subtotal + vat;
     const paid = parseAmount(amountPaid);
     return { subtotal, vat, total, paid, balance: Math.max(0, total - paid) };
   }, [lines, vatEnabled, amountPaid]);
+
+  const lineVatRate = vatEnabled ? DEFAULT_VAT_RATE : 0;
+
+  const saveHeader = async (id: string) => {
+    await patchDraftHeader("purchase", id, {
+      supplier: Number(supplierId),
+      supplier_invoice_number: supplierInvNo,
+      payment_method: paymentMethod,
+      amount_paid: amountPaid || "0",
+      vat_rate: vatEnabled ? "5.00" : "0.00",
+      notes,
+    });
+  };
 
   const ensureDraft = async (): Promise<string> => {
     if (docId) return docId;
@@ -172,13 +190,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     setError(null);
     try {
       const id = await ensureDraft();
-      await patchDraftHeader("purchase", id, {
-        supplier: Number(supplierId),
-        supplier_invoice_number: supplierInvNo,
-        payment_method: paymentMethod,
-        amount_paid: amountPaid || "0",
-        notes,
-      });
+      await saveHeader(id);
       toast.success(isRTL ? "تم حفظ المسودة" : "Draft saved");
     } catch (err) {
       if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
@@ -204,7 +216,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
         kg: 0,
         unitPrice: prod.buyP || prod.saleP,
         priceType: prod.buyPT ?? prod.salePT ?? "kg",
-        vatRate: 5,
+        vatRate: lineVatRate,
         lineSubtotal: 0,
         lineTotal: 0,
       };
@@ -250,25 +262,38 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     void persistLine(withTotals);
   };
 
+  const handleVatToggle = (enabled: boolean) => {
+    setVatEnabled(enabled);
+    if (status !== "draft") return;
+    const nextRate = enabled ? DEFAULT_VAT_RATE : 0;
+    setLines((prev) =>
+      prev.map((line) => {
+        const updated = applyLineTotals({ ...line, vatRate: nextRate });
+        if (line.serverId && docId) void updateDraftLine("purchase", docId, line.serverId, updated);
+        return updated;
+      }),
+    );
+  };
+
   const handleApprove = async (reason: string) => {
     setSaving(true);
     setFieldErrors({});
     setError(null);
     try {
       const id = await ensureDraft();
-      await patchDraftHeader("purchase", id, {
-        supplier: Number(supplierId),
-        supplier_invoice_number: supplierInvNo,
-        payment_method: paymentMethod,
-        amount_paid: amountPaid || "0",
-        notes,
-      });
+      await saveHeader(id);
       for (const line of lines) {
-        if (line.serverId) await updateDraftLine("purchase", id, line.serverId, line);
+        const synced = applyLineTotals({ ...line, vatRate: lineVatRate });
+        if (line.serverId) await updateDraftLine("purchase", id, line.serverId, synced);
       }
-      await approvePurchase(id, reason);
-      setStatus("approved");
+      const approved = await approvePurchase(id, reason);
+      setStatus(approved.status);
+      setAmountPaid(String(approved.paid));
+      setVatEnabled(approved.vat > 0);
       setShowApprove(false);
+      notifyTenantDataChanged("purchases", "inventory", "products", "suppliers");
+      onApproved?.();
+      if (invoiceId) await loadDoc();
       toast.success(isRTL ? "تم الاعتماد" : "Approved");
     } catch (e) {
       if (e instanceof ApiError) setFieldErrors(e.fieldErrors);
@@ -400,7 +425,37 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
           </div>
         </div>
         <div className="bg-white rounded-2xl border p-4 space-y-2 text-sm">
-          <div className="flex justify-between font-black"><span>{isRTL ? "الإجمالي" : "Total"}</span><span className="font-mono">AED {totals.total.toFixed(2)}</span></div>
+          <div className="flex justify-between font-bold">
+            <span>{isRTL ? "المجموع" : "Subtotal"}</span>
+            <span className="font-mono">AED {totals.subtotal.toFixed(2)}</span>
+          </div>
+          <div className="border-t border-slate-100 pt-2 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold text-slate-600">
+                {vatEnabled
+                  ? isRTL ? "ضريبة القيمة المضافة 5%" : "VAT 5%"
+                  : isRTL ? "بدون ضريبة" : "No VAT"}
+              </span>
+              {isDraft && (
+                <button
+                  type="button"
+                  aria-label={isRTL ? "تبديل الضريبة" : "Toggle VAT"}
+                  onClick={() => handleVatToggle(!vatEnabled)}
+                  className={`w-10 h-[22px] rounded-full flex items-center transition-all ${vatEnabled ? "bg-[#0F2C59]" : "bg-slate-300"}`}
+                >
+                  <span className={`w-4 h-4 bg-white rounded-full shadow-sm mx-0.5 transition-all ${vatEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                </button>
+              )}
+            </div>
+            <div className="flex justify-between font-bold">
+              <span>{isRTL ? "ض.ق.م" : "VAT"}</span>
+              <span className="font-mono">AED {totals.vat.toFixed(2)}</span>
+            </div>
+          </div>
+          <div className="flex justify-between font-black text-[#0F2C59] pt-1 border-t">
+            <span>{isRTL ? "الإجمالي" : "Total"}</span>
+            <span className="font-mono">AED {totals.total.toFixed(2)}</span>
+          </div>
           <input value={amountPaid} disabled={!isDraft} onChange={(e) => setAmountPaid(e.target.value)} className="w-full border rounded-xl px-2 py-2 font-mono" placeholder={isRTL ? "المدفوع" : "Paid"} />
           {isDraft && (
             <button type="button" disabled={saving || !supplierId} onClick={() => void handleSaveDraft()} className="w-full py-2 rounded-xl border border-[#0F2C59]/30 text-[#0F2C59] font-bold disabled:opacity-50">

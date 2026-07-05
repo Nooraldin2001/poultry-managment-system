@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { IS_MOCK_MODE } from "@/services/config";
 import { ApiError } from "@/services/api/errors";
+import { subscribeTenantRefresh, type TenantRefreshScope } from "@/shared/utils/tenantRefresh";
 
 export interface ListResourceState<T> {
   items: T[];
@@ -14,6 +15,7 @@ export function useListResource<T>(
   liveFetcher: () => Promise<T[]>,
   mockFetcher?: () => Promise<T[]>,
   deps: unknown[] = [],
+  refreshScopes?: TenantRefreshScope[],
 ): ListResourceState<T> {
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +55,13 @@ export function useListResource<T>(
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (!refreshScopes?.length) return;
+    return subscribeTenantRefresh(refreshScopes, () => {
+      void reload();
+    });
+  }, [reload, refreshScopes]);
 
   return { items, loading, error, forbidden, reload };
 }

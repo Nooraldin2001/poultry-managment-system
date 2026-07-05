@@ -12,7 +12,7 @@ import { listExpenseRows } from "@/services/expenseService";
 import type { ApiListFilters } from "@/services/crud/types";
 
 export function useProducts(filters?: ApiListFilters, mockFetcher?: () => Promise<import("@/shared/types/entities").ProductRow[]>) {
-  return useListResource(() => listProductRows(filters), mockFetcher, [JSON.stringify(filters)]);
+  return useListResource(() => listProductRows(filters), mockFetcher, [JSON.stringify(filters)], ["products", "inventory"]);
 }
 
 export function useProductDetail(id: string | null, mockFetcher?: (id: string) => Promise<import("@/shared/types/entities").ProductRow | null>) {
@@ -20,7 +20,7 @@ export function useProductDetail(id: string | null, mockFetcher?: (id: string) =
 }
 
 export function useCustomers(filters?: ApiListFilters, mockFetcher?: () => Promise<import("@/shared/types/entities").CustomerRow[]>) {
-  return useListResource(() => listCustomerRows(filters), mockFetcher, [JSON.stringify(filters)]);
+  return useListResource(() => listCustomerRows(filters), mockFetcher, [JSON.stringify(filters)], ["customers"]);
 }
 
 export function useCustomerDetail(id: string | null, mockFetcher?: (id: string) => Promise<import("@/shared/types/entities").CustomerRow | null>) {
@@ -28,7 +28,7 @@ export function useCustomerDetail(id: string | null, mockFetcher?: (id: string) 
 }
 
 export function useSuppliers(filters?: ApiListFilters, mockFetcher?: () => Promise<import("@/shared/types/entities").SupplierRow[]>) {
-  return useListResource(() => listSupplierRows(filters), mockFetcher, [JSON.stringify(filters)]);
+  return useListResource(() => listSupplierRows(filters), mockFetcher, [JSON.stringify(filters)], ["suppliers"]);
 }
 
 export function useSupplierDetail(id: string | null, mockFetcher?: (id: string) => Promise<import("@/shared/types/entities").SupplierRow | null>) {
@@ -36,11 +36,11 @@ export function useSupplierDetail(id: string | null, mockFetcher?: (id: string) 
 }
 
 export function useInventory(filters?: ApiListFilters, mockFetcher?: () => Promise<import("@/shared/types/entities").InventoryBalanceRow[]>) {
-  return useListResource(() => listInventoryRows(filters), mockFetcher, [JSON.stringify(filters)]);
+  return useListResource(() => listInventoryRows(filters), mockFetcher, [JSON.stringify(filters)], ["inventory"]);
 }
 
 export function usePurchases(filters?: ApiListFilters, mockFetcher?: () => Promise<import("@/shared/types/entities").PurchaseInvoiceRow[]>) {
-  return useListResource(() => listPurchaseRows(filters), mockFetcher, [JSON.stringify(filters)]);
+  return useListResource(() => listPurchaseRows(filters), mockFetcher, [JSON.stringify(filters)], ["purchases"]);
 }
 
 export function usePurchaseDetail(id: string | null, mockFetcher?: (id: string) => Promise<import("@/shared/types/entities").PurchaseInvoiceRow | null>) {

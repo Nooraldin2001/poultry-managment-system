@@ -143,6 +143,8 @@ export interface PurchaseInvoiceLineRow {
   kg?: number;
   unit: string;
   price: number;
+  vatRate?: number;
+  subtotal?: number;
   total: number;
 }
 

@@ -42,6 +42,8 @@ interface ApiPurchaseLine {
   unit?: string;
   unit_price?: string;
   price_type?: string;
+  vat_rate?: string;
+  line_subtotal?: string;
   line_total?: string;
 }
 
@@ -77,6 +79,8 @@ function mapPurchaseLine(line: ApiPurchaseLine): PurchaseInvoiceLineRow {
     kg,
     unit: line.price_type ?? line.unit ?? "kg",
     price: parseAmount(line.unit_price),
+    vatRate: parseAmount(line.vat_rate),
+    subtotal: parseAmount(line.line_subtotal),
     total: parseAmount(line.line_total),
   };
 }

@@ -24,6 +24,7 @@ Code fixes for purchase Not Found, product/supplier edit, and **Sales white scre
 | Product create | **Code fixed** (`c7d747a`) — smoke **pending** |
 | Sales invoice create | **Code fixed** — smoke **pending** |
 | Purchase invoice create | **Code fixed** — smoke **pending** |
+| Purchase no-VAT + inventory on approve | **Code fixed** (Phase 9) — smoke **pending** |
 | Reports demo fix | **Code fixed** (`bff86fe`) — verify empty states on First View |
 | Users & Permissions (tenant admin) | **Code fixed** — smoke **pending** |
 | Cancelled invoice list behavior | **Code fixed** — smoke **pending** |

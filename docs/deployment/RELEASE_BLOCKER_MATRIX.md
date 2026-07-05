@@ -25,6 +25,7 @@
 | Supplier create (code) | **Fixed** | No | `c7d747a` | Deploy + smoke |
 | Sales invoice create (code) | **Fixed** | No | Live screen + Save draft + approve `{reason}` | Deploy + smoke |
 | Purchase invoice create (code) | **Fixed** | No | Same pattern as sales | Deploy + smoke |
+| Purchase no-VAT + inventory (code) | **Fixed** | No | VAT optional; KG normalize on approve; list refresh | Deploy + smoke |
 | Payment Methods Summary (code) | **Fixed** | No | Live API wired; mock only in dev | Deploy + smoke |
 | Auto invoice numbering (code) | **Fixed** | No | PUR-/SAL- yearly server-side generation | Deploy + smoke |
 | Purchase demo data (DB) | Unknown | **Yes** | WESTLAND / Wataniya may be DB seed | VPS purge dry-run + confirm |

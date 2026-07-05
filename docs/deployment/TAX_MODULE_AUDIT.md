@@ -28,6 +28,13 @@
 - `test_tax_summary_requires_date_filters`
 - `test_tax_summary_empty_tenant_returns_zeros`
 - `test_sales_vat_requires_date_filters`
+- `test_no_vat_purchase_has_zero_input_vat_in_tax_bridge` (Phase 9)
+
+## Purchase no-VAT behavior (Phase 9)
+
+- Purchase with header `vat_rate=0` and line `vat_rate=0` → `vat_amount=0`, `total=subtotal`.
+- Tax bridge `input_vat` remains 0 for no-VAT approved purchases.
+- No supplier TRN required when VAT is off.
 
 ## Production verification (pending deploy)
 

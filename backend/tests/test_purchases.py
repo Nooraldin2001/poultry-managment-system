@@ -532,6 +532,106 @@ def test_purchase_price_history_respects_tenant(api, company, owner, other_owner
     assert resp.status_code == 404
 
 
+# ── No-VAT purchases ────────────────────────────────────────────────────────
+def test_create_without_vat(company, owner):
+    supplier = _supplier(company, trn="")
+    product = _product(company)
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="100", unit_price="10", vat_rate=Decimal("0"))],
+        vat_rate=Decimal("0"),
+    )
+    assert inv.vat_amount == Decimal("0.00")
+    assert inv.total_amount == Decimal("1000.00")
+    assert inv.subtotal == Decimal("1000.00")
+
+
+def test_approve_no_vat_increases_inventory(company, owner):
+    supplier = _supplier(company, trn="")
+    product = _product(company)
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="100", unit_price="10", vat_rate=Decimal("0"))],
+        vat_rate=Decimal("0"),
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="received")
+
+    balance = InventoryBalance.objects.get(company=company, product=product)
+    assert balance.available_kg == Decimal("100.000")
+    assert FIFOStockLayer.objects.filter(
+        company=company, source_type=StockSourceType.PURCHASE_INVOICE, source_id=inv.id
+    ).exists()
+    assert StockMovement.objects.filter(
+        company=company, movement_type=MovementType.PURCHASE_APPROVED
+    ).exists()
+
+
+def test_approve_no_vat_updates_supplier_balance(company, owner):
+    supplier = _supplier(company, trn="")
+    product = _product(company)
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="100", unit_price="10", vat_rate=Decimal("0"))],
+        vat_rate=Decimal("0"),
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="ok")
+    supplier.refresh_from_db()
+    assert supplier.current_balance == Decimal("1000.00")
+
+
+def test_approve_cartons_only_fixed_weight_derives_kg(company, owner):
+    supplier = _supplier(company)
+    product = _product(company)
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_cartons="10", quantity_kg="0", unit_price="10")],
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="received")
+    balance = InventoryBalance.objects.get(company=company, product=product)
+    assert balance.available_kg == Decimal("100.000")
+
+
+def test_api_create_and_approve_without_vat(api, company, owner):
+    supplier = _supplier(company, trn="")
+    product = _product(company)
+    api.force_authenticate(owner)
+    resp = api.post(
+        PURCHASES_URL,
+        {
+            "supplier": supplier.id,
+            "invoice_date": str(date.today()),
+            "vat_rate": "0.00",
+            "lines": [{
+                "product": product.id,
+                "line_type": "product",
+                "quantity_kg": "50",
+                "unit_price": "10",
+                "price_type": "kg",
+                "vat_rate": "0.00",
+            }],
+        },
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    assert resp.data["vat_amount"] == "0.00"
+    inv_id = resp.data["id"]
+
+    resp = api.post(f"{PURCHASES_URL}{inv_id}/approve/", {"reason": "received"}, format="json")
+    assert resp.status_code == 200, resp.data
+    assert resp.data["vat_amount"] == "0.00"
+    assert resp.data["status"] == PurchaseStatus.APPROVED
+
+
+def test_cross_tenant_purchase_approval_inventory_isolated(company, owner, other_company):
+    supplier = _supplier(company)
+    product = _product(company)
+    other_product = _product(other_company, sku="OTHER")
+    inv = _create(company, supplier, owner, [_line(product, quantity_kg="100")])
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="ok")
+    assert InventoryBalance.objects.filter(company=company, product=product).exists()
+    assert not InventoryBalance.objects.filter(company=other_company, product=other_product).exists()
+
+
 # ── Production data hygiene checks ──────────────────────────────────────────
 def test_deploy_scripts_do_not_seed_demo_data():
     scripts_dir = REPO_ROOT / "scripts"
