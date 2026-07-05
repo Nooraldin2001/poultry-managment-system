@@ -691,3 +691,20 @@ See: [PRODUCT_MODULE_AUDIT.md](./PRODUCT_MODULE_AUDIT.md), [EXPENSE_MODULE_AUDIT
 
 See [SALES_MODULE_AUDIT.md](./SALES_MODULE_AUDIT.md).
 
+---
+
+## Phase 8 — Reports demo KPI values (2026-07-05)
+
+| Issue | Root cause | Fix |
+|---|---|---|
+| التقارير تعرض أرقام وهمية | `ReportsHomeScreen` KPI cards hardcoded (never called API) | Live fetch `GET /tenant/reports/dashboard/` today + month; `formatReportAed()` |
+
+| Check | Result |
+|---|---|
+| `pytest tests/test_reports.py` | **30 passed** |
+| `pnpm run typecheck` / `build` | **Pass** |
+| DB dry-run (firstview) | **Not run** (SSH unavailable) |
+| VPS deploy | **Pending** |
+
+See [REPORTS_MODULE_AUDIT.md](./REPORTS_MODULE_AUDIT.md).
+

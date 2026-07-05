@@ -114,3 +114,8 @@ export const EMPTY_REPORT_MSG = {
   ar: "لا توجد بيانات حقيقية بعد",
   en: "No real data yet",
 } as const;
+
+export function formatReportAed(amount: string | number | null | undefined): string {
+  const n = parseAmount(amount);
+  return `AED ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}

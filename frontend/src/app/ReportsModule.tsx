@@ -18,6 +18,7 @@ import { LoadingState, ErrorState, ApiUnavailableState, EmptyState } from "@/sha
 import { IS_MOCK_MODE } from "@/services/config";
 import {
   EMPTY_REPORT_MSG,
+  formatReportAed,
   liveOrMockChart,
   liveOrMockRows,
   mapDateBreakdownToTrend,
@@ -31,7 +32,9 @@ import {
 } from "@/features/reports/reportLiveData";
 import { listCustomerRows } from "@/services/customerService";
 import { listSupplierRows } from "@/services/supplierService";
-import { getReportsExportPayload, getSalesReport, getPurchasesReport, getInventoryReport, getProfitReport, getTaxSummaryReport } from "@/services/reportsService";
+import { getReportsExportPayload, getSalesReport, getPurchasesReport, getInventoryReport, getProfitReport, getTaxSummaryReport, getTenantDashboardSummary } from "@/services/reportsService";
+import { dashboardDateRange } from "@/hooks/useTenantDashboard";
+import type { DashboardSummary } from "@/shared/types/reports";
 import { ExportPayloadModal } from "@/features/export/ExportPayloadModal";
 import { getDefaultStatementDateRange } from "@/shared/utils/dateRanges";
 
@@ -287,8 +290,33 @@ export function ReportsHomeScreen({ lang, role, onNavigate }: {
   const [preset, setPreset] = useState("month");
   const canProfit = role === "owner" || role === "accountant";
   const [showSettings, setShowSettings] = useState(false);
+  const [todaySummary, setTodaySummary] = useState<DashboardSummary | null>(null);
+  const [monthSummary, setMonthSummary] = useState<DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
 
-  const kpis = [
+  const reload = () => {
+    if (IS_MOCK_MODE) return;
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      getTenantDashboardSummary(dashboardDateRange("today")),
+      getTenantDashboardSummary(dashboardDateRange("month")),
+    ])
+      .then(([today, month]) => {
+        setTodaySummary(today);
+        setMonthSummary(month);
+      })
+      .catch((err) => setError(err))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    reload();
+  }, []);
+
+  const mockKpis = [
     { v: "AED 18,450",  ar: "مبيعات اليوم",       en: "Today's Sales",      bg: "bg-emerald-500" },
     { v: "AED 11,200",  ar: "مشتريات اليوم",      en: "Today's Purchases",  bg: "bg-[#0F2C59]" },
     { v: "AED 850",     ar: "مصروفات اليوم",      en: "Today's Expenses",   bg: "bg-amber-500" },
@@ -298,6 +326,22 @@ export function ReportsHomeScreen({ lang, role, onNavigate }: {
     { v: "AED 39,050",  ar: "مصروفات الشهر",      en: "Month Expenses",     bg: "bg-amber-500" },
     { v: "AED 87,950",  ar: "صافي ربح الشهر",     en: "Month Net Profit",   bg: "bg-emerald-600" },
   ];
+
+  const liveKpis = [
+    { v: formatReportAed(todaySummary?.total_sales), ar: "مبيعات اليوم", en: "Today's Sales", bg: "bg-emerald-500" },
+    { v: formatReportAed(todaySummary?.total_purchases), ar: "مشتريات اليوم", en: "Today's Purchases", bg: "bg-[#0F2C59]" },
+    { v: formatReportAed(todaySummary?.total_expenses), ar: "مصروفات اليوم", en: "Today's Expenses", bg: "bg-amber-500" },
+    { v: formatReportAed(todaySummary?.net_profit_foundation), ar: "صافي ربح اليوم", en: "Today's Net Profit", bg: "bg-emerald-600" },
+    { v: formatReportAed(monthSummary?.total_sales), ar: "مبيعات الشهر", en: "Month Sales", bg: "bg-emerald-500" },
+    { v: formatReportAed(monthSummary?.total_purchases), ar: "مشتريات الشهر", en: "Month Purchases", bg: "bg-[#0F2C59]" },
+    { v: formatReportAed(monthSummary?.total_expenses), ar: "مصروفات الشهر", en: "Month Expenses", bg: "bg-amber-500" },
+    { v: formatReportAed(monthSummary?.net_profit_foundation), ar: "صافي ربح الشهر", en: "Month Net Profit", bg: "bg-emerald-600" },
+  ];
+
+  const kpis = IS_MOCK_MODE ? mockKpis : liveKpis;
+
+  if (!IS_MOCK_MODE && loading) return <LoadingState lang={lang} />;
+  if (!IS_MOCK_MODE && error) return <ErrorState lang={lang} error={error} onRetry={reload} />;
 
   const reportCards = [
     { icon: TrendingUp,    ar: "تقارير المبيعات",     en: "Sales Reports",      desc_ar: "فواتير المبيعات، التحصيلات، الرصيد",         desc_en: "Sales invoices, collections, balances",       nav: "reports-sales" as TenantScreen,      locked: false },
