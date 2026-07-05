@@ -17,4 +17,11 @@
     top: 0;
     width: 100%;
   }
+  .print-preview-logo,
+  .print-preview-stamp,
+  .print-preview-signature,
+  .print-preview-asset {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
 }

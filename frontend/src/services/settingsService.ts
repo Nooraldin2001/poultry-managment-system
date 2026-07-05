@@ -15,7 +15,12 @@ export interface CompanySettings {
   subdomain?: string;
   status?: string;
   active_user_count?: number;
+  logo_url?: string | null;
+  stamp_url?: string | null;
+  signature_url?: string | null;
 }
+
+export type CompanyAssetKind = "logo" | "stamp" | "signature";
 
 export interface VatSettings {
   id: number;
@@ -60,6 +65,16 @@ export async function getTenantSettings(): Promise<CompanySettings> {
 
 export async function updateCompanySettings(payload: Record<string, unknown>): Promise<CompanySettings> {
   return request<CompanySettings>(ENDPOINTS.tenant.settingsCompany, { method: "PATCH", body: payload });
+}
+
+/** Upload or remove (pass null) a company identity asset via multipart PATCH. */
+export async function updateCompanyAsset(
+  kind: CompanyAssetKind,
+  file: File | null,
+): Promise<CompanySettings> {
+  const form = new FormData();
+  form.append(kind, file ?? "");
+  return request<CompanySettings>(ENDPOINTS.tenant.settingsCompany, { method: "PATCH", body: form });
 }
 
 export async function getVatSettings(): Promise<VatSettings> {

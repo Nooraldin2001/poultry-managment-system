@@ -523,6 +523,8 @@ def build_purchase_print_preview(invoice) -> dict:
             "address": company.address,
             "phone": company.phone,
             "logo_url": company.logo.url if company.logo else None,
+            "stamp_url": company.stamp.url if company.stamp else None,
+            "signature_url": company.signature.url if company.signature else None,
         },
         "supplier": {
             "name": invoice.supplier_name_snapshot,

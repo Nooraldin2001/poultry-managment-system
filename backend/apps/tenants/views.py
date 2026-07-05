@@ -1,10 +1,11 @@
+from django.core.files import File
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.serializers import TenantUserSerializer
 from apps.audit.services import record_action
-from apps.core.permissions import IsSuperAdmin, IsTenantUser
+from apps.core.permissions import HasTenantPermission, IsSuperAdmin, IsTenantUser
 from apps.subscriptions.models import Plan
 
 from . import services
@@ -15,6 +16,19 @@ from .serializers import (
     CompanySerializer,
     CompanyUpdateSerializer,
 )
+
+
+def _audit_safe(data: dict) -> dict:
+    """Replace uploaded file objects with their names so audit JSON stays valid."""
+    safe = {}
+    for key, value in data.items():
+        if isinstance(value, File):
+            safe[key] = getattr(value, "name", "uploaded-file")
+        elif value is None or isinstance(value, (str, int, float, bool)):
+            safe[key] = value
+        else:
+            safe[key] = str(value)
+    return safe
 
 
 # --- Super Admin -----------------------------------------------------------
@@ -42,7 +56,8 @@ class AdminCompanyListCreateView(generics.ListCreateAPIView):
             new_value={"subdomain": company.subdomain, "plan": plan.code},
         )
         return Response(
-            CompanySerializer(company).data, status=status.HTTP_201_CREATED
+            CompanySerializer(company, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
         )
 
 
@@ -58,7 +73,17 @@ class AdminCompanyDetailView(generics.RetrieveUpdateAPIView):
         serializer = CompanyUpdateSerializer(company, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(CompanySerializer(company).data)
+        record_action(
+            request=request,
+            action="company_update",
+            module="tenants",
+            reference_type="company",
+            reference_id=company.id,
+            new_value=_audit_safe(serializer.validated_data),
+        )
+        return Response(
+            CompanySerializer(company, context={"request": request}).data
+        )
 
 
 class AdminCompanySuspendView(APIView):
@@ -130,15 +155,24 @@ class AdminCompanyCreateAdminUserView(APIView):
 class TenantSettingsView(APIView):
     """Company profile + settings summary for the current tenant."""
 
-    permission_classes = [IsTenantUser]
+    permission_classes = [IsTenantUser, HasTenantPermission]
+    required_permission = "settings.view"
 
     def get(self, request):
         company = request.user.company
-        return Response(CompanySerializer(company).data)
+        return Response(
+            CompanySerializer(company, context={"request": request}).data
+        )
 
 
 class TenantCompanyUpdateView(APIView):
-    permission_classes = [IsTenantUser]
+    """Tenant-side company profile update (incl. logo/stamp/signature/TRN).
+
+    Restricted to users holding ``settings.manage`` (Owner/Admin by default).
+    """
+
+    permission_classes = [IsTenantUser, HasTenantPermission]
+    required_permission = "settings.manage"
 
     def patch(self, request):
         company = request.user.company
@@ -151,6 +185,8 @@ class TenantCompanyUpdateView(APIView):
             module="settings",
             reference_type="company",
             reference_id=company.id,
-            new_value=serializer.validated_data,
+            new_value=_audit_safe(serializer.validated_data),
         )
-        return Response(CompanySerializer(company).data)
+        return Response(
+            CompanySerializer(company, context={"request": request}).data
+        )

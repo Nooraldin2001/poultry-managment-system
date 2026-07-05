@@ -16,6 +16,10 @@ export interface Company {
   totalPaid: number; lastPaymentDate: string;
   createdDate: string; emirate: string; tradeLicense: string;
   modules: string[];
+  trn?: string;
+  logoUrl?: string | null;
+  stampUrl?: string | null;
+  signatureUrl?: string | null;
 }
 
 /** A sellable product (whole birds by weight grade, or by-products / parts). */

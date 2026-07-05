@@ -41,6 +41,9 @@ export interface ApiCompany {
   } | null;
   active_user_count?: number;
   created_at?: string;
+  logo_url?: string | null;
+  stamp_url?: string | null;
+  signature_url?: string | null;
 }
 
 export interface ApiPlan {
@@ -127,6 +130,10 @@ export function mapApiCompanyToUi(row: ApiCompany): Company {
     emirate: row.emirate || "—",
     tradeLicense: row.trade_license || "—",
     modules: sub?.plan?.enabled_modules ?? [],
+    trn: row.trn ?? "",
+    logoUrl: row.logo_url ?? null,
+    stampUrl: row.stamp_url ?? null,
+    signatureUrl: row.signature_url ?? null,
   };
 }
 
@@ -228,6 +235,34 @@ export async function createCompanyAdminUserLive(
     method: "POST",
     body: payload,
   });
+}
+
+export async function updateCompanyLive(
+  companyId: number | string,
+  payload: Record<string, unknown> | FormData,
+): Promise<ApiCompany> {
+  return request<ApiCompany>(ENDPOINTS.admin.company(companyId), {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function updateCompanyAssetsLive(
+  companyId: number | string,
+  assets: Partial<Record<"logo" | "stamp" | "signature", File | null>>,
+  fields?: Partial<Pick<CreateCompanyPayload, "trn" | "name_ar" | "name_en" | "phone" | "address">>,
+): Promise<ApiCompany> {
+  const form = new FormData();
+  for (const [key, file] of Object.entries(assets)) {
+    if (file === null) form.append(key, "");
+    else if (file instanceof File) form.append(key, file);
+  }
+  if (fields) {
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined && value !== null) form.append(key, String(value));
+    }
+  }
+  return updateCompanyLive(companyId, form);
 }
 
 export async function createCompany(payload: CreateCompanyPayload): Promise<ApiCompany> {

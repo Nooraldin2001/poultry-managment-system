@@ -134,7 +134,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     Accept: "application/json",
   };
 
-  if (body !== undefined && method !== "GET") {
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && method !== "GET" && !isFormData) {
     headers["Content-Type"] = "application/json";
   }
 
@@ -150,7 +151,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     res = await fetch(url, {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body:
+        body === undefined ? undefined :
+        isFormData ? (body as FormData) :
+        JSON.stringify(body),
     });
   } catch {
     throw new ApiError("Unable to reach the server. Check your connection.", {

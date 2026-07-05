@@ -3,7 +3,37 @@ from rest_framework import serializers
 from apps.subscriptions.models import BillingCycle, Plan
 
 from .models import Company, CompanyStatus
-from .validators import RESERVED_SUBDOMAINS, subdomain_validator
+from .validators import (
+    RESERVED_SUBDOMAINS,
+    subdomain_validator,
+    validate_company_image_extension,
+    validate_company_image_size,
+    validate_trn_value,
+)
+
+
+class CompanyAssetURLMixin(serializers.Serializer):
+    """Absolute (when request available) URLs for company identity assets."""
+
+    logo_url = serializers.SerializerMethodField()
+    stamp_url = serializers.SerializerMethodField()
+    signature_url = serializers.SerializerMethodField()
+
+    def _file_url(self, file_field):
+        if not file_field:
+            return None
+        url = file_field.url
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request is not None else url
+
+    def get_logo_url(self, obj):
+        return self._file_url(obj.logo)
+
+    def get_stamp_url(self, obj):
+        return self._file_url(obj.stamp)
+
+    def get_signature_url(self, obj):
+        return self._file_url(obj.signature)
 
 
 class SubscriptionBriefSerializer(serializers.Serializer):
@@ -17,7 +47,7 @@ class SubscriptionBriefSerializer(serializers.Serializer):
     total_paid = serializers.DecimalField(max_digits=14, decimal_places=2)
 
 
-class CompanySerializer(serializers.ModelSerializer):
+class CompanySerializer(CompanyAssetURLMixin, serializers.ModelSerializer):
     subscription = SubscriptionBriefSerializer(read_only=True)
     active_user_count = serializers.SerializerMethodField()
 
@@ -27,6 +57,7 @@ class CompanySerializer(serializers.ModelSerializer):
             "id", "name_ar", "name_en", "subdomain",
             "trade_license", "trn", "country", "emirate", "address",
             "phone", "email", "status", "is_active",
+            "logo_url", "stamp_url", "signature_url",
             "subscription", "active_user_count", "created_at",
         ]
         read_only_fields = ["id", "created_at", "subscription", "active_user_count"]
@@ -66,14 +97,58 @@ class CompanyCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Unknown or inactive plan.")
         return value
 
+    def validate_trn(self, value):
+        return validate_trn_value(value)
+
 
 class CompanyUpdateSerializer(serializers.ModelSerializer):
+    """Editable company profile + identity assets (multipart or JSON).
+
+    Send an empty value (``""``/``null``) for logo/stamp/signature to remove
+    the current file.
+    """
+
+    logo = serializers.ImageField(
+        required=False,
+        allow_null=True,
+        validators=[validate_company_image_extension, validate_company_image_size],
+    )
+    stamp = serializers.ImageField(
+        required=False,
+        allow_null=True,
+        validators=[validate_company_image_extension, validate_company_image_size],
+    )
+    signature = serializers.ImageField(
+        required=False,
+        allow_null=True,
+        validators=[validate_company_image_extension, validate_company_image_size],
+    )
+
     class Meta:
         model = Company
         fields = [
             "name_ar", "name_en", "trade_license", "trn",
             "emirate", "address", "phone", "email",
+            "logo", "stamp", "signature",
         ]
+
+    def validate_trn(self, value):
+        return validate_trn_value(value)
+
+    def to_internal_value(self, data):
+        # Allow clearing an image by sending "" (multipart forms can't send null).
+        if hasattr(data, "dict"):
+            data = data.dict()
+        cleared = {
+            key for key in ("logo", "stamp", "signature")
+            if key in data and data[key] in ("", None)
+        }
+        for key in cleared:
+            data.pop(key)
+        attrs = super().to_internal_value(data)
+        for key in cleared:
+            attrs[key] = None
+        return attrs
 
 
 class CompanyAdminUserCreateSerializer(serializers.Serializer):

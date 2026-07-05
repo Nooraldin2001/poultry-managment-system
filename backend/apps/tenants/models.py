@@ -1,8 +1,39 @@
+import os
+import uuid
+
 from django.db import models
 
 from apps.core.models import TimeStampedModel, get_created_by_field
 
-from .validators import subdomain_validator
+from .validators import (
+    subdomain_validator,
+    validate_company_image_extension,
+    validate_company_image_size,
+)
+
+
+def _company_asset_path(instance, filename: str, kind: str) -> str:
+    """Tenant-safe upload path: company_assets/{company_id}/{kind}/{uuid}.{ext}."""
+    ext = os.path.splitext(filename)[1].lower() or ".png"
+    return f"company_assets/{instance.pk or 'new'}/{kind}/{uuid.uuid4().hex}{ext}"
+
+
+def company_logo_upload_path(instance, filename):
+    return _company_asset_path(instance, filename, "logo")
+
+
+def company_stamp_upload_path(instance, filename):
+    return _company_asset_path(instance, filename, "stamp")
+
+
+def company_signature_upload_path(instance, filename):
+    return _company_asset_path(instance, filename, "signature")
+
+
+_COMPANY_IMAGE_VALIDATORS = [
+    validate_company_image_extension,
+    validate_company_image_size,
+]
 
 
 class CompanyStatus(models.TextChoices):
@@ -35,10 +66,23 @@ class Company(TimeStampedModel):
     phone = models.CharField(max_length=32, blank=True)
     email = models.EmailField(blank=True)
 
-    logo = models.ImageField(upload_to="company/logo/", null=True, blank=True)
-    stamp = models.ImageField(upload_to="company/stamp/", null=True, blank=True)
+    logo = models.ImageField(
+        upload_to=company_logo_upload_path,
+        null=True,
+        blank=True,
+        validators=_COMPANY_IMAGE_VALIDATORS,
+    )
+    stamp = models.ImageField(
+        upload_to=company_stamp_upload_path,
+        null=True,
+        blank=True,
+        validators=_COMPANY_IMAGE_VALIDATORS,
+    )
     signature = models.ImageField(
-        upload_to="company/signature/", null=True, blank=True
+        upload_to=company_signature_upload_path,
+        null=True,
+        blank=True,
+        validators=_COMPANY_IMAGE_VALIDATORS,
     )
 
     status = models.CharField(

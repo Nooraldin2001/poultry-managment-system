@@ -13,9 +13,10 @@ import {
 import { toast } from "sonner";
 import { IS_MOCK_MODE } from "@/services/config";
 import {
-  getTenantSettings, updateCompanySettings, getVatSettings, updateVatSettings,
+  getTenantSettings, updateCompanySettings, updateCompanyAsset, getVatSettings, updateVatSettings,
   listNumberingSettings, updateNumberingSettings, listPrintTemplateSettings, updatePrintTemplateSettings,
 } from "@/services/settingsService";
+import { CompanyAssetUploadField } from "@/features/company/CompanyAssetUploadField";
 import { listTenantUsers, suspendTenantUser, reactivateTenantUser, createTenantUser } from "@/services/userService";
 import { LoadingState, ErrorState, PermissionDeniedState, ApiUnavailableState, EmptyState } from "@/shared/components/ApiStates";
 import { FormErrors } from "@/shared/components/FormErrors";
@@ -53,28 +54,28 @@ function Btn({ children, onClick, variant = "primary", size = "md", className = 
 function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm ${className}`}>{children}</div>;
 }
-function FInput({ label, placeholder, type = "text", value, onChange, required = false, error }: {
+function FInput({ label, placeholder, type = "text", value, onChange, required = false, error, disabled = false }: {
   label: string; placeholder?: string; type?: string; value: string;
-  onChange: (v: string) => void; required?: boolean; error?: string;
+  onChange: (v: string) => void; required?: boolean; error?: string; disabled?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-sm font-bold text-slate-700">{label}{required && <span className="text-red-500 ms-1">*</span>}</label>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className={`w-full px-3.5 py-2.5 rounded-xl border text-sm outline-none transition-all ${error ? "border-red-400 bg-red-50" : "border-slate-200 bg-white focus:border-[#0F2C59] focus:ring-2 focus:ring-[#0F2C59]/10"}`} />
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
+        className={`w-full px-3.5 py-2.5 rounded-xl border text-sm outline-none transition-all disabled:bg-slate-50 disabled:text-slate-500 ${error ? "border-red-400 bg-red-50" : "border-slate-200 bg-white focus:border-[#0F2C59] focus:ring-2 focus:ring-[#0F2C59]/10"}`} />
       {error && <p className="text-xs text-red-500 flex items-center gap-1"><AlertTriangle size={11} />{error}</p>}
     </div>
   );
 }
-function FSelect({ label, value, onChange, options, required = false }: {
+function FSelect({ label, value, onChange, options, required = false, disabled = false }: {
   label: string; value: string; onChange: (v: string) => void;
-  options: { value: string; label: string }[]; required?: boolean;
+  options: { value: string; label: string }[]; required?: boolean; disabled?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-sm font-bold text-slate-700">{label}{required && <span className="text-red-500 ms-1">*</span>}</label>
-      <select value={value} onChange={e => onChange(e.target.value)}
-        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:border-[#0F2C59] appearance-none">
+      <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
+        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:border-[#0F2C59] appearance-none disabled:bg-slate-50 disabled:text-slate-500">
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </div>
@@ -241,12 +242,20 @@ export function SettingsHomeScreen({ lang, role, onNavigate }: { lang: Lang; rol
   const isRTL = lang === "ar";
   const [search, setSearch] = useState("");
   const isOwner = role === "owner";
+  const [identity, setIdentity] = useState<{ trn?: string; logo_url?: string | null; stamp_url?: string | null; signature_url?: string | null; name_en?: string }>({});
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    void getTenantSettings()
+      .then((s) => setIdentity(s))
+      .catch(() => { /* checklist falls back to incomplete */ });
+  }, []);
 
   const setupItems = [
-    { ar: "شعار الشركة",         en: "Company Logo",       done: false },
-    { ar: "رقم TRN",             en: "TRN Added",           done: false },
-    { ar: "الختم",               en: "Stamp Uploaded",      done: false },
-    { ar: "التوقيع",             en: "Signature Uploaded",  done: false },
+    { ar: "شعار الشركة",         en: "Company Logo",       done: IS_MOCK_MODE ? false : Boolean(identity.logo_url) },
+    { ar: "رقم TRN",             en: "TRN Added",           done: IS_MOCK_MODE ? false : Boolean(identity.trn?.trim()) },
+    { ar: "الختم",               en: "Stamp Uploaded",      done: IS_MOCK_MODE ? false : Boolean(identity.stamp_url) },
+    { ar: "التوقيع",             en: "Signature Uploaded",  done: IS_MOCK_MODE ? false : Boolean(identity.signature_url) },
     { ar: "ترقيم الفواتير",      en: "Invoice Numbering",   done: true  },
     { ar: "المستخدمون",          en: "Users Configured",    done: true  },
     { ar: "إعدادات الضريبة",     en: "VAT Configured",      done: false },
@@ -277,7 +286,7 @@ export function SettingsHomeScreen({ lang, role, onNavigate }: { lang: Lang; rol
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-black text-[#0F2C59]">{isRTL ? "الإعدادات" : "Settings"}</h1>
-          <p className="text-xs text-slate-400 font-semibold">Prime Fresh Meat LLC</p>
+          <p className="text-xs text-slate-400 font-semibold">{identity.name_en || (IS_MOCK_MODE ? "Prime Fresh Meat LLC" : "—")}</p>
         </div>
       </div>
 
@@ -364,7 +373,7 @@ export function SettingsHomeScreen({ lang, role, onNavigate }: { lang: Lang; rol
 // ── SCREEN: COMPANY PROFILE ────────────────────────────────────────────────────
 export function CompanyProfileScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
-  const canManage = role === "owner" || role === "accountant";
+  const canManage = role === "owner";
   const [nameAr, setNameAr] = useState("");
   const [nameEn, setNameEn] = useState("");
   const [trn, setTrn] = useState("");
@@ -373,25 +382,33 @@ export function CompanyProfileScreen({ lang, role, onNavigate }: { lang: Lang; r
   const [license, setLicense] = useState("");
   const [emirate, setEmirate] = useState("");
   const [address, setAddress] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [stampUrl, setStampUrl] = useState<string | null>(null);
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(!IS_MOCK_MODE);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
 
+  const applySettings = (s: Awaited<ReturnType<typeof getTenantSettings>>) => {
+    setNameAr(s.name_ar ?? "");
+    setNameEn(s.name_en ?? "");
+    setTrn(s.trn ?? "");
+    setPhone(s.phone ?? "");
+    setEmail(s.email ?? "");
+    setLicense(s.trade_license ?? "");
+    setEmirate(s.emirate ?? "");
+    setAddress(s.address ?? "");
+    setLogoUrl(s.logo_url ?? null);
+    setStampUrl(s.stamp_url ?? null);
+    setSignatureUrl(s.signature_url ?? null);
+  };
+
   useEffect(() => {
     if (IS_MOCK_MODE) return;
     setLoading(true);
     getTenantSettings()
-      .then((s) => {
-        setNameAr(s.name_ar ?? "");
-        setNameEn(s.name_en ?? "");
-        setTrn(s.trn ?? "");
-        setPhone(s.phone ?? "");
-        setEmail(s.email ?? "");
-        setLicense(s.trade_license ?? "");
-        setEmirate(s.emirate ?? "");
-        setAddress(s.address ?? "");
-      })
+      .then(applySettings)
       .catch((e) => setError(e))
       .finally(() => setLoading(false));
   }, []);
@@ -404,7 +421,7 @@ export function CompanyProfileScreen({ lang, role, onNavigate }: { lang: Lang; r
     setSaving(true);
     setFieldErrors({});
     try {
-      await updateCompanySettings({
+      const updated = await updateCompanySettings({
         name_ar: nameAr,
         name_en: nameEn,
         trn,
@@ -414,6 +431,7 @@ export function CompanyProfileScreen({ lang, role, onNavigate }: { lang: Lang; r
         emirate,
         address,
       });
+      applySettings(updated);
       toast.success(isRTL ? "تم حفظ بيانات الشركة" : "Company profile saved");
     } catch (e) {
       setError(e);
@@ -424,6 +442,18 @@ export function CompanyProfileScreen({ lang, role, onNavigate }: { lang: Lang; r
     }
   };
 
+  const handleAssetUpload = async (kind: "logo" | "stamp" | "signature", file: File) => {
+    const updated = await updateCompanyAsset(kind, file);
+    applySettings(updated);
+    toast.success(isRTL ? "تم رفع الملف" : "File uploaded");
+  };
+
+  const handleAssetRemove = async (kind: "logo" | "stamp" | "signature") => {
+    const updated = await updateCompanyAsset(kind, null);
+    applySettings(updated);
+    toast.success(isRTL ? "تمت إزالة الملف" : "File removed");
+  };
+
   if (!IS_MOCK_MODE && !canManage && role === "cashier") return <PermissionDeniedState lang={lang} />;
   if (loading) return <LoadingState lang={lang} />;
   if (error && !nameAr) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
@@ -431,30 +461,58 @@ export function CompanyProfileScreen({ lang, role, onNavigate }: { lang: Lang; r
   return (
     <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-5">
       <SettingsHeader title="بيانات الشركة" titleEn="Company Profile" onBack={() => onNavigate("settings")} lang={lang}>
-        <Btn variant="primary" disabled={saving} onClick={() => void handleSave()}><Check size={15} />{isRTL ? "حفظ التغييرات" : "Save Changes"}</Btn>
+        {canManage && (
+          <Btn variant="primary" disabled={saving} onClick={() => void handleSave()}><Check size={15} />{isRTL ? "حفظ التغييرات" : "Save Changes"}</Btn>
+        )}
       </SettingsHeader>
       <FormErrors lang={lang} error={error} fieldErrors={fieldErrors} />
 
-      {/* Identity */}
       <Card className="p-5">
         <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "أ. هوية الشركة" : "A. Company Identity"}</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <FInput label={isRTL ? "اسم الشركة (عربي) *" : "Arabic Name *"} value={nameAr} onChange={setNameAr} required />
-          <FInput label={isRTL ? "اسم الشركة (إنجليزي) *" : "English Name *"} value={nameEn} onChange={setNameEn} required />
-          <FInput label={isRTL ? "رقم الرخصة التجارية" : "Trade License #"} value={license} onChange={setLicense} />
-          <FInput label="TRN" value={trn} onChange={setTrn} placeholder="100XXXXXXXXXXX" error={!trn ? (isRTL ? "TRN مطلوب للفواتير الضريبية" : "TRN required for tax invoices") : undefined} />
-          <FSelect label={isRTL ? "الإمارة" : "Emirate"} value={emirate} onChange={setEmirate} options={[{value:"dubai",label:"دبي"},{value:"abudhabi",label:"أبوظبي"},{value:"sharjah",label:"الشارقة"},{value:"ajman",label:"عجمان"},{value:"rak",label:"رأس الخيمة"}]} />
-          <FInput label={isRTL ? "الهاتف *" : "Phone *"} type="tel" value={phone} onChange={setPhone} required />
-          <FInput label={isRTL ? "البريد الإلكتروني" : "Email"} type="email" value={email} onChange={setEmail} />
-          <div className="sm:col-span-2"><FInput label={isRTL ? "العنوان" : "Address"} value={address} onChange={setAddress} /></div>
+          <FInput label={isRTL ? "اسم الشركة (عربي) *" : "Arabic Name *"} value={nameAr} onChange={setNameAr} required disabled={!canManage} />
+          <FInput label={isRTL ? "اسم الشركة (إنجليزي) *" : "English Name *"} value={nameEn} onChange={setNameEn} required disabled={!canManage} />
+          <FInput label={isRTL ? "رقم الرخصة التجارية" : "Trade License #"} value={license} onChange={setLicense} disabled={!canManage} />
+          <FInput label="TRN" value={trn} onChange={setTrn} placeholder="100XXXXXXXXXXX" error={!trn ? (isRTL ? "TRN مطلوب للفواتير الضريبية" : "TRN required for tax invoices") : undefined} disabled={!canManage} />
+          <FSelect label={isRTL ? "الإمارة" : "Emirate"} value={emirate} onChange={setEmirate} options={[{value:"dubai",label:"دبي"},{value:"abudhabi",label:"أبوظبي"},{value:"sharjah",label:"الشارقة"},{value:"ajman",label:"عجمان"},{value:"rak",label:"رأس الخيمة"}]} disabled={!canManage} />
+          <FInput label={isRTL ? "الهاتف *" : "Phone *"} type="tel" value={phone} onChange={setPhone} required disabled={!canManage} />
+          <FInput label={isRTL ? "البريد الإلكتروني" : "Email"} type="email" value={email} onChange={setEmail} disabled={!canManage} />
+          <div className="sm:col-span-2"><FInput label={isRTL ? "العنوان" : "Address"} value={address} onChange={setAddress} disabled={!canManage} /></div>
         </div>
       </Card>
 
-      {/* Branding */}
       <Card className="p-5">
-        <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "ب. الشعار والختم" : "B. Branding"}</h3>
+        <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "ب. الشعار والختم والتوقيع" : "B. Logo, Stamp & Signature"}</h3>
         {!IS_MOCK_MODE ? (
-          <ApiUnavailableState lang={lang} messageAr="رفع الشعار والختم والتوقيع غير متاح عبر API حالياً" messageEn="Logo, stamp, and signature upload is not available via API yet" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <CompanyAssetUploadField
+              lang={lang}
+              label={isRTL ? "شعار الشركة" : "Company Logo"}
+              hint={isRTL ? "PNG/JPG · 2MB" : "PNG/JPG · 2MB max"}
+              url={logoUrl}
+              disabled={!canManage}
+              onUpload={(file) => handleAssetUpload("logo", file)}
+              onRemove={canManage ? () => handleAssetRemove("logo") : undefined}
+            />
+            <CompanyAssetUploadField
+              lang={lang}
+              label={isRTL ? "ختم الشركة" : "Company Stamp"}
+              hint={isRTL ? "PNG/JPG · 2MB" : "PNG/JPG · 2MB max"}
+              url={stampUrl}
+              disabled={!canManage}
+              onUpload={(file) => handleAssetUpload("stamp", file)}
+              onRemove={canManage ? () => handleAssetRemove("stamp") : undefined}
+            />
+            <CompanyAssetUploadField
+              lang={lang}
+              label={isRTL ? "التوقيع المعتمد" : "Authorized Signature"}
+              hint={isRTL ? "PNG/JPG · 2MB" : "PNG/JPG · 2MB max"}
+              url={signatureUrl}
+              disabled={!canManage}
+              onUpload={(file) => handleAssetUpload("signature", file)}
+              onRemove={canManage ? () => handleAssetRemove("signature") : undefined}
+            />
+          </div>
         ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
