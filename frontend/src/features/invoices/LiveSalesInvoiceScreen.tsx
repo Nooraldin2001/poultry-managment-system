@@ -121,13 +121,24 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
     return created.id;
   };
 
-  const saveHeader = async (id: string) => {
+  const saveHeader = async (id: string, overrides?: { amountPaid?: string }) => {
+    const selected = customers.find((c) => c.id === customerId);
+    const isCashCustomer = selected?.customerType === "cash";
+    const paidValue =
+      overrides?.amountPaid ??
+      (isCashCustomer || paymentMethod === "cash"
+        ? totals.total.toFixed(2)
+        : amountPaid || "0");
     await patchDraftHeader("sales", id, {
       customer: Number(customerId),
       payment_method: paymentMethod,
-      amount_paid: amountPaid || "0",
+      amount_paid: paidValue,
+      vat_rate: vatEnabled ? "5.00" : "0.00",
       notes,
     });
+    if (paidValue !== amountPaid) {
+      setAmountPaid(paidValue);
+    }
   };
 
   const addLine = async (productId: string) => {
@@ -236,7 +247,11 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
   const handleApprove = async (reason: string) => {
     if (!docId) return;
     setSaving(true);
+    setFieldErrors({});
+    setError(null);
     try {
+      // Persist payment fields before approval — backend validates stored amount_paid.
+      await saveHeader(docId);
       await runStockCheck();
       await approveSale(
         docId,
@@ -248,6 +263,7 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
       setNeedsCreditOverride(false);
       toast.success(isRTL ? "تم اعتماد الفاتورة" : "Invoice approved");
     } catch (err) {
+      if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
       if (err instanceof ApiError && err.message.toLowerCase().includes("credit")) {
         setNeedsCreditOverride(true);
         toast.error(isRTL ? "تجاوز حد الائتمان — أعد المحاولة مع سبب التجاوز" : "Credit limit exceeded — retry with override reason");

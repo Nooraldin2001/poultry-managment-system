@@ -438,6 +438,28 @@ def test_create_rejects_manual_invoice_number(api, company, owner):
     assert "invoice_number" in resp.data
 
 
+def test_cash_customer_approve_requires_full_amount_paid(api, company, owner):
+    customer = _customer(company, customer_type=CustomerType.CASH)
+    product = _product(company)
+    _seed_stock(company, owner, product, kg="100")
+    api.force_authenticate(owner)
+    resp = api.post(SALES_URL, _payload(customer, product), format="json")
+    assert resp.status_code == 201, resp.data
+    inv_id = resp.data["id"]
+    resp = api.post(f"{SALES_URL}{inv_id}/approve/", {"reason": "ok"}, format="json")
+    assert resp.status_code == 400
+    assert "amount_paid" in resp.data
+
+    resp = api.patch(
+        f"{SALES_URL}{inv_id}/",
+        {"amount_paid": api.get(f"{SALES_URL}{inv_id}/").data["total_amount"]},
+        format="json",
+    )
+    assert resp.status_code == 200
+    resp = api.post(f"{SALES_URL}{inv_id}/approve/", {"reason": "ok"}, format="json")
+    assert resp.status_code == 200
+
+
 def test_owner_can_create_approve_cancel(api, company, owner):
     customer = _customer(company)
     product = _product(company)
