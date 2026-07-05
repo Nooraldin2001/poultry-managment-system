@@ -46,6 +46,8 @@ import { ScreenGuard } from "@/shared/components/ScreenGuard";
 import { SA_NAV } from "@/app/navigation/superAdminNavigation";
 import { TENANT_TITLES, SUPER_ADMIN_TITLES } from "@/app/navigation/screenTitles";
 import { ComingSoonPlaceholder } from "@/shared/components/ComingSoonPlaceholder";
+import { ModuleErrorBoundary } from "@/shared/components/ModuleErrorBoundary";
+import { normalizeSalesInvoiceStatus, isSalesCollectibleStatus } from "@/shared/utils/invoiceStatus";
 import { ProductionEmptyState, EMPTY_MESSAGES } from "@/shared/components/ProductionEmptyState";
 import { IS_MOCK_MODE } from "@/services/config";
 import { LiveDocumentReadOnly } from "@/features/documents/LiveDocumentReadOnly";
@@ -1200,7 +1202,8 @@ function AuditLogScreen({ lang }: { lang: Lang }) {
 //   src/data/mock/{products,customers,sales}.mock.ts  (S_PRODUCTS, S_CUSTOMERS, S_INVOICES)
 
 // ── INVOICE STATUS BADGE ───────────────────────────────────────────────────────
-function SInvStatusBadge({ status, lang }: { status: SInvStatus; lang: Lang }) {
+function SInvStatusBadge({ status, lang }: { status: SInvStatus | string; lang: Lang }) {
+  const normalized = normalizeSalesInvoiceStatus(status);
   const cfg = {
     draft:     { bg: "bg-slate-100",   t: "text-slate-600",   ar: "مسودة",           en: "Draft" },
     approved:  { bg: "bg-blue-50",     t: "text-blue-700",    ar: "معتمدة",           en: "Approved" },
@@ -1208,8 +1211,9 @@ function SInvStatusBadge({ status, lang }: { status: SInvStatus; lang: Lang }) {
     paid:      { bg: "bg-emerald-50",  t: "text-emerald-700", ar: "مدفوعة",           en: "Paid" },
     cancelled: { bg: "bg-red-50",      t: "text-red-700",     ar: "ملغاة",            en: "Cancelled" },
     adjusted:  { bg: "bg-violet-50",   t: "text-violet-700",  ar: "مُعدَّلة",        en: "Adjusted" },
-  }[status];
-  return <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.t}`}>{lang === "ar" ? cfg.ar : cfg.en}</span>;
+  }[normalized];
+  const safe = cfg ?? { bg: "bg-slate-100", t: "text-slate-600", ar: status, en: status };
+  return <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${safe.bg} ${safe.t}`}>{lang === "ar" ? safe.ar : safe.en}</span>;
 }
 
 /// ── PHASE 3 ENHANCEMENTS ──────────────────────────────────────────────────────
@@ -1484,9 +1488,10 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
   if (loading) return <LoadingState lang={lang} />;
   if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
 
-  const displayInvoices = saleRows.map((row) => {
+  const displayInvoices = (saleRows ?? []).map((row) => {
     const mock = S_INVOICES.find((i) => i.id === row.number || i.id === row.id);
     if (mock && IS_MOCK_MODE) return { ...mock, recordId: row.id };
+    const uiStatus = normalizeSalesInvoiceStatus(row.status);
     return {
       id: row.number,
       recordId: row.id,
@@ -1496,12 +1501,12 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
       date: row.date,
       cartons: 0,
       kg: 0,
-      subtotal: row.subtotal,
-      vat: row.vat,
-      total: row.total,
-      paid: row.paid,
-      remaining: row.balance,
-      status: row.status as SInvStatus,
+      subtotal: row.subtotal ?? 0,
+      vat: row.vat ?? 0,
+      total: row.total ?? 0,
+      paid: row.paid ?? 0,
+      remaining: row.balance ?? 0,
+      status: uiStatus,
       method: "credit",
       user: "",
     };
@@ -1582,10 +1587,10 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         {inv.status === "draft" && <button onClick={() => openEdit((inv as { recordId?: string }).recordId ?? inv.id)} className="text-xs px-2 py-1 bg-[#0F2C59] text-white rounded-lg font-bold hover:bg-[#162f5f]">{isRTL ? "تعديل" : "Edit"}</button>}
-                        {(inv.status === "approved" || inv.status === "partial") && <button onClick={() => setShowCollect(inv.id)} className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg font-bold hover:bg-emerald-600">{isRTL ? "تحصيل" : "Collect"}</button>}
+                        {(isSalesCollectibleStatus(inv.status)) && <button onClick={() => setShowCollect(inv.id)} className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg font-bold hover:bg-emerald-600">{isRTL ? "تحصيل" : "Collect"}</button>}
                         <button onClick={() => openDetail((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-[#0F2C59] transition-all" title={isRTL ? "عرض" : "View"}><Eye size={13} /></button>
                         <button onClick={() => openPreview((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all" title={isRTL ? "طباعة" : "Print"}><Printer size={13} /></button>
-                        {(inv.status === "approved" || inv.status === "partial") && role === "owner" && <button onClick={() => setShowCancel((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all" title={isRTL ? "إلغاء" : "Cancel"}><Ban size={13} /></button>}
+                        {isSalesCollectibleStatus(inv.status) && role === "owner" && <button onClick={() => setShowCancel((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all" title={isRTL ? "إلغاء" : "Cancel"}><Ban size={13} /></button>}
                       </div>
                     </td>
                   </tr>
@@ -1613,7 +1618,7 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
               <div className="flex gap-2">
                 <Btn size="sm" variant="secondary" onClick={() => openDetail((inv as { recordId?: string }).recordId ?? inv.id)}><Eye size={13} />{isRTL ? "عرض" : "View"}</Btn>
                 {inv.status === "draft" && <Btn size="sm" variant="primary" onClick={() => openEdit((inv as { recordId?: string }).recordId ?? inv.id)}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
-                {(inv.status === "approved" || inv.status === "partial") && <Btn size="sm" variant="green" onClick={() => setShowCollect(inv.id)}><Wallet size={13} />{isRTL ? "تحصيل" : "Collect"}</Btn>}
+                {isSalesCollectibleStatus(inv.status) && <Btn size="sm" variant="green" onClick={() => setShowCollect(inv.id)}><Wallet size={13} />{isRTL ? "تحصيل" : "Collect"}</Btn>}
                 <Btn size="sm" variant="ghost" onClick={() => openPreview((inv as { recordId?: string }).recordId ?? inv.id)}><Printer size={13} /></Btn>
               </div>
             </Card>
@@ -3564,10 +3569,26 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           ) : (
           <>
           {tScreen === "dashboard"    && <TenantDashboardScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {(tScreen === "sales" || tScreen === "sales-list") && <SalesListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedSalesId={setSelectedSalesId} />}
-          {tScreen === "sales-new"    && <SalesNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} salesId={selectedSalesId || undefined} onSaved={setSelectedSalesId} />}
-          {tScreen === "sales-preview"&& <SalesPreviewScreen lang={lang} onNavigate={navTenant} role={role} salesId={selectedSalesId || undefined} />}
-          {tScreen === "sales-detail" && <SalesDetailScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} salesId={selectedSalesId || undefined} />}
+          {(tScreen === "sales" || tScreen === "sales-list") && (
+            <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المبيعات" messageEn="Something went wrong while loading Sales" onBack={() => navTenant("dashboard")}>
+              <SalesListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedSalesId={setSelectedSalesId} />
+            </ModuleErrorBoundary>
+          )}
+          {tScreen === "sales-new" && (
+            <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المبيعات" messageEn="Something went wrong while loading Sales" onBack={() => navTenant("dashboard")}>
+              <SalesNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} salesId={selectedSalesId || undefined} onSaved={setSelectedSalesId} />
+            </ModuleErrorBoundary>
+          )}
+          {tScreen === "sales-preview" && (
+            <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المبيعات" messageEn="Something went wrong while loading Sales" onBack={() => navTenant("dashboard")}>
+              <SalesPreviewScreen lang={lang} onNavigate={navTenant} role={role} salesId={selectedSalesId || undefined} />
+            </ModuleErrorBoundary>
+          )}
+          {tScreen === "sales-detail" && (
+            <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المبيعات" messageEn="Something went wrong while loading Sales" onBack={() => navTenant("dashboard")}>
+              <SalesDetailScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} salesId={selectedSalesId || undefined} />
+            </ModuleErrorBoundary>
+          )}
           {(tScreen === "purchases" || tScreen === "purchases-list") && <PurchListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedPurchaseId={setSelectedPurchaseId} />}
           {tScreen === "purchases-new"     && <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} onSaved={setSelectedPurchaseId} />}
           {tScreen === "purchases-edit"    && selectedPurchaseId && <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} purchaseId={selectedPurchaseId} onSaved={setSelectedPurchaseId} />}

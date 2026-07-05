@@ -205,7 +205,8 @@ POST /api/v1/tenant/sales/42/approve/
 - [ ] Purchase: Edit existing draft; Approve → stock increases
 - [ ] Product: Edit from list → PATCH 200; refresh persists
 - [ ] Supplier: Edit from list/profile → PATCH 200; refresh persists
-- [ ] Sales: Save draft → POST 201; add line; Approve → stock decreases; credit balance updates
+- [ ] Sales list opens without white screen (including partially-paid invoices)
+- [ ] Sales: **New** invoice opens; Save draft POST 201; credit balance updates
 - [ ] Reports: no demo transaction rows; empty/zero states when no data
 
 ---

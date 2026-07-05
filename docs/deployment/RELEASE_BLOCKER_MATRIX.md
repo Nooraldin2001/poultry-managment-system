@@ -17,6 +17,7 @@
 | Purchase Not Found (code) | **Fixed** | No | Stale ID on new purchase cleared | Deploy + smoke |
 | Product list edit (code) | **Fixed** | No | `products-edit` route + ID | Deploy + smoke |
 | Supplier edit (code) | **Fixed** | No | `suppliers-edit` + PATCH | Deploy + smoke |
+| Sales white screen (code) | **Fixed** | No | `partially_paid` status crash + error boundary | Deploy + smoke |
 | Customer opening balance (code) | **Fixed** | No | Profile modal + opening-balance POST | Deploy + smoke |
 | Customer create (verified) | **Pending** | **Yes** | No owner login in agent session | Manual POST 201 smoke |
 | Product create (code) | **Fixed** | No | `c7d747a` — live POST, category/SKU validation | Deploy + smoke |

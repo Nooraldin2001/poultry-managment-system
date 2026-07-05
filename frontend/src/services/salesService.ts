@@ -5,6 +5,7 @@ import type { ApiListFilters } from "@/services/crud/types";
 import { request } from "./api/client";
 import { ENDPOINTS } from "./api/endpoints";
 import type { SalesInvoiceLineRow, SalesInvoiceRow } from "@/shared/types/entities";
+import { normalizeSalesInvoiceStatus } from "@/shared/utils/invoiceStatus";
 import * as salesMock from "./mock/salesService.mock";
 
 const crud = createCrudService<ApiSalesList, ApiSalesDetail>(ENDPOINTS.tenant.sales);
@@ -61,7 +62,7 @@ export function mapApiSalesToRow(row: ApiSalesList): SalesInvoiceRow {
     customerId: String(row.customer),
     date: row.invoice_date,
     dueDate: row.due_date ?? undefined,
-    status: row.status,
+    status: normalizeSalesInvoiceStatus(row.status),
     paymentStatus: row.payment_status,
     subtotal: parseAmount(row.subtotal),
     vat: parseAmount(row.vat_amount),

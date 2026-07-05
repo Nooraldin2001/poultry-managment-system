@@ -1,40 +1,64 @@
-# Sales Module Audit
+# Sales Module Audit — White Screen Fix
 
 - **Date (UTC):** 2026-07-05
-- **Tenant reference:** Any tenant (verified on `firstview` after deploy)
+- **Tenant:** `firstview` — `https://firstview.poultryhero.solutions`
+- **Issue (AR):** `المبيعات بقت صفحة بيضة بس` — Sales page blank white screen (mobile Safari reported)
 
-## Recent fixes
+## Root cause
 
-### Users & Permissions (cross-cutting)
-
-- `GET /tenant/users/` now requires `users.view` (not `users.manage`).
-- Frontend `userService` aligned with `{ effective, overrides }` API contract.
-
-### Cancelled invoices
-
-- Default list excludes `cancelled` unless `?status=cancelled` or `?include_cancelled=1`.
-- Cancel modal calls `POST /tenant/sales/{id}/cancel/` with required reason.
-- Success toast: **تم إلغاء الفاتورة بنجاح** / **Invoice cancelled successfully**.
-
-### Price override & history
-
-- Owner/admin can edit line `unit_price` on draft sales invoices.
-- `GET /tenant/sales/price-history/` returns real prior prices (invoices + customer special).
-- See [PRICING_OVERRIDE_AND_HISTORY.md](./PRICING_OVERRIDE_AND_HISTORY.md).
-
-## Status
-
-| Area | Status |
+| Layer | Problem |
 | --- | --- |
-| List filter (hide cancelled) | Fixed (backend + frontend) |
-| Cancel with reason | Fixed |
-| Price override | Fixed |
-| Historical price dropdown | Fixed |
-| Reports exclude cancelled | Already enforced in `reports/services.py` |
+| **Status mapping** | Backend returns `status: "partially_paid"`; UI `SInvStatusBadge` only mapped `partial` → `cfg` undefined → **render crash** (`Cannot read properties of undefined (reading 'bg')`) |
+| **Error boundary** | No route-level error boundary — React render throw blanked content area |
+| **Cache (mobile)** | Stale `index.html` could reference old hashed JS chunks after deploy (mitigated in nginx config) |
 
-## Manual smoke
+## Fix
 
-1. Sales list default = active (no cancelled).
-2. Filter **ملغاة** shows cancelled invoices.
-3. Admin edits price on draft line → approve → print matches.
-4. Previous price dropdown loads after customer + product selected.
+| Area | Change |
+| --- | --- |
+| `invoiceStatus.ts` | `normalizeSalesInvoiceStatus()` maps `partially_paid` → `partial` |
+| `salesService.ts` | `mapApiSalesToRow()` normalizes status at API boundary |
+| `App.tsx` | `SInvStatusBadge` defensive fallback; list uses normalized status + safe `(saleRows ?? [])` |
+| `ModuleErrorBoundary` | Wraps all `sales-*` routes with AR/EN error card + Retry / Back |
+| `createCrudService.ts` | Safe `results` array when paginated response malformed |
+| Nginx | `index.html` no-cache; `/assets/` immutable long cache |
+
+## Expected console error (before fix)
+
+```text
+TypeError: Cannot read properties of undefined (reading 'bg')
+  at SInvStatusBadge (App.tsx)
+```
+
+Triggered when any sales invoice has `status: "partially_paid"`.
+
+## API
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/api/v1/tenant/sales/` | List; status values include `partially_paid` |
+| GET | `/api/v1/tenant/sales/{id}/` | Detail |
+
+## UI states (Sales list)
+
+| State | Component |
+| --- | --- |
+| Loading | `LoadingState` |
+| Empty | Empty card + New Invoice button |
+| 403 | `PermissionDeniedState` |
+| API/network error | `ErrorState` + Retry |
+| Render throw | `ModuleErrorBoundary` card |
+
+## Tests / checks
+
+- `pnpm run typecheck` — Pass
+- `pnpm run build` — Pass
+- Backend sales tests unchanged (no backend change)
+
+## Production verification
+
+1. Login First View owner → Sales → list renders (no white screen)
+2. If any partially-paid invoice exists → status badge shows "Partial" / "مدفوعة جزئياً"
+3. Mobile Safari → scroll list, tap New Invoice
+4. Hard refresh / incognito → no blank screen
+5. DevTools → no JS chunk 404 on `/assets/index-*.js`

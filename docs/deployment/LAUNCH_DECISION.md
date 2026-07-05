@@ -9,7 +9,7 @@
 
 # **NO-GO** (pending deploy `88822cd` + manual ERP smoke on First View)
 
-Code fixes for purchase Not Found, product list edit, and supplier PATCH edit are on `main` (`88822cd`). Prior Phase 5 fixes (`7a54574`) were deployed earlier. **Deploy `88822cd` on VPS, then run First View owner smoke** for purchase/product/supplier edit flows.
+Code fixes for purchase Not Found, product/supplier edit, and **Sales white screen** are on `main`. **Deploy on VPS, then run First View owner smoke** for sales list, purchase, product, and supplier flows.
 
 ---
 

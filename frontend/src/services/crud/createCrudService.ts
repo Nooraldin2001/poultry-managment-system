@@ -23,12 +23,12 @@ export function createCrudService<
 
   async function listAll(filters?: ApiListFilters): Promise<TList[]> {
     const first = await list({ ...filters, page: 1, page_size: filters?.page_size ?? 100 });
-    const items = [...first.results];
+    const items = [...(Array.isArray(first.results) ? first.results : [])];
     let nextUrl = first.next;
     let page = 2;
     while (nextUrl && page <= 20) {
       const chunk = await list({ ...filters, page, page_size: filters?.page_size ?? 100 });
-      items.push(...chunk.results);
+      items.push(...(Array.isArray(chunk.results) ? chunk.results : []));
       nextUrl = chunk.next;
       page += 1;
       if (!chunk.results.length) break;
