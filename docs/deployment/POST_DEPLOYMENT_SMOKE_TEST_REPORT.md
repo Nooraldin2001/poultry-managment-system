@@ -670,7 +670,7 @@ See: [PRODUCT_MODULE_AUDIT.md](./PRODUCT_MODULE_AUDIT.md), [EXPENSE_MODULE_AUDIT
 |---|---|
 | `pytest` purchases/products/suppliers/inventory | **96 passed** |
 | `pnpm run typecheck` / `build` | **Pass** |
-| Commit + push | **Done** — `88822cd` on `main` |
-| VPS deploy | **Pending** — run on server: `git pull && bash scripts/deploy_vps.sh && bash scripts/check_no_production_mock_data.sh` |
+| Commit + push | **Done** — `88822cd`, `22c4ba0`, allowlist fix |
+| VPS deploy | **Pending** — production still on `index--O_NXaJC.js` (pre-`88822cd`). Run deploy in SSH session. |
 | First View credentialed smoke | **Pending deploy + owner login** |
 
