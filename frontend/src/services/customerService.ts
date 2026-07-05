@@ -172,6 +172,17 @@ export async function updateCustomer(id: string, payload: Record<string, unknown
   return mapApiCustomerToRow(row);
 }
 
+export async function updateCustomerOpeningBalance(
+  id: string,
+  payload: { opening_balance: string; opening_balance_type: string; reason: string },
+): Promise<CustomerRow> {
+  const row = await request<ApiCustomerList>(ENDPOINTS.tenant.customerOpeningBalance(id), {
+    method: "POST",
+    body: payload,
+  });
+  return mapApiCustomerToRow(row);
+}
+
 export async function getCustomerLedger(id: string): Promise<CustomerLedgerEntry[]> {
   if (IS_MOCK_MODE) return [];
   const data = await request<{ results?: unknown[] } | unknown[]>(`${ENDPOINTS.tenant.customer(id)}ledger/`);
@@ -183,6 +194,7 @@ export async function getCustomerLedger(id: string): Promise<CustomerLedgerEntry
     debit: parseAmount(r.debit as string),
     credit: parseAmount(r.credit as string),
     balance: parseAmount((r.balance_after ?? r.balance) as string),
+    entryType: String(r.entry_type ?? ""),
   }));
 }
 

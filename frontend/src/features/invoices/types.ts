@@ -26,6 +26,8 @@ export interface InvoiceLineDraft {
   lineSubtotal: number;
   lineTotal: number;
   notes?: string;
+  /** When true, manual KG edits are preserved (variable-weight products). */
+  kgOverride?: boolean;
 }
 
 export interface InvoiceHeaderDraft {

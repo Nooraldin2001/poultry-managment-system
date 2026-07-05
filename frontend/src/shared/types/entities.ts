@@ -58,6 +58,7 @@ export interface CustomerLedgerEntry {
   debit: number;
   credit: number;
   balance: number;
+  entryType?: string;
 }
 
 export interface CustomerSpecialPrice {
@@ -137,6 +138,9 @@ export interface PurchaseInvoiceLineRow {
   productId: string;
   productName: string;
   qty: number;
+  cartons?: number;
+  pieces?: number;
+  kg?: number;
   unit: string;
   price: number;
   total: number;
@@ -164,6 +168,9 @@ export interface SalesInvoiceLineRow {
   productId: string;
   productName: string;
   qty: number;
+  cartons?: number;
+  pieces?: number;
+  kg?: number;
   unit: string;
   price: number;
   total: number;

@@ -14,10 +14,26 @@ import type { InvoiceLineDraft } from "./types";
 import type { LinePayloadOptions } from "./invoiceApi";
 import { addDraftLine, createDraftHeader, patchDraftHeader, removeDraftLine, updateDraftLine } from "./invoiceApi";
 import { applyLineTotals } from "./lineTotals";
+import { deriveQuantitiesFromCartons } from "./lineQuantities";
 import { PurchaseLinePriceCell } from "./PurchaseLinePriceCell";
 import { canOverridePurchasePrice } from "@/shared/utils/permissions";
 import { ReasonModal } from "./ReasonModal";
 import { parseAmount } from "@/services/crud/parse";
+import type { ProductRow } from "@/shared/types/entities";
+
+function recalcLineFromProduct(line: InvoiceLineDraft, prod: ProductRow | undefined): InvoiceLineDraft {
+  if (!prod) return line;
+  const derived = deriveQuantitiesFromCartons({
+    weightGrams: prod.g || 0,
+    piecesPerCarton: prod.ppc || 0,
+    cartons: line.cartons,
+    loosePieces: 0,
+    productType: prod.type,
+    kgOverride: line.kgOverride,
+    manualKg: line.kg,
+  });
+  return { ...line, pieces: derived.pieces, kg: derived.kg };
+}
 
 type Props = {
   lang: Lang;
@@ -70,9 +86,9 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
           serverId: l.id,
           productId: l.productId,
           productName: l.productName,
-          cartons: 0,
-          pieces: l.qty,
-          kg: l.qty,
+          cartons: l.cartons ?? 0,
+          pieces: l.pieces ?? l.qty,
+          kg: l.kg ?? l.qty,
           unitPrice: l.price,
           priceType: "piece",
           vatRate: 5,
@@ -151,19 +167,20 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     setSaving(true);
     try {
       const id = await ensureDraft();
-      const draft: InvoiceLineDraft = {
+      const draftBase: InvoiceLineDraft = {
         id: `tmp-${Date.now()}`,
         productId,
         productName: prod.nameAr,
         cartons: 1,
-        pieces: prod.ppc || 0,
-        kg: prod.g ? (prod.ppc * prod.g) / 1000 : 0,
+        pieces: 0,
+        kg: 0,
         unitPrice: prod.buyP || prod.saleP,
-        priceType: "piece",
+        priceType: prod.buyPT ?? prod.salePT ?? "kg",
         vatRate: 5,
         lineSubtotal: 0,
         lineTotal: 0,
       };
+      const draft = recalcLineFromProduct(draftBase, prod);
       const finalized = applyLineTotals(draft);
       const serverId = await addDraftLine("purchase", id, finalized);
       setLines((prev) => [...prev, { ...finalized, serverId }]);
@@ -191,8 +208,16 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     await updateDraftLine("purchase", docId, line.serverId, line, payloadOpts);
   };
 
-  const updateLine = (next: InvoiceLineDraft) => {
-    const withTotals = applyLineTotals(next);
+  const updateLine = (next: InvoiceLineDraft, options?: { skipQuantityRecalc?: boolean; kgOverride?: boolean }) => {
+    const prod = products.find((p) => p.id === next.productId);
+    let merged = next;
+    if (options?.kgOverride) {
+      merged = { ...next, kgOverride: true };
+    }
+    if (!options?.skipQuantityRecalc && !merged.kgOverride) {
+      merged = recalcLineFromProduct(merged, prod);
+    }
+    const withTotals = applyLineTotals(merged);
     setLines((prev) => prev.map((l) => (l.id === withTotals.id ? withTotals : l)));
     void persistLine(withTotals);
   };
@@ -284,12 +309,30 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
           </div>
           <div className="bg-white rounded-2xl border overflow-x-auto">
             <table className="w-full text-sm min-w-[560px]">
-              <thead><tr className="bg-slate-50 border-b"><th className="p-2">{isRTL ? "المنتج" : "Product"}</th><th className="p-2">KG</th><th className="p-2">{isRTL ? "السعر" : "Price"}</th><th className="p-2" /></tr></thead>
+              <thead><tr className="bg-slate-50 border-b"><th className="p-2">{isRTL ? "المنتج" : "Product"}</th><th className="p-2">{isRTL ? "كرتون" : "Ct"}</th><th className="p-2">KG</th><th className="p-2">{isRTL ? "السعر" : "Price"}</th><th className="p-2" /></tr></thead>
               <tbody>
                 {lines.map((line) => (
                   <tr key={line.id} className="border-b">
                     <td className="p-2 font-semibold">{line.productName}</td>
-                    <td className="p-2"><input type="number" disabled={!isDraft} className="w-20 border rounded px-1" value={line.kg} onChange={(e) => { updateLine({ ...line, kg: Number(e.target.value) }); }} /></td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        disabled={!isDraft}
+                        className="w-16 border rounded px-1"
+                        value={line.cartons}
+                        onChange={(e) => updateLine({ ...line, cartons: Number(e.target.value) })}
+                      />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        disabled={!isDraft}
+                        readOnly={!!products.find((p) => p.id === line.productId && p.type === "fixed" && (p.g ?? 0) > 0)}
+                        className="w-20 border rounded px-1"
+                        value={line.kg}
+                        onChange={(e) => updateLine({ ...line, kg: Number(e.target.value) }, { kgOverride: true })}
+                      />
+                    </td>
                     <td className="p-2">
                       <PurchaseLinePriceCell
                         lang={lang}

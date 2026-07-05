@@ -245,20 +245,41 @@ export function buildProductCreatePayload(form: {
   minCartons?: number;
   minKg?: number;
 }): Record<string, unknown> {
-  const typeMap: Record<string, string> = {
-    fixed: "fixed_weight",
-    moving: "moving_weight",
-    part: "chicken_part",
-    byproduct: "by_product",
-    service: "service",
-    other: "other",
-  };
+  return buildProductFormPayload(form);
+}
+
+const PRODUCT_TYPE_MAP: Record<string, string> = {
+  fixed: "fixed_weight",
+  moving: "moving_weight",
+  part: "chicken_part",
+  byproduct: "by_product",
+  service: "service",
+  other: "other",
+};
+
+function buildProductFormPayload(form: {
+  nameAr: string;
+  nameEn: string;
+  sku: string;
+  categoryId: number;
+  productType: string;
+  weightGrams?: number;
+  piecesPerCarton?: number;
+  salesPrice: number;
+  salesPriceType: string;
+  purchasePrice: number;
+  purchasePriceType: string;
+  trackInventory: boolean;
+  vatTaxable: boolean;
+  minCartons?: number;
+  minKg?: number;
+}): Record<string, unknown> {
   return {
-    name_ar: form.nameAr,
-    name_en: form.nameEn,
-    sku: form.sku,
+    name_ar: form.nameAr.trim(),
+    name_en: (form.nameEn.trim() || form.nameAr.trim()),
+    sku: form.sku.trim(),
     category: form.categoryId,
-    product_type: typeMap[form.productType] ?? "other",
+    product_type: PRODUCT_TYPE_MAP[form.productType] ?? "other",
     weight_grams: form.weightGrams ?? null,
     default_pieces_per_carton: form.piecesPerCarton ?? null,
     sales_price: String(form.salesPrice),
@@ -270,4 +291,68 @@ export function buildProductCreatePayload(form: {
     minimum_stock_cartons: form.minCartons != null ? String(form.minCartons) : "0",
     minimum_stock_kg: form.minKg != null ? String(form.minKg) : "0",
   };
+}
+
+export type ProductFormSnapshot = {
+  nameAr: string;
+  nameEn: string;
+  sku: string;
+  categoryId: number;
+  productType: string;
+  weightGrams?: number;
+  piecesPerCarton?: number;
+  salesPrice: number;
+  salesPriceType: string;
+  purchasePrice: number;
+  purchasePriceType: string;
+  trackInventory: boolean;
+  vatTaxable: boolean;
+  minCartons?: number;
+  minKg?: number;
+};
+
+export function buildProductUpdatePayload(
+  form: ProductFormSnapshot,
+  loaded?: ProductFormSnapshot | null,
+  reason?: string,
+): Record<string, unknown> {
+  const full = buildProductFormPayload(form);
+  if (!loaded) {
+    return reason ? { ...full, reason } : full;
+  }
+
+  const payload: Record<string, unknown> = {};
+  const loadedPayload = buildProductFormPayload(loaded);
+  for (const [key, value] of Object.entries(full)) {
+    if (loadedPayload[key] !== value) {
+      payload[key] = value;
+    }
+  }
+
+  const priceKeys = ["sales_price", "sales_price_type", "purchase_price", "purchase_price_type"];
+  const cartonKeys = ["weight_grams", "default_pieces_per_carton"];
+  const sensitiveChanged =
+    priceKeys.some((k) => k in payload) || cartonKeys.some((k) => k in payload);
+
+  if (Object.keys(payload).length === 0) {
+    return { name_ar: full.name_ar };
+  }
+  if (sensitiveChanged && reason) {
+    payload.reason = reason;
+  }
+  return payload;
+}
+
+export function productFormNeedsReason(
+  form: ProductFormSnapshot,
+  loaded: ProductFormSnapshot | null,
+): boolean {
+  if (!loaded) return false;
+  const patch = buildProductUpdatePayload(form, loaded);
+  const priceKeys = ["sales_price", "sales_price_type", "purchase_price", "purchase_price_type"];
+  const cartonKeys = ["weight_grams", "default_pieces_per_carton"];
+  return (
+    priceKeys.some((k) => k in patch) ||
+    cartonKeys.some((k) => k in patch)
+  );
 }

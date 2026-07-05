@@ -13,8 +13,10 @@ import { ApiError } from "@/services/api/errors";
 import type { InvoiceLineDraft } from "./types";
 import type { LinePayloadOptions } from "./invoiceApi";
 import { applyLineTotals } from "./lineTotals";
+import { deriveQuantitiesFromCartons } from "./lineQuantities";
 import { SalesLinePriceCell } from "./SalesLinePriceCell";
 import { canOverrideSalesPrice } from "@/shared/utils/permissions";
+import type { ProductRow } from "@/shared/types/entities";
 import {
   addDraftLine,
   createDraftHeader,
@@ -24,6 +26,20 @@ import {
 } from "./invoiceApi";
 import { ReasonModal } from "./ReasonModal";
 import { parseAmount } from "@/services/crud/parse";
+
+function recalcLineFromProduct(line: InvoiceLineDraft, prod: ProductRow | undefined): InvoiceLineDraft {
+  if (!prod) return line;
+  const derived = deriveQuantitiesFromCartons({
+    weightGrams: prod.g || 0,
+    piecesPerCarton: prod.ppc || 0,
+    cartons: line.cartons,
+    loosePieces: 0,
+    productType: prod.type,
+    kgOverride: line.kgOverride,
+    manualKg: line.kg,
+  });
+  return { ...line, pieces: derived.pieces, kg: derived.kg };
+}
 
 type Props = {
   lang: Lang;
@@ -80,9 +96,9 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
           serverId: l.id,
           productId: l.productId,
           productName: l.productName,
-          cartons: 0,
-          pieces: l.qty,
-          kg: l.qty,
+          cartons: l.cartons ?? 0,
+          pieces: l.pieces ?? l.qty,
+          kg: l.kg ?? l.qty,
           unitPrice: l.price,
           priceType: (l.unit as "kg") || "kg",
           vatRate: 5,
@@ -154,19 +170,20 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
     setFieldErrors({});
     try {
       const id = await ensureDraft();
-      const draft: InvoiceLineDraft = {
+      const draftBase: InvoiceLineDraft = {
         id: `tmp-${Date.now()}`,
         productId,
         productName: isRTL ? prod.nameAr : prod.nameEn,
         cartons: 1,
-        pieces: prod.ppc || 0,
-        kg: prod.g ? (prod.ppc * prod.g) / 1000 : 0,
+        pieces: 0,
+        kg: 0,
         unitPrice: prod.saleP,
         priceType: prod.salePT,
         vatRate: 5,
         lineSubtotal: 0,
         lineTotal: 0,
       };
+      const draft = recalcLineFromProduct(draftBase, prod);
       let withTotals = applyLineTotals(draft);
       try {
         const preview = await salesPricePreview({
@@ -204,8 +221,16 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
     await updateDraftLine("sales", docId, line.serverId, line, payloadOpts);
   };
 
-  const updateLine = (next: InvoiceLineDraft) => {
-    const withTotals = applyLineTotals(next);
+  const updateLine = (next: InvoiceLineDraft, options?: { skipQuantityRecalc?: boolean; kgOverride?: boolean }) => {
+    const prod = products.find((p) => p.id === next.productId);
+    let merged = next;
+    if (options?.kgOverride) {
+      merged = { ...next, kgOverride: true };
+    }
+    if (!options?.skipQuantityRecalc && !merged.kgOverride) {
+      merged = recalcLineFromProduct(merged, prod);
+    }
+    const withTotals = applyLineTotals(merged);
     setLines((prev) => prev.map((l) => (l.id === withTotals.id ? withTotals : l)));
     void persistLine(withTotals);
   };
@@ -397,8 +422,11 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
                           value={line.kg}
                           onChange={(e) => {
                             const kg = Number(e.target.value);
-                            updateLine({ ...line, kg });
+                            updateLine({ ...line, kg }, { kgOverride: true });
                           }}
+                          readOnly={
+                            !!products.find((p) => p.id === line.productId && p.type === "fixed" && (p.g ?? 0) > 0)
+                          }
                         />
                       </td>
                       <td className="p-2">

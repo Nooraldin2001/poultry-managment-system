@@ -13,9 +13,10 @@ import { toast } from "sonner";
 import { useProducts, useProductDetail } from "@/hooks/api/useTenantResources";
 import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
 import { FormErrors } from "@/shared/components/FormErrors";
-import { createProduct, updateProduct, getProductRow, buildProductCreatePayload, listProductCategories, createProductCategory } from "@/services/productService";
+import { createProduct, updateProduct, getProductRow, buildProductCreatePayload, buildProductUpdatePayload, productFormNeedsReason, type ProductFormSnapshot, listProductCategories, createProductCategory } from "@/services/productService";
 import { IS_MOCK_MODE } from "@/services/config";
 import { ApiError } from "@/services/api/errors";
+import { ReasonModal } from "@/features/invoices/ReasonModal";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -414,6 +415,9 @@ export function AddProductScreen({ lang, role, onNavigate, productId }: { lang: 
   const [saveError, setSaveError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(Boolean(productId) && !IS_MOCK_MODE);
+  const [loadedSnapshot, setLoadedSnapshot] = useState<ProductFormSnapshot | null>(null);
+  const [showReasonModal, setShowReasonModal] = useState(false);
+  const [pendingAddAnother, setPendingAddAnother] = useState(false);
 
   useEffect(() => {
     if (IS_MOCK_MODE) {
@@ -443,14 +447,33 @@ export function AddProductScreen({ lang, role, onNavigate, productId }: { lang: 
         setCat(String(p.categoryId ?? ""));
         setType((p.type as ProductType) ?? "fixed");
         setActive(p.active !== false);
-        setGrams(p.g ? String(p.g) : "");
-        setPpc(p.ppc ? String(p.ppc) : "10");
-        setSaleP(p.saleP ? String(p.saleP) : "");
+        setGrams(p.g != null && p.g > 0 ? String(p.g) : "");
+        setPpc(p.ppc != null && p.ppc > 0 ? String(p.ppc) : "10");
+        setSaleP(p.saleP != null ? String(p.saleP) : "");
         setSalePT((p.salePT as PriceType) ?? "kg");
-        setBuyP(p.buyP ? String(p.buyP) : "");
+        setBuyP(p.buyP != null ? String(p.buyP) : "");
         setBuyPT((p.buyPT as PriceType) ?? "piece");
         setTrackInv(p.trackInv !== false);
         setVatT(p.vatT !== false);
+        setMinCt(p.minCt != null ? String(p.minCt) : "");
+        setMinKg(p.minKg != null ? String(p.minKg) : "");
+        setLoadedSnapshot({
+          nameAr: p.nameAr,
+          nameEn: p.nameEn,
+          sku: p.sku ?? "",
+          categoryId: p.categoryId ?? 0,
+          productType: (p.type as string) ?? "fixed",
+          weightGrams: p.g,
+          piecesPerCarton: p.ppc,
+          salesPrice: p.saleP,
+          salesPriceType: p.salePT,
+          purchasePrice: p.buyP,
+          purchasePriceType: p.buyPT,
+          trackInventory: p.trackInv !== false,
+          vatTaxable: p.vatT !== false,
+          minCartons: p.minCt,
+          minKg: p.minKg,
+        });
       })
       .finally(() => setLoadingProduct(false));
   }, [productId]);
@@ -458,6 +481,45 @@ export function AddProductScreen({ lang, role, onNavigate, productId }: { lang: 
   const categoryOptions = IS_MOCK_MODE
     ? [{ value: "", label: isRTL ? "اختر التصنيف" : "Select Category" }, ...PROD_CATEGORIES.map(c => ({ value: c.key, label: isRTL ? c.ar : c.en }))]
     : [{ value: "", label: isRTL ? "اختر التصنيف" : "Select Category" }, ...categories];
+
+  const buildFormSnapshot = (): ProductFormSnapshot => ({
+    nameAr,
+    nameEn,
+    sku,
+    categoryId: Number(cat),
+    productType: type,
+    weightGrams: parseFloat(grams) || undefined,
+    piecesPerCarton: parseFloat(ppc) || undefined,
+    salesPrice: parseFloat(saleP) || 0,
+    salesPriceType: salePT,
+    purchasePrice: parseFloat(buyP) || 0,
+    purchasePriceType: buyPT,
+    trackInventory: trackInv,
+    vatTaxable: vatT,
+    minCartons: minCt ? parseFloat(minCt) : undefined,
+    minKg: minKg ? parseFloat(minKg) : undefined,
+  });
+
+  const persistProduct = async (addAnother: boolean, reason?: string) => {
+    const categoryId = Number(cat);
+    const form = buildFormSnapshot();
+    const payload = isEdit && productId
+      ? buildProductUpdatePayload(form, loadedSnapshot, reason)
+      : buildProductCreatePayload(form);
+    if (isEdit && productId) {
+      await updateProduct(productId, payload);
+    } else {
+      await createProduct(payload);
+    }
+    toast.success(isRTL ? "تم حفظ المنتج بنجاح" : "Product saved");
+    if (addAnother && !isEdit) {
+      setNameAr(""); setNameEn(""); setSku(""); setGrams(""); setSaleP(""); setBuyP(""); setCat("");
+    } else if (isEdit && productId) {
+      onNavigate("product-detail");
+    } else {
+      onNavigate("products");
+    }
+  };
 
   const handleSave = async (addAnother: boolean) => {
     if (!nameAr.trim() || !cat) {
@@ -491,36 +553,30 @@ export function AddProductScreen({ lang, role, onNavigate, productId }: { lang: 
       return;
     }
     try {
-      const payload = buildProductCreatePayload({
-        nameAr,
-        nameEn,
-        sku,
-        categoryId,
-        productType: type,
-        weightGrams: parseFloat(grams) || undefined,
-        piecesPerCarton: parseFloat(ppc) || undefined,
-        salesPrice: parseFloat(saleP) || 0,
-        salesPriceType: salePT,
-        purchasePrice: parseFloat(buyP) || 0,
-        purchasePriceType: buyPT,
-        trackInventory: trackInv,
-        vatTaxable: vatT,
-        minCartons: minCt ? parseFloat(minCt) : undefined,
-        minKg: minKg ? parseFloat(minKg) : undefined,
-      });
-      if (isEdit && productId) {
-        await updateProduct(productId, payload);
-      } else {
-        await createProduct(payload);
+      const form = buildFormSnapshot();
+      if (isEdit && productFormNeedsReason(form, loadedSnapshot)) {
+        setPendingAddAnother(addAnother);
+        setShowReasonModal(true);
+        setSaving(false);
+        return;
       }
-      toast.success(isRTL ? "تم حفظ المنتج بنجاح" : "Product saved");
-      if (addAnother && !isEdit) {
-        setNameAr(""); setNameEn(""); setSku(""); setGrams(""); setSaleP(""); setBuyP(""); setCat("");
-      } else if (isEdit && productId) {
-        onNavigate("product-detail");
-      } else {
-        onNavigate("products");
-      }
+      await persistProduct(addAnother);
+    } catch (err) {
+      setSaveError(err);
+      if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل الحفظ" : "Save failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveWithReason = async (reason: string) => {
+    setSaving(true);
+    setSaveError(null);
+    setFieldErrors({});
+    try {
+      await persistProduct(pendingAddAnother, reason);
+      setShowReasonModal(false);
     } catch (err) {
       setSaveError(err);
       if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
@@ -688,6 +744,18 @@ export function AddProductScreen({ lang, role, onNavigate, productId }: { lang: 
           <Btn disabled={!nameAr.trim() || !cat || !sku.trim() || saving || (!IS_MOCK_MODE && categories.length === 0)} onClick={() => void handleSave(false)}><Check size={15} />{isEdit ? (isRTL ? "حفظ التعديلات" : "Save Changes") : (isRTL ? "حفظ المنتج" : "Save Product")}</Btn>
         </div>
       </div>
+      {showReasonModal && (
+        <ReasonModal
+          lang={lang}
+          titleAr="سبب تغيير السعر أو قواعد الكرتون"
+          titleEn="Reason for price or carton rule change"
+          confirmLabelAr="حفظ"
+          confirmLabelEn="Save"
+          loading={saving}
+          onClose={() => setShowReasonModal(false)}
+          onConfirm={handleSaveWithReason}
+        />
+      )}
     </div>
   );
 }

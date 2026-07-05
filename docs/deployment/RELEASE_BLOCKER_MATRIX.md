@@ -11,6 +11,11 @@
 | Tenant subdomain | Pass | No | Poultry Hero loads on `firstview` | — |
 | Tenant login API | Pass | No | JSON 401 for bad creds | — |
 | Customer create (code) | **Fixed** | No | `ded78f1` + later commits | — |
+| Product edit (code) | **Fixed** | No | Reason modal + PATCH payload mapper | Deploy + smoke |
+| Expense create (code) | **Fixed** | No | Live POST + list mapper fix | Deploy + smoke |
+| Expense category create (code) | **Fixed** | No | Auto `code` on POST | Deploy + smoke |
+| Carton/KG auto-calc (code) | **Fixed** | No | `lineQuantities.ts` sales + purchase | Deploy + smoke |
+| Customer opening balance (code) | **Fixed** | No | Profile modal + opening-balance POST | Deploy + smoke |
 | Customer create (verified) | **Pending** | **Yes** | No owner login in agent session | Manual POST 201 smoke |
 | Product create (code) | **Fixed** | No | `c7d747a` — live POST, category/SKU validation | Deploy + smoke |
 | Supplier create (code) | **Fixed** | No | `c7d747a` | Deploy + smoke |
@@ -29,7 +34,7 @@
 | Category | Count |
 |---|---:|
 | **Code blockers** | **0** |
-| **Pending manual verification** | **5** (customer, product, sales, purchase, reports) |
-| **Pending deploy** | **1** (`0998fa0` purchase module fix) |
+| **Pending manual verification** | **8** (product edit, expense, category, carton calc, opening balance, customer create, sales, purchase) |
+| **Pending deploy** | **1** (Phase 5 fixes uncommitted) |
 
 See [TENANT_CREATE_WORKFLOW_AUDIT.md](../frontend/TENANT_CREATE_WORKFLOW_AUDIT.md).

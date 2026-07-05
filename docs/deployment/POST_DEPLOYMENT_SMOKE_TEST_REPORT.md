@@ -599,3 +599,60 @@ Docs: [PRICING_OVERRIDE_AND_HISTORY.md](./PRICING_OVERRIDE_AND_HISTORY.md), [SAL
 
 See [CUSTOMER_MODULE_AUDIT.md](./CUSTOMER_MODULE_AUDIT.md).
 
+---
+
+## Phase 5 — First View production blockers (2026-07-05)
+
+**Tenant:** `firstview` (`https://firstview.poultryhero.solutions`)  
+**Mock mode:** `VITE_USE_MOCK_DATA=false` (unchanged)
+
+### Root causes and fixes
+
+| Client issue (AR) | Root cause | Fix |
+|---|---|---|
+| تعديل المنتجات مش بتتعدل | PATCH sent full create payload without required `reason` on price/carton changes → 400; incomplete form hydration | `buildProductUpdatePayload()`, `ReasonModal` on sensitive changes, fixed prefill |
+| مش بيضيف مصروف | Create POST worked but list mapper used `amount`/`notes` instead of `total_amount`/`title` → AED 0 rows | Fixed `mapApiExpenseToRow()` |
+| ولا بيضيف تصنيف المصروفات | POST missing required `code` field → 400 | Auto-generate `code` in `createExpenseCategory()` |
+| KG not auto from cartons | Cartons change did not recalc KG; purchase screen lacked cartons column | `lineQuantities.ts` + wired sales/purchase invoice screens |
+| تعديل الرصيد الافتتاحي | No frontend for `POST …/opening-balance/` | Profile modal + `updateCustomerOpeningBalance()` |
+
+### Carton calculation rule
+
+```text
+kg_per_piece = weight_grams / 1000
+total_pieces = cartons × pieces_per_carton + loose_pieces
+total_kg = total_pieces × kg_per_piece
+```
+
+Example: 500g × 10 ppc × 10 cartons = **50 KG** (100 pieces).
+
+### API endpoints (live mode)
+
+| Workflow | Endpoint |
+|---|---|
+| Product edit | `PATCH /api/v1/tenant/products/{id}/` (+ `reason` when price/carton changes) |
+| Expense create | `POST /api/v1/tenant/expenses/` |
+| Expense category | `POST /api/v1/tenant/expense-categories/` |
+| Opening balance | `POST /api/v1/tenant/customers/{id}/opening-balance/` |
+
+### Checks (local)
+
+| Check | Result |
+|---|---|
+| `pytest tests/test_products.py tests/test_expenses.py tests/test_customers.py tests/test_purchases.py tests/test_sales.py` | **152 passed** |
+| `python manage.py check` | **Pass** |
+| `corepack pnpm run typecheck` | **Pass** |
+| `corepack pnpm run build` | **Pass** |
+
+### Deployment / production verification
+
+| Step | Status |
+|---|---|
+| Commit + push to `main` | **Pending** (uncommitted local changes) |
+| VPS deploy | **Not run** (SSH unavailable / pending owner) |
+| First View credentialed smoke | **Pending deploy + owner login** |
+
+**Launch stance (Phase 5):** **NO-GO** until deploy + First View owner verification.
+
+See: [PRODUCT_MODULE_AUDIT.md](./PRODUCT_MODULE_AUDIT.md), [EXPENSE_MODULE_AUDIT.md](./EXPENSE_MODULE_AUDIT.md), [CUSTOMER_MODULE_AUDIT.md](./CUSTOMER_MODULE_AUDIT.md).
+

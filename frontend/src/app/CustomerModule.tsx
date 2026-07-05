@@ -21,10 +21,11 @@ import {
   getCustomerDetail,
   listCustomerCategories,
   updateCustomer,
+  updateCustomerOpeningBalance,
 } from "@/services/customerService";
 import { ApiError } from "@/services/api/errors";
 import { FormErrors } from "@/shared/components/FormErrors";
-import { canCreateCustomer, canEditCustomer } from "@/shared/utils/permissions";
+import { canCreateCustomer, canEditCustomer, canEditCustomerOpeningBalance } from "@/shared/utils/permissions";
 import { useCustomerProfileTabs, type CustomerProfileTabKey } from "@/features/profiles/useCustomerProfileTabs";
 import { ProfileTabBody } from "@/features/profiles/ProfileTabState";
 import { LiveCustomerCollectionModal } from "@/features/payments/LivePaymentModals";
@@ -705,7 +706,22 @@ export function CustomerProfileScreen({ lang, role, permissions = [], onNavigate
   const [showCreditOverride, setShowCreditOverride] = useState(false);
   const [showSpecialPriceModal, setShowSpecialPriceModal] = useState(false);
   const [showWhatsApp, setShowWhatsApp] = useState(false);
+  const [showOpeningBalance, setShowOpeningBalance] = useState(false);
+  const [openingBalanceMode, setOpeningBalanceMode] = useState<"edit" | "adjustment">("edit");
+  const [customerFinancials, setCustomerFinancials] = useState<{ openingBalance: number; openingBalanceType: string } | null>(null);
   const profileTabs = useCustomerProfileTabs(customerId, tab as CustomerProfileTabKey);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE || !customerId) return;
+    void getCustomerDetail(customerId).then((detail) => {
+      if (detail) {
+        setCustomerFinancials({
+          openingBalance: detail.openingBalance,
+          openingBalanceType: detail.openingBalanceType,
+        });
+      }
+    });
+  }, [customerId]);
 
   const { item: row, loading, error, forbidden, reload } = useCustomerDetail(
     customerId,
@@ -721,8 +737,14 @@ export function CustomerProfileScreen({ lang, role, permissions = [], onNavigate
   const c = row ? toModuleCustomer(row) : null;
   if (!c) return <EmptyState lang={lang} messageAr="لا يوجد عملاء بعد" messageEn="No customers yet" />;
   const canEdit = canEditCustomer(role, permissions);
+  const canEditOpeningBal = canEditCustomerOpeningBalance(role, permissions);
   const canCollect = role === "owner" || role === "accountant";
   const canOverrideCredit = role === "owner";
+  const hasNonOpeningActivity =
+    !IS_MOCK_MODE &&
+    (profileTabs.invoices.data.length > 0 ||
+      profileTabs.collections.data.length > 0 ||
+      profileTabs.ledger.data.some((e) => e.entryType && e.entryType !== "opening_balance"));
   const creditPct = c.creditLimit > 0 ? Math.round((c.balance / c.creditLimit) * 100) : 0;
 
   const TABS = [
@@ -785,6 +807,21 @@ export function CustomerProfileScreen({ lang, role, permissions = [], onNavigate
         {canCollect ? <Btn size="sm" variant="primary" onClick={() => setShowCollect(true)}><Wallet size={13} />{isRTL ? "تسجيل تحصيل" : "Collect"}</Btn> : <PermBtn lang={lang}><Wallet size={13} />{isRTL ? "تسجيل تحصيل" : "Collect"}</PermBtn>}
         <Btn size="sm" variant="secondary" onClick={() => { setTab("statement"); }}><FileText size={13} />{isRTL ? "كشف حساب" : "Statement"}</Btn>
         {canEdit && <Btn size="sm" variant="outline" onClick={() => onNavigate("customers-edit")}><Pencil size={13} />{isRTL ? "تعديل بيانات العميل" : "Edit Customer"}</Btn>}
+        {canEditOpeningBal && !IS_MOCK_MODE && (
+          <Btn
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setOpeningBalanceMode(hasNonOpeningActivity ? "adjustment" : "edit");
+              setShowOpeningBalance(true);
+            }}
+          >
+            <Wallet size={13} />
+            {hasNonOpeningActivity
+              ? (isRTL ? "إضافة تسوية رصيد" : "Add Balance Adjustment")
+              : (isRTL ? "تعديل الرصيد الافتتاحي" : "Edit Opening Balance")}
+          </Btn>
+        )}
         {canOverrideCredit && c.type === "credit" && <Btn size="sm" variant="outline" onClick={() => setShowCreditOverride(true)}><TrendingUp size={13} />{isRTL ? "رفع الحد الائتماني" : "Raise Credit Limit"}</Btn>}
         <PremiumBtn lang={lang}>{isRTL ? "إرسال واتساب" : "Send WhatsApp"}</PremiumBtn>
       </Card>
@@ -846,6 +883,49 @@ export function CustomerProfileScreen({ lang, role, permissions = [], onNavigate
                   </ProfileTabBody>
                 )}
               </div>
+              {!IS_MOCK_MODE && customerFinancials && (
+                <div className="bg-[#0F2C59]/5 border border-[#0F2C59]/15 rounded-2xl p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-black text-slate-400 uppercase tracking-wide mb-1">
+                        {isRTL ? "الرصيد الافتتاحي" : "Opening Balance"}
+                      </div>
+                      <div className="font-mono font-black text-[#0F2C59]">
+                        AED {customerFinancials.openingBalance.toLocaleString()}
+                      </div>
+                      <div className="text-xs text-slate-500 font-semibold mt-1">
+                        {customerFinancials.openingBalanceType === "customer_owes_us"
+                          ? (isRTL ? "على العميل" : "Customer owes us")
+                          : customerFinancials.openingBalanceType === "we_owe_customer"
+                            ? (isRTL ? "للعميل" : "We owe customer")
+                            : (isRTL ? "صفر" : "Zero")}
+                      </div>
+                    </div>
+                    {canEditOpeningBal && (
+                      <Btn
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          setOpeningBalanceMode(hasNonOpeningActivity ? "adjustment" : "edit");
+                          setShowOpeningBalance(true);
+                        }}
+                      >
+                        {hasNonOpeningActivity
+                          ? (isRTL ? "إضافة تسوية رصيد" : "Add Balance Adjustment")
+                          : (isRTL ? "تعديل" : "Edit")}
+                      </Btn>
+                    )}
+                  </div>
+                  {hasNonOpeningActivity && (
+                    <p className="text-xs font-semibold text-slate-500 mt-3 flex gap-2">
+                      <Info size={13} className="shrink-0 mt-0.5" />
+                      {isRTL
+                        ? "لا يمكن تعديل الرصيد الافتتاحي مباشرة بعد وجود حركات. يمكنك إضافة تسوية بدلاً من ذلك."
+                        : "Opening balance cannot be directly edited after transactions exist. Add an adjustment instead."}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Btn size="sm" variant="secondary" onClick={() => setShowSpecialPriceModal(true)}><Tag size={13} />{isRTL ? "الأسعار الخاصة" : "Special Prices"}</Btn>
                 <Btn size="sm" variant="outline" onClick={() => { setTab("statement"); }}><FileText size={13} />{isRTL ? "كشف الحساب" : "Statement"}</Btn>
@@ -1029,6 +1109,28 @@ export function CustomerProfileScreen({ lang, role, permissions = [], onNavigate
       )}
       {showCollect && IS_MOCK_MODE && <CustomerCollectModal lang={lang} customerId={c.id} onClose={() => setShowCollect(false)} />}
       {showCreditOverride && <CreditOverrideModal lang={lang} customerId={c.id} role={role} onClose={() => setShowCreditOverride(false)} />}
+      {showOpeningBalance && customerFinancials && (
+        <OpeningBalanceModal
+          lang={lang}
+          customerId={customerId}
+          mode={openingBalanceMode}
+          initialAmount={customerFinancials.openingBalance}
+          initialType={customerFinancials.openingBalanceType}
+          onClose={() => setShowOpeningBalance(false)}
+          onSuccess={() => {
+            void reload();
+            void profileTabs.reloadLedger();
+            void getCustomerDetail(customerId).then((detail) => {
+              if (detail) {
+                setCustomerFinancials({
+                  openingBalance: detail.openingBalance,
+                  openingBalanceType: detail.openingBalanceType,
+                });
+              }
+            });
+          }}
+        />
+      )}
       {showSpecialPriceModal && <SpecialPriceModal lang={lang} onClose={() => setShowSpecialPriceModal(false)} />}
     </div>
   );
@@ -1402,6 +1504,127 @@ export function CreditOverrideModal({ lang, customerId, role, onClose }: { lang:
           {canApprove
             ? <Btn variant="green" disabled={!reason.trim() || !newLimit} onClick={() => { toast.success(isRTL ? "تم رفع الحد الائتماني بنجاح" : "Credit limit increased"); onClose(); }} className="flex-1 justify-center"><TrendingUp size={14} />{isRTL ? "رفع الحد واعتماد المتابعة" : "Increase & Continue"}</Btn>
             : <PermBtn lang={lang}><TrendingUp size={14} />{isRTL ? "رفع الحد" : "Increase Limit"}</PermBtn>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MODAL: OPENING BALANCE ─────────────────────────────────────────────────────
+function OpeningBalanceModal({
+  lang,
+  customerId,
+  mode,
+  initialAmount,
+  initialType,
+  onClose,
+  onSuccess,
+}: {
+  lang: Lang;
+  customerId: string;
+  mode: "edit" | "adjustment";
+  initialAmount: number;
+  initialType: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const isRTL = lang === "ar";
+  const [amount, setAmount] = useState(String(initialAmount));
+  const [obType, setObType] = useState(initialType || "zero");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<unknown>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+
+  const mapTypeToApi = (raw: string) => {
+    if (raw === "debit" || raw === "customer_owes_us" || raw === "على العميل") return "customer_owes_us";
+    if (raw === "credit" || raw === "we_owe_customer" || raw === "للعميل") return "we_owe_customer";
+    return "zero";
+  };
+
+  const handleSave = async () => {
+    if (!reason.trim()) {
+      toast.error(isRTL ? "السبب مطلوب" : "Reason is required");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    setFieldErrors({});
+    try {
+      await updateCustomerOpeningBalance(customerId, {
+        opening_balance: String(Math.max(0, parseFloat(amount) || 0)),
+        opening_balance_type: mapTypeToApi(obType),
+        reason: reason.trim(),
+      });
+      toast.success(
+        mode === "adjustment"
+          ? (isRTL ? "تمت تسوية الرصيد بنجاح" : "Balance adjustment saved")
+          : (isRTL ? "تم تحديث الرصيد الافتتاحي" : "Opening balance updated"),
+      );
+      onSuccess();
+      onClose();
+    } catch (err) {
+      setSaveError(err);
+      if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل الحفظ" : "Save failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b border-slate-100">
+          <h3 className="text-lg font-black text-[#0F2C59]">
+            {mode === "adjustment"
+              ? (isRTL ? "إضافة تسوية رصيد" : "Add Balance Adjustment")
+              : (isRTL ? "تعديل الرصيد الافتتاحي" : "Edit Opening Balance")}
+          </h3>
+          <button type="button" onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100"><X size={17} /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <FormErrors lang={lang} error={saveError} fieldErrors={fieldErrors} />
+          {mode === "adjustment" && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2">
+              <Info size={13} className="text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-xs font-semibold text-amber-800">
+                {isRTL
+                  ? "أدخل الرصيد الافتتاحي الصحيح بعد المراجعة. سيتم تسجيل فرق التسوية في كشف الحساب."
+                  : "Enter the corrected opening balance. The adjustment delta will appear on the customer statement."}
+              </p>
+            </div>
+          )}
+          {mode === "adjustment" && (
+            <div className="bg-slate-50 rounded-xl p-3 text-sm">
+              <div className="text-xs font-bold text-slate-400 mb-1">{isRTL ? "الرصيد الافتتاحي الحالي" : "Current Opening Balance"}</div>
+              <div className="font-mono font-black text-[#0F2C59]">AED {initialAmount.toLocaleString()}</div>
+            </div>
+          )}
+          <FSelect
+            label={isRTL ? "نوع الرصيد الافتتاحي" : "Opening Balance Type"}
+            value={obType}
+            onChange={setObType}
+            options={[
+              { value: "customer_owes_us", label: isRTL ? "على العميل (مدين)" : "Customer owes us (Debit)" },
+              { value: "we_owe_customer", label: isRTL ? "للعميل (دائن)" : "We owe customer (Credit)" },
+              { value: "zero", label: isRTL ? "صفر" : "Zero" },
+            ]}
+          />
+          <FInput
+            label={isRTL ? "مبلغ الرصيد الافتتاحي (AED)" : "Opening Balance Amount (AED)"}
+            type="number"
+            value={amount}
+            onChange={setAmount}
+            required
+          />
+          <FInput label={isRTL ? "السبب *" : "Reason *"} value={reason} onChange={setReason} required />
+        </div>
+        <div className="p-6 border-t border-slate-100 flex gap-3">
+          <Btn variant="outline" onClick={onClose} className="flex-1 justify-center" disabled={saving}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
+          <Btn variant="green" disabled={saving || !reason.trim()} onClick={() => void handleSave()} className="flex-1 justify-center">
+            <Check size={14} />{isRTL ? "حفظ" : "Save"}
+          </Btn>
         </div>
       </div>
     </div>

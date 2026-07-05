@@ -19,6 +19,7 @@ export const ENDPOINTS = {
     productCategories: "/tenant/product-categories/",
     customers: "/tenant/customers/",
     customer: (id: number | string) => `/tenant/customers/${id}/`,
+    customerOpeningBalance: (id: number | string) => `/tenant/customers/${id}/opening-balance/`,
     customerCategories: "/tenant/customer-categories/",
     suppliers: "/tenant/suppliers/",
     supplier: (id: number | string) => `/tenant/suppliers/${id}/`,

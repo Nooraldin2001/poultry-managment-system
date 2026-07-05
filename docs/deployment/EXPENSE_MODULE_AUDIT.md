@@ -26,6 +26,18 @@ Secondary: DB may also contain seeded demo expenses — use scoped purge command
 - `enrichExpense()`: merges mock metadata only when `IS_MOCK_MODE`.
 - `expenseService.listRecurringExpenses()`: maps `title`, `next_due_date`, `recurrence`.
 
+## Fix (expense category create — Phase 5)
+
+**Root cause:** `POST /api/v1/tenant/expense-categories/` requires `code`; frontend sent only `name_ar`/`name_en` → **400**.
+
+**Fix:** `createExpenseCategory()` auto-generates a unique `code` from Arabic name (fallback timestamp).
+
+## Fix (expense list display — Phase 5)
+
+**Root cause:** `mapApiExpenseToRow()` read `amount`/`notes` but API returns `total_amount`/`title` → list showed **AED 0** after successful create.
+
+**Fix:** Map `total_amount ?? amount` and `title ?? notes ?? description`.
+
 ## Fix (expense creation — Phase 2)
 
 **Root cause:** `AddExpenseModal` submit handlers only called `toast.success()` — no `POST /api/v1/tenant/expenses/`, no list refetch, no persistence after refresh.

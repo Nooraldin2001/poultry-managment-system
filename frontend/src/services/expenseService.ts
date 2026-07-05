@@ -12,11 +12,13 @@ const crud = createCrudService<ApiExpenseList, ApiExpenseDetail>(ENDPOINTS.tenan
 interface ApiExpenseList {
   id: number;
   category_name?: string;
-  category_name_en?: string;
-  amount: string;
+  title?: string;
+  total_amount?: string;
+  amount?: string;
   expense_date?: string;
   payment_method?: string;
   notes?: string;
+  description?: string;
   status?: string;
 }
 
@@ -32,14 +34,16 @@ interface ApiExpenseCategory {
 }
 
 export function mapApiExpenseToRow(row: ApiExpenseList): ExpenseRow {
+  const amountRaw = row.total_amount ?? row.amount ?? "0";
+  const noteRaw = row.title ?? row.notes ?? row.description ?? "";
   return {
     id: String(row.id),
     category: row.category_name,
-    categoryEn: row.category_name_en,
-    amount: parseAmount(row.amount),
+    categoryEn: row.category_name,
+    amount: parseAmount(amountRaw),
     date: row.expense_date,
     method: row.payment_method,
-    note: row.notes,
+    note: noteRaw,
     status: row.status,
   };
 }
@@ -110,10 +114,20 @@ export async function listExpenseCategories(): Promise<ExpenseCategoryRow[]> {
 export async function createExpenseCategory(payload: {
   name_ar: string;
   name_en?: string;
+  code?: string;
 }): Promise<ExpenseCategoryRow> {
+  const code =
+    payload.code?.trim() ||
+    payload.name_ar.trim().replace(/\s+/g, "_").replace(/[^\w-]/g, "").toUpperCase().slice(0, 28) ||
+    `EXP${Date.now()}`;
   const row = await request<ApiExpenseCategory>(ENDPOINTS.tenant.expenseCategories, {
     method: "POST",
-    body: payload,
+    body: {
+      name_ar: payload.name_ar.trim(),
+      name_en: (payload.name_en?.trim() || payload.name_ar.trim()),
+      code,
+      is_active: true,
+    },
   });
   return {
     id: row.id,

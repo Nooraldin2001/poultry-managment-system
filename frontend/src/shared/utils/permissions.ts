@@ -36,6 +36,15 @@ export function canCreateCustomer(role: TenantRole, permissions: string[]): bool
   return role === "accountant";
 }
 
+/** True when the user may edit customer opening balance. */
+export function canEditCustomerOpeningBalance(role: TenantRole, permissions: string[]): boolean {
+  if (role === "owner") return true;
+  if (permissions.length > 0) {
+    return permissions.includes("customers.edit_opening_balance");
+  }
+  return role === "accountant";
+}
+
 /** True when the user may override purchase line prices. */
 export function canOverridePurchasePrice(role: TenantRole, permissions: string[]): boolean {
   if (role === "owner") return true;

@@ -42,9 +42,22 @@ Not editable via PATCH: `company`, `current_balance`, `opening_balance` (after c
 - `backend/tests/test_customers.py` — 20 passed (includes PATCH, opening balance guard, cashier 403, cross-tenant 404)
 - Frontend: `pnpm run typecheck`, `pnpm run build`
 
+## Opening balance edit (Phase 5)
+
+**Issue:** `تعديل الرصيد الافتتاحي بتاع العميل` — no UI wired to backend.
+
+**Policy:**
+- PATCH customer profile **cannot** change opening balance (backend validation).
+- Use `POST /api/v1/tenant/customers/{id}/opening-balance/` with `opening_balance`, `opening_balance_type`, `reason`.
+- Backend creates correcting `opening_balance` ledger entry for the delta; audit log records reason.
+- If customer has invoices/collections/ledger activity: profile shows read-only opening balance + **Add Balance Adjustment** (same endpoint, adjustment copy).
+
+**Frontend:** `OpeningBalanceModal` on customer profile; `updateCustomerOpeningBalance()`; `canEditCustomerOpeningBalance()`.
+
 ## Production smoke (First View admin)
 
 1. Customers → row **تعديل** → form prefilled → change phone → save → toast **تم تحديث بيانات العميل بنجاح**
 2. Profile → **تعديل بيانات العميل** → same flow → profile shows updated data
 3. Refresh browser → data persists
 4. Cashier: edit hidden / 403 on direct route
+5. Profile → **تعديل الرصيد الافتتاحي** (no transactions) or **إضافة تسوية رصيد** (with transactions) → reason required → POST opening-balance → statement shows adjustment

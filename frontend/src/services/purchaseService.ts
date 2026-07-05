@@ -65,11 +65,15 @@ export function mapApiPurchaseToRow(row: ApiPurchaseList): PurchaseInvoiceRow {
 function mapPurchaseLine(line: ApiPurchaseLine): PurchaseInvoiceLineRow {
   const kg = parseAmount(line.quantity_kg ?? line.quantity);
   const pieces = parseAmount(line.quantity_pieces ?? line.quantity);
+  const cartons = parseAmount(line.quantity_cartons);
   return {
     id: String(line.id),
     productId: String(line.product),
     productName: line.product_name_snapshot ?? "",
     qty: kg || pieces,
+    cartons,
+    pieces,
+    kg,
     unit: line.price_type ?? line.unit ?? "kg",
     price: parseAmount(line.unit_price),
     total: parseAmount(line.line_total),
