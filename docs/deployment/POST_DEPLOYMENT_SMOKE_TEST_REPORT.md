@@ -674,3 +674,20 @@ See: [PRODUCT_MODULE_AUDIT.md](./PRODUCT_MODULE_AUDIT.md), [EXPENSE_MODULE_AUDIT
 | VPS deploy | **Pending** — production still on `index--O_NXaJC.js` (pre-`88822cd`). Run deploy in SSH session. |
 | First View credentialed smoke | **Pending deploy + owner login** |
 
+---
+
+## Phase 7 — Sales white screen (2026-07-05)
+
+| Issue | Root cause | Fix |
+|---|---|---|
+| المبيعات صفحة بيضة | API `status: "partially_paid"` crashed `SInvStatusBadge` (expected `partial`) | `normalizeSalesInvoiceStatus()` + defensive badge; `ModuleErrorBoundary` on sales routes |
+
+| Check | Result |
+|---|---|
+| `pnpm run typecheck` / `build` | **Pass** |
+| Nginx cache headers | Updated in `deploy/nginx/poultryhero.conf` |
+| VPS deploy | **Pending** |
+| Mobile Safari smoke | **Pending deploy + owner login** |
+
+See [SALES_MODULE_AUDIT.md](./SALES_MODULE_AUDIT.md).
+
