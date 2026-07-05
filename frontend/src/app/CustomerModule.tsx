@@ -16,11 +16,15 @@ import { toModuleCustomer } from "./moduleMappers";
 import { IS_MOCK_MODE } from "@/services/config";
 import {
   buildCustomerCreatePayload,
+  buildCustomerUpdatePayload,
   createCustomer,
+  getCustomerDetail,
   listCustomerCategories,
+  updateCustomer,
 } from "@/services/customerService";
 import { ApiError } from "@/services/api/errors";
 import { FormErrors } from "@/shared/components/FormErrors";
+import { canCreateCustomer, canEditCustomer } from "@/shared/utils/permissions";
 import { useCustomerProfileTabs, type CustomerProfileTabKey } from "@/features/profiles/useCustomerProfileTabs";
 import { ProfileTabBody } from "@/features/profiles/ProfileTabState";
 import { LiveCustomerCollectionModal } from "@/features/payments/LivePaymentModals";
@@ -36,7 +40,7 @@ type TenantScreen =
   | "dashboard" | "sales" | "sales-list" | "sales-new" | "sales-preview" | "sales-detail"
   | "purchases" | "purchases-list" | "purchases-new" | "purchases-preview" | "purchases-detail"
   | "inventory" | "inventory-product" | "inventory-stocktaking" | "inventory-alerts" | "inventory-movement" | "inventory-valuation"
-  | "customers" | "customers-create" | "customers-profile" | "customers-statement"
+  | "customers" | "customers-create" | "customers-edit" | "customers-profile" | "customers-statement"
   | "quotations" | "suppliers" | "payments" | "expenses" | "accounts" | "tax" | "reports" | "users" | "settings";
 type CustType = "credit" | "cash";
 type CreditStatus = "clear" | "active" | "near" | "exceeded";
@@ -213,15 +217,16 @@ function StmtTypeBadge({ type, lang }: { type: string; lang: Lang }) {
 }
 
 // ── SCREEN: CUSTOMERS LIST ─────────────────────────────────────────────────────
-export function CustomersListScreen({ lang, role, onNavigate, setSelectedCustomer }: {
-  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; setSelectedCustomer: (id: string) => void;
+export function CustomersListScreen({ lang, role, permissions = [], onNavigate, setSelectedCustomer }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; setSelectedCustomer: (id: string) => void;
 }) {
   const isRTL = lang === "ar";
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  const canCreate = role === "owner" || role === "accountant";
+  const canCreate = canCreateCustomer(role, permissions);
+  const canEdit = canEditCustomer(role, permissions);
   const canCollect = role === "owner" || role === "accountant";
 
   const { items: customerRows, loading, error, forbidden, reload } = useCustomers(
@@ -340,7 +345,7 @@ export function CustomersListScreen({ lang, role, onNavigate, setSelectedCustome
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button onClick={() => { setSelectedCustomer(c.id); onNavigate("customers-profile"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#0F2C59] hover:text-white transition-all" title={isRTL ? "عرض الملف" : "View Profile"}><Eye size={13} /></button>
-                        <button onClick={() => { setSelectedCustomer(c.id); onNavigate("customers-create"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all" title={isRTL ? "تعديل" : "Edit"}><Pencil size={13} /></button>
+                        {canEdit && <button onClick={() => { setSelectedCustomer(c.id); onNavigate("customers-edit"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all" title={isRTL ? "تعديل" : "Edit"}><Pencil size={13} /></button>}
                         <button onClick={() => onNavigate("sales-new")} className="p-1.5 rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all" title={isRTL ? "إنشاء فاتورة بيع" : "New Invoice"}><FileText size={13} /></button>
                       </div>
                     </td>
@@ -368,6 +373,7 @@ export function CustomersListScreen({ lang, role, onNavigate, setSelectedCustome
               <div className="flex gap-2 flex-wrap">
                 <Btn size="sm" variant="secondary" onClick={() => { setSelectedCustomer(c.id); onNavigate("customers-profile"); }}><Eye size={13} />{isRTL ? "الملف" : "Profile"}</Btn>
                 {canCollect && c.balance > 0 && <Btn size="sm" variant="green"><Wallet size={13} />{isRTL ? "تحصيل" : "Collect"}</Btn>}
+                {canEdit && <Btn size="sm" variant="outline" onClick={() => { setSelectedCustomer(c.id); onNavigate("customers-edit"); }}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
                 <Btn size="sm" variant="outline" onClick={() => onNavigate("sales-new")}><FileText size={13} />{isRTL ? "فاتورة" : "Invoice"}</Btn>
                 <a href={`tel:${c.phone}`} className="p-1.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50"><Phone size={14} /></a>
               </div>
@@ -384,14 +390,17 @@ export function CustomersListScreen({ lang, role, onNavigate, setSelectedCustome
 }
 
 // ── SCREEN: CREATE / EDIT CUSTOMER ─────────────────────────────────────────────
-export function CreateCustomerScreen({ lang, role, onNavigate, setSelectedCustomer }: {
-  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; setSelectedCustomer?: (id: string) => void;
+export function CreateCustomerScreen({ lang, role, permissions = [], onNavigate, customerId, setSelectedCustomer, onSaved }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void;
+  customerId?: string; setSelectedCustomer?: (id: string) => void; onSaved?: () => void;
 }) {
   const isRTL = lang === "ar";
+  const isEdit = Boolean(customerId);
   const [nameAr, setNameAr] = useState(""); const [nameEn, setNameEn] = useState("");
   const [phone, setPhone] = useState(""); const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState(""); const [trn, setTrn] = useState("");
   const [address, setAddress] = useState(""); const [emirate, setEmirate] = useState("");
+  const [notes, setNotes] = useState("");
   const [custType, setCustType] = useState<CustType>("credit");
   const [category, setCategory] = useState("");
   const [active, setActive] = useState(true);
@@ -402,9 +411,12 @@ export function CreateCustomerScreen({ lang, role, onNavigate, setSelectedCustom
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [saveError, setSaveError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
+  const [loadingCustomer, setLoadingCustomer] = useState(Boolean(customerId) && !IS_MOCK_MODE);
 
-  const canCreate = role === "owner" || role === "accountant";
-  const canSetFinancials = canCreate;
+  const canCreate = canCreateCustomer(role, permissions);
+  const canEdit = canEditCustomer(role, permissions);
+  const canAccess = isEdit ? canEdit : canCreate;
+  const canSetFinancials = canAccess;
 
   const EMIRATES = ["دبي", "أبوظبي", "الشارقة", "عجمان", "رأس الخيمة", "أم القيوين", "الفجيرة"].map(e => ({ value: e, label: e }));
   const FALLBACK_CATEGORIES = [
@@ -430,9 +442,44 @@ export function CreateCustomerScreen({ lang, role, onNavigate, setSelectedCustom
     });
   }, [isRTL]);
 
+  useEffect(() => {
+    if (!customerId || IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoadingCustomer(true);
+    void getCustomerDetail(customerId)
+      .then((detail) => {
+        if (cancelled || !detail) return;
+        setNameAr(detail.nameAr);
+        setNameEn(detail.nameEn);
+        setPhone(detail.phone);
+        setWhatsapp(detail.whatsapp);
+        setEmail(detail.email);
+        setTrn(detail.trn);
+        setAddress(detail.address);
+        setEmirate(detail.emirate);
+        setNotes(detail.notes);
+        setCustType((detail.customerType as CustType) || "cash");
+        setCategory(detail.categoryId ? String(detail.categoryId) : "");
+        setActive(detail.isActive);
+        setOpenBal(String(detail.openingBalance));
+        setOpenBalType(detail.openingBalanceType);
+        setCreditLimit(String(detail.creditLimit));
+        setPayTerms(String(detail.paymentTermsDays));
+        setBlockOnExceed(detail.blockSalesWhenCreditExceeded);
+        setAllowOverride(detail.allowAdminCreditOverride);
+      })
+      .catch((err) => {
+        if (!cancelled) setSaveError(err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCustomer(false);
+      });
+    return () => { cancelled = true; };
+  }, [customerId]);
+
   const handleSave = async (andInvoice: boolean) => {
-    if (!canCreate) {
-      toast.error(isRTL ? "ليس لديك صلاحية إضافة عميل" : "No permission to add customers");
+    if (!canAccess) {
+      toast.error(isRTL ? "ليس لديك صلاحية" : "Permission denied");
       return;
     }
     if (!nameAr.trim() || !phone.trim()) {
@@ -442,57 +489,89 @@ export function CreateCustomerScreen({ lang, role, onNavigate, setSelectedCustom
     if (IS_MOCK_MODE) {
       toast.success(isRTL ? "تم حفظ العميل" : "Customer saved");
       if (andInvoice) onNavigate("sales-new");
-      else onNavigate("customers");
+      else onNavigate(isEdit ? "customers-profile" : "customers");
       return;
     }
     setSaveError(null);
     setFieldErrors({});
     setSaving(true);
     try {
-      const categoryId = category && /^\d+$/.test(category) ? Number(category) : undefined;
-      const payload = buildCustomerCreatePayload({
-        nameAr,
-        nameEn,
-        phone,
-        whatsapp,
-        email,
-        address,
-        emirate,
-        trn,
-        customerType: custType,
-        categoryId,
-        openingBalance: parseFloat(openBal) || 0,
-        openingBalanceType: openBalType,
-        creditLimit: custType === "credit" ? parseFloat(creditLimit) || 0 : 0,
-        paymentTermsDays: parseInt(payTerms, 10) || 0,
-        blockSalesWhenCreditExceeded: blockOnExceed,
-        allowAdminCreditOverride: allowOverride,
-        includeFinancials: canSetFinancials,
-      });
-      const row = await createCustomer(payload);
-      toast.success(isRTL ? "تم إنشاء العميل بنجاح" : "Customer created successfully");
-      if (andInvoice) {
-        setSelectedCustomer?.(row.id);
-        onNavigate("sales-new");
+      const categoryId = category && /^\d+$/.test(category) ? Number(category) : null;
+      if (isEdit && customerId) {
+        const payload = buildCustomerUpdatePayload({
+          nameAr,
+          nameEn,
+          phone,
+          whatsapp,
+          email,
+          address,
+          emirate,
+          trn,
+          customerType: custType,
+          categoryId,
+          creditLimit: custType === "credit" ? parseFloat(creditLimit) || 0 : 0,
+          paymentTermsDays: parseInt(payTerms, 10) || 0,
+          blockSalesWhenCreditExceeded: blockOnExceed,
+          allowAdminCreditOverride: allowOverride,
+          notes,
+        });
+        await updateCustomer(customerId, payload);
+        toast.success(isRTL ? "تم تحديث بيانات العميل بنجاح" : "Customer updated successfully");
+        onSaved?.();
+        onNavigate("customers-profile");
       } else {
-        onNavigate("customers");
+        const payload = buildCustomerCreatePayload({
+          nameAr,
+          nameEn,
+          phone,
+          whatsapp,
+          email,
+          address,
+          emirate,
+          trn,
+          customerType: custType,
+          categoryId: categoryId ?? undefined,
+          openingBalance: parseFloat(openBal) || 0,
+          openingBalanceType: openBalType,
+          creditLimit: custType === "credit" ? parseFloat(creditLimit) || 0 : 0,
+          paymentTermsDays: parseInt(payTerms, 10) || 0,
+          blockSalesWhenCreditExceeded: blockOnExceed,
+          allowAdminCreditOverride: allowOverride,
+          includeFinancials: canSetFinancials,
+        });
+        const row = await createCustomer(payload);
+        toast.success(isRTL ? "تم إنشاء العميل بنجاح" : "Customer created successfully");
+        if (andInvoice) {
+          setSelectedCustomer?.(row.id);
+          onNavigate("sales-new");
+        } else {
+          onNavigate("customers");
+        }
       }
     } catch (err) {
       setSaveError(err);
       if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
-      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل إنشاء العميل" : "Failed to create customer"));
+      toast.error(err instanceof ApiError ? err.message : (isEdit ? (isRTL ? "فشل تحديث العميل" : "Failed to update customer") : (isRTL ? "فشل إنشاء العميل" : "Failed to create customer")));
     } finally {
       setSaving(false);
     }
   };
 
-  if (!canCreate) return <PermissionDeniedState lang={lang} />;
+  if (!canAccess) return <PermissionDeniedState lang={lang} />;
+  if (loadingCustomer) return <LoadingState lang={lang} />;
+  if (isEdit && saveError && !nameAr && customerId) {
+    return <ErrorState lang={lang} error={saveError} onRetry={() => window.location.reload()} />;
+  }
+
+  const backScreen = isEdit ? "customers-profile" : "customers";
 
   return (
     <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-5">
       <div className="flex items-center gap-3">
-        <button onClick={() => onNavigate("customers")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
-        <h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "إضافة عميل جديد" : "Add New Customer"}</h2>
+        <button onClick={() => onNavigate(backScreen)} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
+        <h2 className="text-xl font-black text-[#0F2C59]">
+          {isEdit ? (isRTL ? "تعديل بيانات العميل" : "Edit Customer") : (isRTL ? "إضافة عميل جديد" : "Add New Customer")}
+        </h2>
       </div>
       <FormErrors lang={lang} error={saveError} fieldErrors={fieldErrors} />
 
@@ -508,6 +587,7 @@ export function CreateCustomerScreen({ lang, role, onNavigate, setSelectedCustom
           <FInput label={isRTL ? "رقم الضريبة TRN" : "TRN"} value={trn} onChange={setTrn} placeholder="100XXXXXXXXXXX" />
           <FSelect label={isRTL ? "الإمارة" : "Emirate"} value={emirate} onChange={setEmirate} options={[{ value: "", label: isRTL ? "اختر الإمارة" : "Select Emirate" }, ...EMIRATES]} />
           <div className="sm:col-span-2"><FInput label={isRTL ? "العنوان" : "Address"} value={address} onChange={setAddress} /></div>
+          <div className="sm:col-span-2"><FInput label={isRTL ? "ملاحظات" : "Notes"} value={notes} onChange={setNotes} /></div>
         </div>
       </Card>
 
@@ -526,9 +606,15 @@ export function CreateCustomerScreen({ lang, role, onNavigate, setSelectedCustom
           <FSelect label={isRTL ? "التصنيف" : "Category"} value={category} onChange={setCategory} options={categorySelectOptions} />
           <div className="flex items-center justify-between py-2.5 border-t border-slate-100">
             <span className="text-sm font-bold text-slate-700">{isRTL ? "العميل نشط" : "Customer Active"}</span>
-            <button onClick={() => setActive(v => !v)} className={`w-10 h-[22px] rounded-full flex items-center transition-all ${active ? "bg-[#0F2C59]" : "bg-slate-300"}`}>
-              <span className={`w-4 h-4 bg-white rounded-full shadow-sm mx-0.5 transition-all ${active ? "translate-x-5" : "translate-x-0"}`} />
-            </button>
+            {isEdit ? (
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${active ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
+                {active ? (isRTL ? "نشط" : "Active") : (isRTL ? "موقوف" : "Inactive")}
+              </span>
+            ) : (
+              <button onClick={() => setActive(v => !v)} className={`w-10 h-[22px] rounded-full flex items-center transition-all ${active ? "bg-[#0F2C59]" : "bg-slate-300"}`}>
+                <span className={`w-4 h-4 bg-white rounded-full shadow-sm mx-0.5 transition-all ${active ? "translate-x-5" : "translate-x-0"}`} />
+              </button>
+            )}
           </div>
         </div>
       </Card>
@@ -536,8 +622,20 @@ export function CreateCustomerScreen({ lang, role, onNavigate, setSelectedCustom
       {/* C. Financial Settings */}
       <Card className="p-5">
         <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "ج. الإعدادات المالية" : "C. Financial Settings"}</h3>
+        {isEdit && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2 mb-4">
+            <Info size={14} className="text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-xs font-semibold text-amber-800 leading-relaxed">
+              {isRTL
+                ? "لا يمكن تعديل الرصيد الافتتاحي من هنا. استخدم إجراء تعديل الرصيد الافتتاحي من ملف العميل (يتطلب سبباً)."
+                : "Opening balance cannot be changed here. Use the opening-balance action from the customer profile (requires a reason)."}
+            </p>
+          </div>
+        )}
         {!canSetFinancials && <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2 mb-4"><Info size={14} className="text-amber-500" /><span className="text-xs font-bold text-amber-700">{isRTL ? "ليس لديك صلاحية تعديل الإعدادات المالية" : "No permission to edit financial settings"}</span></div>}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {!isEdit && (
+          <>
           <div>
             <label className="text-sm font-bold text-slate-700 block mb-1.5">{isRTL ? "نوع الرصيد الافتتاحي" : "Opening Balance Type"}</label>
             <div className="grid grid-cols-3 gap-2">
@@ -547,6 +645,8 @@ export function CreateCustomerScreen({ lang, role, onNavigate, setSelectedCustom
             </div>
           </div>
           <FInput label={isRTL ? "مبلغ الرصيد الافتتاحي (AED)" : "Opening Balance (AED)"} type="number" value={openBal} onChange={v => canSetFinancials && setOpenBal(v)} />
+          </>
+          )}
           {custType === "credit" && <FInput label={isRTL ? "الحد الائتماني (AED) *" : "Credit Limit (AED) *"} type="number" value={creditLimit} onChange={v => canSetFinancials && setCreditLimit(v)} required />}
           <FSelect label={isRTL ? "شروط الدفع الافتراضية" : "Default Payment Terms"} value={payTerms} onChange={v => canSetFinancials && setPayTerms(v)}
             options={[{ value: "0", label: isRTL ? "فوري" : "Immediate" }, { value: "7", label: isRTL ? "7 أيام" : "7 days" }, { value: "15", label: isRTL ? "15 يوم" : "15 days" }, { value: "30", label: isRTL ? "30 يوم" : "30 days" }]} />
@@ -578,10 +678,17 @@ export function CreateCustomerScreen({ lang, role, onNavigate, setSelectedCustom
 
       {/* Actions */}
       <div className="flex flex-wrap gap-3 justify-between">
-        <Btn variant="outline" onClick={() => onNavigate("customers")}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
+        <Btn variant="outline" onClick={() => onNavigate(backScreen)}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
         <div className="flex gap-2">
-          <Btn variant="secondary" disabled={saving || !nameAr.trim() || !phone.trim()} onClick={() => void handleSave(false)}><Check size={15} />{isRTL ? "حفظ العميل" : "Save Customer"}</Btn>
-          <Btn variant="green" disabled={saving || !nameAr.trim() || !phone.trim()} onClick={() => void handleSave(true)}><FileText size={15} />{isRTL ? "حفظ وإنشاء فاتورة بيع" : "Save & New Invoice"}</Btn>
+          <Btn variant="secondary" disabled={saving || !nameAr.trim() || !phone.trim()} onClick={() => void handleSave(false)}>
+            <Check size={15} />
+            {isEdit ? (isRTL ? "حفظ التعديلات" : "Save Changes") : (isRTL ? "حفظ العميل" : "Save Customer")}
+          </Btn>
+          {!isEdit && (
+            <Btn variant="green" disabled={saving || !nameAr.trim() || !phone.trim()} onClick={() => void handleSave(true)}>
+              <FileText size={15} />{isRTL ? "حفظ وإنشاء فاتورة بيع" : "Save & New Invoice"}
+            </Btn>
+          )}
         </div>
       </div>
     </div>
@@ -589,8 +696,8 @@ export function CreateCustomerScreen({ lang, role, onNavigate, setSelectedCustom
 }
 
 // ── SCREEN: CUSTOMER PROFILE ───────────────────────────────────────────────────
-export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
-  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; customerId: string;
+export function CustomerProfileScreen({ lang, role, permissions = [], onNavigate, customerId }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; customerId: string;
 }) {
   const isRTL = lang === "ar";
   const [tab, setTab] = useState("overview");
@@ -613,7 +720,7 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
   if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
   const c = row ? toModuleCustomer(row) : null;
   if (!c) return <EmptyState lang={lang} messageAr="لا يوجد عملاء بعد" messageEn="No customers yet" />;
-  const canEdit = role === "owner" || role === "accountant";
+  const canEdit = canEditCustomer(role, permissions);
   const canCollect = role === "owner" || role === "accountant";
   const canOverrideCredit = role === "owner";
   const creditPct = c.creditLimit > 0 ? Math.round((c.balance / c.creditLimit) * 100) : 0;
@@ -677,7 +784,7 @@ export function CustomerProfileScreen({ lang, role, onNavigate, customerId }: {
         <Btn size="sm" variant="green" onClick={() => onNavigate("sales-new")}><FileText size={13} />{isRTL ? "إنشاء فاتورة بيع" : "New Invoice"}</Btn>
         {canCollect ? <Btn size="sm" variant="primary" onClick={() => setShowCollect(true)}><Wallet size={13} />{isRTL ? "تسجيل تحصيل" : "Collect"}</Btn> : <PermBtn lang={lang}><Wallet size={13} />{isRTL ? "تسجيل تحصيل" : "Collect"}</PermBtn>}
         <Btn size="sm" variant="secondary" onClick={() => { setTab("statement"); }}><FileText size={13} />{isRTL ? "كشف حساب" : "Statement"}</Btn>
-        {canEdit && <Btn size="sm" variant="outline" onClick={() => onNavigate("customers-create")}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
+        {canEdit && <Btn size="sm" variant="outline" onClick={() => onNavigate("customers-edit")}><Pencil size={13} />{isRTL ? "تعديل بيانات العميل" : "Edit Customer"}</Btn>}
         {canOverrideCredit && c.type === "credit" && <Btn size="sm" variant="outline" onClick={() => setShowCreditOverride(true)}><TrendingUp size={13} />{isRTL ? "رفع الحد الائتماني" : "Raise Credit Limit"}</Btn>}
         <PremiumBtn lang={lang}>{isRTL ? "إرسال واتساب" : "Send WhatsApp"}</PremiumBtn>
       </Card>

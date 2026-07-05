@@ -196,6 +196,77 @@ def test_cashier_cannot_create_customer(api, cashier):
     assert resp.status_code == 403
 
 
+def test_owner_can_patch_customer(api, owner):
+    api.force_authenticate(user=owner)
+    cid = _create_customer(api, name_ar="Original", phone="+971500000010").json()["id"]
+    balance_before = Decimal(
+        api.get(f"/api/v1/tenant/customers/{cid}/").json()["current_balance"]
+    )
+    resp = api.patch(
+        f"/api/v1/tenant/customers/{cid}/",
+        {
+            "name_ar": "محدّث",
+            "name_en": "Updated Customer",
+            "phone": "+971500000011",
+            "email": "updated@example.com",
+            "address": "Dubai Marina",
+            "credit_limit": "20000.00",
+            "payment_terms_days": 15,
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.content
+    data = resp.json()
+    assert data["name_ar"] == "محدّث"
+    assert data["name_en"] == "Updated Customer"
+    assert data["phone"] == "+971500000011"
+    assert data["email"] == "updated@example.com"
+    assert Decimal(data["credit_limit"]) == Decimal("20000.00")
+    assert data["payment_terms_days"] == 15
+    detail = api.get(f"/api/v1/tenant/customers/{cid}/").json()
+    assert detail["name_ar"] == "محدّث"
+    assert Decimal(detail["current_balance"]) == balance_before
+
+
+def test_patch_customer_cannot_change_opening_balance(api, owner):
+    api.force_authenticate(user=owner)
+    cid = _create_customer(
+        api, opening_balance="100.00", opening_balance_type="customer_owes_us"
+    ).json()["id"]
+    resp = api.patch(
+        f"/api/v1/tenant/customers/{cid}/",
+        {"opening_balance": "500.00"},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert "opening_balance" in resp.json()
+
+
+def test_cashier_cannot_patch_customer(api, cashier, owner):
+    api.force_authenticate(user=owner)
+    cid = _create_customer(api).json()["id"]
+    api.force_authenticate(user=cashier)
+    resp = api.patch(
+        f"/api/v1/tenant/customers/{cid}/",
+        {"name_ar": "Hacked"},
+        format="json",
+    )
+    assert resp.status_code == 403
+
+
+def test_cross_tenant_customer_patch_blocked(api, owner, other_owner):
+    other_customer = Customer.objects.create(
+        company=other_owner.company, name_ar="x", phone="999", customer_type="cash"
+    )
+    api.force_authenticate(user=owner)
+    resp = api.patch(
+        f"/api/v1/tenant/customers/{other_customer.id}/",
+        {"name_ar": "Stolen"},
+        format="json",
+    )
+    assert resp.status_code == 404
+
+
 def test_cannot_disable_customer_with_balance_without_reason(api, owner):
     api.force_authenticate(user=owner)
     cid = _create_customer(

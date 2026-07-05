@@ -18,6 +18,24 @@ export function canOverrideSalesPrice(role: TenantRole, permissions: string[]): 
   return role === "accountant";
 }
 
+/** True when the user may edit tenant customers. */
+export function canEditCustomer(role: TenantRole, permissions: string[]): boolean {
+  if (role === "owner") return true;
+  if (permissions.length > 0) {
+    return permissions.includes("customers.edit");
+  }
+  return role === "accountant";
+}
+
+/** True when the user may create tenant customers. */
+export function canCreateCustomer(role: TenantRole, permissions: string[]): boolean {
+  if (role === "owner") return true;
+  if (permissions.length > 0) {
+    return permissions.includes("customers.create");
+  }
+  return role === "accountant";
+}
+
 /** True when the user may override purchase line prices. */
 export function canOverridePurchasePrice(role: TenantRole, permissions: string[]): boolean {
   if (role === "owner") return true;

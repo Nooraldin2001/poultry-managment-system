@@ -25,6 +25,36 @@ interface ApiCustomerList {
 interface ApiCustomerDetail extends ApiCustomerList {
   address?: string;
   email?: string;
+  whatsapp?: string;
+  emirate?: string;
+  category?: number | null;
+  opening_balance?: string;
+  opening_balance_type?: string;
+  payment_terms_days?: number;
+  block_sales_when_credit_exceeded?: boolean;
+  allow_admin_credit_override?: boolean;
+  notes?: string;
+}
+
+export interface CustomerFormValues {
+  nameAr: string;
+  nameEn: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  address: string;
+  emirate: string;
+  trn: string;
+  customerType: string;
+  categoryId?: number;
+  creditLimit: number;
+  openingBalance: number;
+  openingBalanceType: string;
+  paymentTermsDays: number;
+  blockSalesWhenCreditExceeded: boolean;
+  allowAdminCreditOverride: boolean;
+  notes: string;
+  isActive: boolean;
 }
 
 export function mapApiCustomerToRow(row: ApiCustomerList): CustomerRow {
@@ -84,6 +114,49 @@ export async function getCustomerRow(id: string): Promise<CustomerRow | null> {
   try {
     const row = await crud.retrieve(id);
     return mapApiCustomerToRow(row);
+  } catch {
+    return null;
+  }
+}
+
+function reverseOpeningBalanceType(api: string): string {
+  const labels: Record<string, string> = {
+    customer_owes_us: "على العميل",
+    we_owe_customer: "للعميل",
+    zero: "صفر",
+  };
+  return labels[api] ?? api;
+}
+
+export function mapApiCustomerDetailToForm(row: ApiCustomerDetail): CustomerFormValues {
+  return {
+    nameAr: row.name_ar,
+    nameEn: row.name_en ?? "",
+    phone: row.phone,
+    whatsapp: row.whatsapp ?? "",
+    email: row.email ?? "",
+    address: row.address ?? "",
+    emirate: row.emirate ?? "",
+    trn: row.trn ?? "",
+    customerType: row.customer_type ?? "cash",
+    categoryId: row.category ?? undefined,
+    creditLimit: parseAmount(row.credit_limit),
+    openingBalance: parseAmount(row.opening_balance),
+    openingBalanceType: reverseOpeningBalanceType(row.opening_balance_type ?? "zero"),
+    paymentTermsDays: row.payment_terms_days ?? 0,
+    blockSalesWhenCreditExceeded: row.block_sales_when_credit_exceeded ?? true,
+    allowAdminCreditOverride: row.allow_admin_credit_override ?? true,
+    notes: row.notes ?? "",
+    isActive: row.is_active !== false,
+  };
+}
+
+/** Load full customer detail for edit form prefill. */
+export async function getCustomerDetail(id: string): Promise<CustomerFormValues | null> {
+  if (IS_MOCK_MODE) return null;
+  try {
+    const row = await crud.retrieve(id);
+    return mapApiCustomerDetailToForm(row);
   } catch {
     return null;
   }
@@ -322,6 +395,68 @@ export function buildCustomerCreatePayload(form: {
 
     if (form.paymentTermsDays != null && form.paymentTermsDays >= 0) {
       payload.payment_terms_days = form.paymentTermsDays;
+    }
+  }
+
+  return payload;
+}
+
+/** PATCH payload for customer profile edits (excludes opening balance — use dedicated endpoint). */
+export function buildCustomerUpdatePayload(form: {
+  nameAr: string;
+  nameEn?: string;
+  phone: string;
+  whatsapp?: string;
+  email?: string;
+  address?: string;
+  emirate?: string;
+  trn?: string;
+  customerType?: string;
+  categoryId?: number | null;
+  creditLimit?: number;
+  paymentTermsDays?: number;
+  blockSalesWhenCreditExceeded?: boolean;
+  allowAdminCreditOverride?: boolean;
+  notes?: string;
+}): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    name_ar: form.nameAr.trim(),
+    name_en: (form.nameEn?.trim() || form.nameAr.trim()),
+    phone: form.phone.trim(),
+    customer_type: form.customerType ?? "cash",
+    email: form.email?.trim() ?? "",
+    address: form.address?.trim() ?? "",
+    notes: form.notes?.trim() ?? "",
+  };
+
+  const whatsapp = form.whatsapp?.trim();
+  payload.whatsapp = whatsapp ?? "";
+
+  const emirate = form.emirate?.trim();
+  if (emirate) payload.emirate = emirate;
+
+  const trn = form.trn?.trim();
+  if (trn) payload.trn = trn;
+
+  if (form.categoryId != null && form.categoryId > 0) {
+    payload.category = form.categoryId;
+  } else {
+    payload.category = null;
+  }
+
+  const custType = form.customerType ?? "cash";
+  payload.credit_limit = String(custType === "credit" ? (form.creditLimit ?? 0) : 0);
+
+  if (form.paymentTermsDays != null && form.paymentTermsDays >= 0) {
+    payload.payment_terms_days = form.paymentTermsDays;
+  }
+
+  if (custType === "credit") {
+    if (form.blockSalesWhenCreditExceeded != null) {
+      payload.block_sales_when_credit_exceeded = form.blockSalesWhenCreditExceeded;
+    }
+    if (form.allowAdminCreditOverride != null) {
+      payload.allow_admin_credit_override = form.allowAdminCreditOverride;
     }
   }
 

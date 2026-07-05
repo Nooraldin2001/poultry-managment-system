@@ -14,6 +14,7 @@ Code commits: `ded78f1` (customer), `bff86fe` (reports + dashboard), `c7d747a` (
 | Module | Create screen | Calls POST API? | Loading? | DRF errors? | Refetches list? | Persists after refresh? | Status |
 | ------ | ------------- | --------------: | -------: | ----------: | --------------: | ----------------------: | ------ |
 | **Customers** | `CreateCustomerScreen` | Yes — `POST /api/v1/tenant/customers/` | Yes | Yes (`FormErrors`) | On navigate back (hook remount) | Yes | **Fixed** — deploy verify pending |
+| **Customer edit** | `CreateCustomerScreen` (`customers-edit`) | Yes — `PATCH /api/v1/tenant/customers/{id}/` | Yes | Yes | Profile/list remount | Yes | **Fixed** (2026-07-05) |
 | **Suppliers** | `CreateSupplierScreen` | Yes — `POST /api/v1/tenant/suppliers/` | Yes | Yes | On navigate back | Yes | **Fixed** in `c7d747a` |
 | **Products** | `CreateProductScreen` | Yes — `POST /api/v1/tenant/products/` | Yes | Yes | On navigate back | Yes | **Fixed** in `c7d747a` |
 | **Product categories** | `ProductCategoriesScreen` | Yes — `POST /api/v1/tenant/product-categories/` | Yes | Yes | Local state + reload on open | Yes | **Fixed** in `c7d747a` |

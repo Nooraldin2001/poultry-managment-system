@@ -10,6 +10,7 @@ export const TENANT_TITLES: Record<TenantScreen, [string, string]> = {
   "purchases-preview": ["سجل الشراء الداخلي", "Internal Purchase Record"],
   "purchases-detail": ["تفاصيل فاتورة الشراء", "Purchase Invoice Detail"],
   customers: ["العملاء", "Customers"], "customers-create": ["إضافة عميل", "Add Customer"],
+  "customers-edit": ["تعديل بيانات العميل", "Edit Customer"],
   "customers-profile": ["ملف العميل", "Customer Profile"], "customers-statement": ["كشف حساب", "Account Statement"],
   suppliers: ["الموردين", "Suppliers"], "suppliers-new": ["إضافة مورد", "Add Supplier"],
   "supplier-profile": ["ملف المورد", "Supplier Profile"], "supplier-statement": ["كشف حساب مورد", "Supplier Statement"],

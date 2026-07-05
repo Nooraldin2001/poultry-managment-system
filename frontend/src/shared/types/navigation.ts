@@ -11,7 +11,7 @@ export type TenantScreen =
   | "dashboard" | "sales" | "sales-list" | "sales-new" | "sales-preview" | "sales-detail"
   | "purchases" | "purchases-list" | "purchases-new" | "purchases-preview" | "purchases-detail"
   | "quotations" | "inventory" | "inventory-product" | "inventory-stocktaking" | "inventory-alerts" | "inventory-movement" | "inventory-valuation"
-  | "customers" | "customers-create" | "customers-profile" | "customers-statement"
+  | "customers" | "customers-create" | "customers-edit" | "customers-profile" | "customers-statement"
   | "suppliers" | "suppliers-new" | "supplier-profile" | "supplier-statement"
   | "payments" | "expenses" | "expenses-list" | "expenses-recurring" | "expenses-report" | "expense-detail" | "expense-voucher"
   | "accounts" | "tax" | "tax-sales" | "tax-purchases" | "tax-net" | "tax-warnings" | "tax-audit" | "tax-credit-notes" | "tax-non-taxable" | "tax-settings" | "tax-export-preview" | "users" | "qa-summary"

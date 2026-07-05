@@ -31,7 +31,10 @@ const SCREEN_PERMISSION: Partial<Record<TenantScreen, string>> = {
   "quotations-new": "quotations.create",
   "quotation-detail": "quotations.view",
   "products-new": "products.create",
+  "products-edit": "products.edit",
   "product-detail": "products.view",
+  "customers-create": "customers.create",
+  "customers-edit": "customers.edit",
   "inventory-valuation": "inventory.view_valuation",
   "inventory-stocktaking": "inventory.manage",
   "tax-warnings": "tax.view",
@@ -58,6 +61,7 @@ const CASHIER_DENIED_SCREENS: TenantScreen[] = [
   "reports-builder", "users", "settings-users", "settings-user-new", "settings-user-permissions",
   "settings-roles", "settings-vat", "settings-numbering", "settings-print-templates",
   "products-new", "product-categories", "products-bulk-setup", "products-byproducts", "products-import-export",
+  "customers-create", "customers-edit",
 ];
 
 const ACCOUNTANT_DENIED_SCREENS: TenantScreen[] = ["users", "settings-user-new", "settings-roles"];

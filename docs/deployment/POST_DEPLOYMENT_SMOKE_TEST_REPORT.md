@@ -585,3 +585,17 @@ Dry-run on VPS: **not executed** (awaiting deploy + operator review).
 
 Docs: [PRICING_OVERRIDE_AND_HISTORY.md](./PRICING_OVERRIDE_AND_HISTORY.md), [SALES_MODULE_AUDIT.md](./SALES_MODULE_AUDIT.md)
 
+---
+
+## Phase 4 — Customer edit (2026-07-05)
+
+| Area | Code status | Tests |
+|---|---|---|
+| Customer list **تعديل** action | Fixed | — |
+| Profile **تعديل بيانات العميل** | Fixed | — |
+| Edit form prefill + PATCH save | Fixed | `test_customers.py` 20 passed |
+| Permission `customers.edit` | Enforced | cashier 403 test |
+| Frontend typecheck/build | **Pass** | — |
+
+See [CUSTOMER_MODULE_AUDIT.md](./CUSTOMER_MODULE_AUDIT.md).
+
