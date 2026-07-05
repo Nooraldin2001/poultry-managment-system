@@ -466,3 +466,58 @@ python manage.py purge_tenant_demo_data --company-subdomain firstview --module p
 ```
 
 **Launch stance:** **NO-GO** until deploy + owner smoke on numbering + payment summary.
+
+---
+
+## First View — Tax & Expenses fix (2026-07-05)
+
+**Tenant:** `https://firstview.poultryhero.solutions`  
+**Status:** Fix implemented locally; **not yet deployed** to VPS.
+
+### Part A — Tax error reproduction (pre-fix production)
+
+| Item | Finding |
+|---|---|
+| Failing endpoint | `GET /api/v1/tenant/tax/summary/` |
+| Method | GET |
+| Query params | **Missing** `date_from`, `date_to` on dashboard initial load |
+| Response | HTTP **400** — `"date_from and date_to are required."` |
+| Same-origin | Yes — `https://firstview.poultryhero.solutions/api/...` |
+| Mock mode | `VITE_USE_MOCK_DATA=false` (production bundle) |
+
+### Part B–G — Fix summary
+
+See [TAX_MODULE_AUDIT.md](./TAX_MODULE_AUDIT.md) and [EXPENSE_MODULE_AUDIT.md](./EXPENSE_MODULE_AUDIT.md).
+
+| Module | Root cause | Fix |
+|---|---|---|
+| Tax | No default dates; wrong API field mapping; mock KPIs in live UI | `getDefaultTaxDateRange()`, `withTaxDateRange()`, live totals |
+| Expenses | Hardcoded `RECURRING`, `CAT_DIST`, `EXPENSE_TREND`, report table | Live API + empty states; mock gated by `IS_MOCK_MODE` |
+
+### Expense demo purge (VPS — pending)
+
+```bash
+python manage.py purge_tenant_demo_data --company-subdomain firstview --module expenses --dry-run
+# Review output, then if only demo titles:
+python manage.py purge_tenant_demo_data --company-subdomain firstview --module expenses --confirm-delete-demo-data
+```
+
+Dry-run on VPS: **not executed** (awaiting deploy + operator review).
+
+### Checks (local)
+
+| Check | Result |
+|---|---|
+| `corepack pnpm run typecheck` | **Pass** |
+| `corepack pnpm run build` | **Pass** |
+| `python manage.py check` | **Pass** |
+| `pytest tests/test_tax.py tests/test_tenant_demo_commands.py` | **47 passed** |
+
+### Production health (curl)
+
+| URL | Result |
+|---|---|
+| `https://firstview.poultryhero.solutions` | HTTP 200 |
+| `https://firstview.poultryhero.solutions/api/v1/health/` | `{"status":"ok","service":"poultryhero-api"}` |
+
+**Launch stance (tax/expenses):** **NO-GO** until VPS deploy + First View owner smoke (Tax loads, Expenses show no demo rows).

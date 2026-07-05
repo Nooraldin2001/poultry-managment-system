@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // POULTRY HERO — EXPENSES MANAGEMENT MODULE (self-contained)
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 import {
   Plus, X, Check, ChevronRight, ChevronLeft, ChevronDown,
@@ -20,7 +20,8 @@ import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/s
 import { toModuleExpense } from "./moduleMappers";
 import { IS_MOCK_MODE } from "@/services/config";
 import { LivePrintPreviewScreen } from "@/features/print/LivePrintPreviewScreen";
-import { getExpenseVoucherPreview } from "@/services/expenseService";
+import { getExpenseVoucherPreview, getExpensesSummary, listRecurringExpenses } from "@/services/expenseService";
+import { getDefaultTaxDateRange, lastNDaysIso, todayIsoDate } from "@/shared/utils/dateRanges";
 import { LiveExpenseDetailScreen } from "@/features/documents/LiveExpenseDetailScreen";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
@@ -170,20 +171,67 @@ function expenseRowFromMock(e: Expense) {
 
 function enrichExpense(row: import("@/shared/types/entities").ExpenseRow, mock?: Expense): Expense {
   const m = toModuleExpense(row);
+  if (IS_MOCK_MODE && mock) {
+    return {
+      id: m.id,
+      date: m.date,
+      type: mock.type,
+      category: m.category,
+      categoryAr: mock.categoryAr,
+      description: mock.description,
+      amount: m.amount,
+      method: m.method,
+      status: mock.status as ExpStatus,
+      user: mock.user,
+      purchaseInv: mock.purchaseInv,
+      treatment: mock.treatment,
+    };
+  }
   return {
     id: m.id,
-    date: m.date,
-    type: mock?.type ?? "daily",
-    category: m.category,
-    categoryAr: mock?.categoryAr ?? m.category,
-    description: mock?.description ?? m.note,
+    date: m.date ?? "",
+    type: "daily",
+    category: m.category ?? "",
+    categoryAr: m.category ?? "",
+    description: m.note ?? "",
     amount: m.amount,
-    method: m.method,
-    status: (mock?.status ?? m.status) as ExpStatus,
-    user: mock?.user ?? "",
-    purchaseInv: mock?.purchaseInv,
-    treatment: mock?.treatment,
+    method: m.method ?? "",
+    status: (m.status ?? "paid") as ExpStatus,
+    user: "",
   };
+}
+
+const CHART_COLORS = ["#0F2C59", "#22C55E", "#F59E0B", "#8B5CF6", "#06B6D4", "#EF4444"];
+
+function buildCategoryDist(
+  expenses: Expense[],
+  isRTL: boolean,
+): { name: string; nameEn: string; value: number; color: string }[] {
+  const totals = new Map<string, number>();
+  for (const e of expenses) {
+    const key = e.categoryAr || e.category || "Other";
+    totals.set(key, (totals.get(key) ?? 0) + e.amount);
+  }
+  return [...totals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([name, value], i) => ({
+      name,
+      nameEn: name,
+      value,
+      color: CHART_COLORS[i % CHART_COLORS.length],
+    }));
+}
+
+function buildExpenseTrend(expenses: Expense[], isRTL: boolean) {
+  const days = lastNDaysIso(7);
+  const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Today"];
+  const arLabels = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "اليوم"];
+  return days.map((iso, i) => ({
+    day: arLabels[i] ?? iso,
+    dayEn: dayLabels[i] ?? iso,
+    total: expenses.filter((e) => e.date === iso).reduce((s, e) => s + e.amount, 0),
+  }));
 }
 
 // ── SCREEN: EXPENSES OVERVIEW ──────────────────────────────────────────────────
@@ -194,29 +242,87 @@ export function ExpensesOverviewScreen({ lang, role, onNavigate }: {
   const [showAddModal, setShowAddModal] = useState<"daily" | "monthly" | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showProfitPanel, setShowProfitPanel] = useState(false);
+  const [summary, setSummary] = useState<Record<string, number>>({});
+  const [recurringRows, setRecurringRows] = useState<typeof RECURRING>([]);
+  const [recurringLoading, setRecurringLoading] = useState(!IS_MOCK_MODE);
 
   const { items: expenseRows, loading, error, forbidden, reload } = useExpenses(undefined, async () => MOCK_EXPENSES.map(expenseRowFromMock));
-  const EXPENSES = expenseRows.map((row) => enrichExpense(row, MOCK_EXPENSES.find((m) => m.id === row.id)));
+  const EXPENSES = expenseRows.map((row) =>
+    enrichExpense(row, IS_MOCK_MODE ? MOCK_EXPENSES.find((m) => m.id === row.id) : undefined),
+  );
+
+  const monthRange = getDefaultTaxDateRange();
+  const today = todayIsoDate();
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) {
+      setRecurringRows(RECURRING);
+      setRecurringLoading(false);
+      return;
+    }
+    setRecurringLoading(true);
+    void getExpensesSummary({ date_from: monthRange.date_from, date_to: monthRange.date_to })
+      .then(setSummary)
+      .catch(() => setSummary({}));
+    void listRecurringExpenses()
+      .then((rows) => {
+        setRecurringRows(rows.map((r) => ({
+          id: r.id,
+          name: r.title ?? r.category,
+          category: r.category,
+          amount: r.amount,
+          freq: r.frequency,
+          dueDay: 1,
+          lastPaid: "",
+          nextDue: r.nextDate ?? "",
+          active: r.active,
+        })));
+      })
+      .catch(() => setRecurringRows([]))
+      .finally(() => setRecurringLoading(false));
+  }, [IS_MOCK_MODE, monthRange.date_from, monthRange.date_to]);
+
+  const catDist = useMemo(
+    () => (IS_MOCK_MODE ? CAT_DIST : buildCategoryDist(EXPENSES, isRTL)),
+    [EXPENSES, isRTL],
+  );
+  const expenseTrend = useMemo(
+    () => (IS_MOCK_MODE ? EXPENSE_TREND : buildExpenseTrend(EXPENSES, isRTL)),
+    [EXPENSES, isRTL],
+  );
+  const upcomingRecurring = IS_MOCK_MODE ? RECURRING : recurringRows;
 
   if (forbidden) return <PermissionDeniedState lang={lang} />;
   if (loading) return <LoadingState lang={lang} />;
   if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
 
   const canAdd = role === "owner" || role === "accountant";
-  const todayExp = EXPENSES.filter(e => e.date === "2025-01-28" && e.type === "daily").reduce((s, e) => s + e.amount, 0);
-  const monthlyFixed = EXPENSES.filter(e => e.type === "monthly").reduce((s, e) => s + e.amount, 0);
-  const monthlyDaily = EXPENSES.filter(e => e.type === "daily").reduce((s, e) => s + e.amount, 0);
-  const purchaseExp = EXPENSES.filter(e => e.type === "purchase").reduce((s, e) => s + e.amount, 0);
+  const todayExp = IS_MOCK_MODE
+    ? EXPENSES.filter(e => e.date === "2025-01-28" && e.type === "daily").reduce((s, e) => s + e.amount, 0)
+    : (summary.daily_expenses ?? EXPENSES.filter(e => e.date === today).reduce((s, e) => s + e.amount, 0));
+  const monthlyFixed = IS_MOCK_MODE
+    ? EXPENSES.filter(e => e.type === "monthly").reduce((s, e) => s + e.amount, 0)
+    : (summary.monthly_expenses ?? 0);
+  const monthlyDaily = IS_MOCK_MODE
+    ? EXPENSES.filter(e => e.type === "daily").reduce((s, e) => s + e.amount, 0)
+    : (summary.total_expenses ?? EXPENSES.reduce((s, e) => s + e.amount, 0));
+  const purchaseExp = IS_MOCK_MODE
+    ? EXPENSES.filter(e => e.type === "purchase").reduce((s, e) => s + e.amount, 0)
+    : (summary.purchase_linked_expenses ?? 0);
+  const upcomingRecurringTotal = upcomingRecurring
+    .filter((r) => r.active)
+    .reduce((s, r) => s + r.amount, 0);
+  const topCategory = catDist[0]?.name ?? "—";
 
   const kpis = [
     { v: `AED ${todayExp.toLocaleString()}`,                ar: "مصروفات اليوم",                 en: "Today's Expenses",       bg: "bg-red-500",     click: () => onNavigate("expenses-list") },
-    { v: `AED ${(monthlyDaily + monthlyFixed).toLocaleString()}`, ar: "مصروفات هذا الشهر",      en: "This Month's Expenses",  bg: "bg-amber-500",   click: undefined },
+    { v: `AED ${(monthlyDaily + (IS_MOCK_MODE ? monthlyFixed : 0)).toLocaleString()}`, ar: "مصروفات هذا الشهر",      en: "This Month's Expenses",  bg: "bg-amber-500",   click: undefined },
     { v: `AED ${monthlyDaily.toLocaleString()}`,            ar: "مصروفات يومية",                 en: "Daily Expenses",         bg: "bg-blue-500",    click: undefined },
     { v: `AED ${monthlyFixed.toLocaleString()}`,            ar: "مصروفات شهرية",                 en: "Monthly Expenses",       bg: "bg-violet-500",  click: undefined },
     { v: `AED ${purchaseExp.toLocaleString()}`,             ar: "مرتبطة بالمشتريات",             en: "Purchase-Linked",        bg: "bg-[#0F2C59]",   click: undefined },
-    { v: IS_MOCK_MODE ? "AED 26,650" : "AED 0",                                      ar: "متكررة قادمة هذا الشهر",        en: "Upcoming Recurring",     bg: "bg-emerald-500", click: () => onNavigate("expenses-recurring") },
-    { v: IS_MOCK_MODE ? "الرواتب" : "—",                                          ar: "أكبر تصنيف مصروف",             en: "Top Category",           bg: "bg-slate-500",   click: undefined },
-    { v: IS_MOCK_MODE ? "AED 6,400" : "AED 0",                                       ar: "تأثير على صافي الربح اليوم",    en: "Today Profit Impact",    bg: "bg-emerald-600", click: () => setShowProfitPanel(true) },
+    { v: `AED ${upcomingRecurringTotal.toLocaleString()}`,  ar: "متكررة قادمة هذا الشهر",        en: "Upcoming Recurring",     bg: "bg-emerald-500", click: () => onNavigate("expenses-recurring") },
+    { v: topCategory,                                       ar: "أكبر تصنيف مصروف",             en: "Top Category",           bg: "bg-slate-500",   click: undefined },
+    { v: `AED ${todayExp.toLocaleString()}`,                ar: "تأثير على صافي الربح اليوم",    en: "Today Profit Impact",    bg: "bg-emerald-600", click: () => setShowProfitPanel(true) },
   ];
 
   return (
@@ -271,7 +377,7 @@ export function ExpensesOverviewScreen({ lang, role, onNavigate }: {
         <Card className="p-5 lg:col-span-2">
           <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "مصروفات آخر 7 أيام (AED)" : "Last 7 Days Expenses (AED)"}</h3>
           <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={EXPENSE_TREND}>
+            <LineChart data={expenseTrend}>
               <CartesianGrid key="exp-trend-grid" strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis key="exp-trend-x" dataKey={isRTL ? "day" : "dayEn"} tick={{ fontSize: 11, fill: "#94a3b8", fontFamily: "Cairo" }} axisLine={false} tickLine={false} />
               <YAxis key="exp-trend-y" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
@@ -286,14 +392,14 @@ export function ExpensesOverviewScreen({ lang, role, onNavigate }: {
           <h3 className="font-black text-[#0F2C59] mb-3 text-sm">{isRTL ? "توزيع التصنيفات" : "Category Distribution"}</h3>
           <ResponsiveContainer width="100%" height={150}>
             <PieChart>
-              <Pie key="exp-cat-pie" data={CAT_DIST} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={2}>
-                {CAT_DIST.map((e, i) => <Cell key={`ec-${i}`} fill={e.color} />)}
+              <Pie key="exp-cat-pie" data={catDist.length ? catDist : [{ name: isRTL ? "لا بيانات" : "No data", nameEn: "No data", value: 1, color: "#e2e8f0" }]} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={2}>
+                {(catDist.length ? catDist : [{ name: "—", nameEn: "—", value: 1, color: "#e2e8f0" }]).map((e, i) => <Cell key={`ec-${i}`} fill={e.color} />)}
               </Pie>
               <Tooltip key="exp-cat-tip" contentStyle={{ borderRadius: 10, border: "none", fontFamily: "Cairo" }} formatter={(v: number, _, p: { payload: { name: string; nameEn: string } }) => [`AED ${v.toLocaleString()}`, isRTL ? p.payload.name : p.payload.nameEn]} />
             </PieChart>
           </ResponsiveContainer>
           <div className="space-y-1.5 mt-2">
-            {CAT_DIST.map(c => (
+            {(catDist.length ? catDist : []).map(c => (
               <div key={c.name} className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.color }} /><span className="font-semibold text-slate-600">{isRTL ? c.name : c.nameEn}</span></div>
                 <span className="font-mono font-bold text-slate-700">AED {c.value.toLocaleString()}</span>
@@ -311,6 +417,9 @@ export function ExpensesOverviewScreen({ lang, role, onNavigate }: {
             <Btn variant="ghost" size="sm" onClick={() => onNavigate("expenses-list")}><Eye size={13} />{isRTL ? "عرض الكل" : "All"}</Btn>
           </div>
           <div className="divide-y divide-slate-50">
+            {EXPENSES.length === 0 && !IS_MOCK_MODE && (
+              <div className="px-5 py-8 text-center text-sm text-slate-400">{isRTL ? "لا توجد مصروفات بعد" : "No expenses yet"}</div>
+            )}
             {EXPENSES.slice(0, 5).map(e => (
               <div key={e.id} className="px-5 py-3 flex items-center justify-between">
                 <div>
@@ -329,7 +438,11 @@ export function ExpensesOverviewScreen({ lang, role, onNavigate }: {
             <Btn variant="ghost" size="sm" onClick={() => onNavigate("expenses-recurring")}><Eye size={13} />{isRTL ? "عرض الكل" : "All"}</Btn>
           </div>
           <div className="divide-y divide-slate-50">
-            {RECURRING.map(r => {
+            {recurringLoading ? (
+              <div className="px-5 py-8 text-center text-sm text-slate-400">{isRTL ? "جاري التحميل..." : "Loading..."}</div>
+            ) : upcomingRecurring.length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-slate-400">{isRTL ? "لا توجد مصروفات متكررة" : "No recurring expenses"}</div>
+            ) : upcomingRecurring.slice(0, 4).map(r => {
               const daysLeft = Math.ceil((new Date(r.nextDue).getTime() - Date.now()) / 86400000);
               return (
                 <div key={r.id} className="px-5 py-3 flex items-center justify-between">
@@ -368,7 +481,9 @@ export function ExpensesListScreen({ lang, role, onNavigate, setSelectedExpense 
     search ? { search } : undefined,
     async () => MOCK_EXPENSES.map(expenseRowFromMock),
   );
-  const EXPENSES = expenseRows.map((row) => enrichExpense(row, MOCK_EXPENSES.find((m) => m.id === row.id)));
+  const EXPENSES = expenseRows.map((row) =>
+    enrichExpense(row, IS_MOCK_MODE ? MOCK_EXPENSES.find((m) => m.id === row.id) : undefined),
+  );
 
   if (forbidden) return <PermissionDeniedState lang={lang} />;
   if (loading) return <LoadingState lang={lang} />;
@@ -589,7 +704,42 @@ export function AddExpenseModal({ lang, defaultType = "daily", onClose }: {
 export function RecurringExpensesScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
   const [showAddRecurring, setShowAddRecurring] = useState(false);
+  const [rows, setRows] = useState<typeof RECURRING>([]);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
   const canManage = role === "owner" || role === "accountant";
+
+  const reload = () => {
+    if (IS_MOCK_MODE) {
+      setRows(RECURRING);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    listRecurringExpenses()
+      .then((apiRows) => {
+        setRows(apiRows.map((r) => ({
+          id: r.id,
+          name: r.title ?? r.category,
+          category: r.category,
+          amount: r.amount,
+          freq: r.frequency,
+          dueDay: 1,
+          lastPaid: "",
+          nextDue: r.nextDate ?? "",
+          active: r.active,
+        })));
+      })
+      .catch((err) => setError(err))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    reload();
+  }, []);
+
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={reload} />;
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -605,18 +755,18 @@ export function RecurringExpensesScreen({ lang, role, onNavigate }: { lang: Lang
       </div>
 
       {/* Upcoming alert */}
-      {RECURRING.some(r => Math.ceil((new Date(r.nextDue).getTime() - Date.now()) / 86400000) <= 5) && (
+      {rows.some(r => r.nextDue && Math.ceil((new Date(r.nextDue).getTime() - Date.now()) / 86400000) <= 5) && (
         <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex items-center gap-3">
           <Clock size={18} className="text-amber-500 shrink-0" />
           <div className="flex-1">
             <div className="font-black text-amber-700 text-sm">{isRTL ? "تنبيه: مصروفات متكررة مستحقة قريباً" : "Alert: Recurring expenses due soon"}</div>
-            <p className="text-xs font-bold text-amber-600">{RECURRING.filter(r => Math.ceil((new Date(r.nextDue).getTime() - Date.now()) / 86400000) <= 5).map(r => r.name).join(" · ")}</p>
+            <p className="text-xs font-bold text-amber-600">{rows.filter(r => r.nextDue && Math.ceil((new Date(r.nextDue).getTime() - Date.now()) / 86400000) <= 5).map(r => r.name).join(" · ")}</p>
           </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {RECURRING.map(r => {
+        {rows.map(r => {
           const daysLeft = Math.ceil((new Date(r.nextDue).getTime() - Date.now()) / 86400000);
           const isUrgent = daysLeft <= 3;
           return (
@@ -639,7 +789,7 @@ export function RecurringExpensesScreen({ lang, role, onNavigate }: { lang: Lang
         })}
       </div>
 
-      {RECURRING.length === 0 && (
+      {rows.length === 0 && (
         <Card className="p-14 text-center"><RefreshCw size={48} className="text-slate-200 mx-auto mb-4" /><h3 className="text-lg font-black text-slate-500 mb-2">{isRTL ? "لا توجد مصروفات متكررة" : "No recurring expenses"}</h3>{canManage && <Btn onClick={() => setShowAddRecurring(true)}><Plus size={15} />{isRTL ? "إضافة مصروف متكرر" : "Add Recurring Expense"}</Btn>}</Card>
       )}
 
@@ -845,19 +995,37 @@ export function ExpenseVoucherScreen({ lang, onNavigate, expenseId }: {
 // ── SCREEN: EXPENSES REPORT ────────────────────────────────────────────────────
 export function ExpensesReportScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
-  const [dateFrom, setDateFrom] = useState("2025-01-01");
-  const [dateTo, setDateTo] = useState("2025-01-31");
+  const defaultRange = getDefaultTaxDateRange();
+  const [dateFrom, setDateFrom] = useState(defaultRange.date_from);
+  const [dateTo, setDateTo] = useState(defaultRange.date_to);
+  const { items: expenseRows, loading, error, reload } = useExpenses(
+    { date_from: dateFrom, date_to: dateTo },
+    async () => MOCK_EXPENSES.map(expenseRowFromMock),
+  );
+  const EXPENSES = expenseRows.map((row) =>
+    enrichExpense(row, IS_MOCK_MODE ? MOCK_EXPENSES.find((m) => m.id === row.id) : undefined),
+  );
 
-  const totalAll = MOCK_EXPENSES.reduce((s, e) => s + e.amount, 0);
-  const totalDaily = MOCK_EXPENSES.filter(e => e.type === "daily").reduce((s, e) => s + e.amount, 0);
-  const totalMonthly = MOCK_EXPENSES.filter(e => e.type === "monthly").reduce((s, e) => s + e.amount, 0);
-  const totalPurchase = MOCK_EXPENSES.filter(e => e.type === "purchase").reduce((s, e) => s + e.amount, 0);
+  const totalAll = EXPENSES.reduce((s, e) => s + e.amount, 0);
+  const totalDaily = IS_MOCK_MODE
+    ? EXPENSES.filter(e => e.type === "daily").reduce((s, e) => s + e.amount, 0)
+    : totalAll;
+  const totalMonthly = IS_MOCK_MODE
+    ? EXPENSES.filter(e => e.type === "monthly").reduce((s, e) => s + e.amount, 0)
+    : 0;
+  const totalPurchase = IS_MOCK_MODE
+    ? EXPENSES.filter(e => e.type === "purchase").reduce((s, e) => s + e.amount, 0)
+    : 0;
+  const catDist = IS_MOCK_MODE ? CAT_DIST : buildCategoryDist(EXPENSES, isRTL);
 
   const BAR_DATA = [
     { name: isRTL ? "يومي" : "Daily",    daily: totalDaily, monthly: 0 },
     { name: isRTL ? "شهري" : "Monthly",  daily: 0, monthly: totalMonthly },
     { name: isRTL ? "شراء" : "Purchase", daily: totalPurchase, monthly: 0 },
   ];
+
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -888,8 +1056,8 @@ export function ExpensesReportScreen({ lang, role, onNavigate }: { lang: Lang; r
           <h3 className="font-black text-[#0F2C59] mb-4 text-sm">{isRTL ? "توزيع التصنيفات" : "Category Distribution"}</h3>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
-              <Pie key="rpt-cat-pie" data={CAT_DIST} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
-                {CAT_DIST.map((e, i) => <Cell key={`rpc-${i}`} fill={e.color} />)}
+              <Pie key="rpt-cat-pie" data={catDist.length ? catDist : [{ name: "—", nameEn: "—", value: 1, color: "#e2e8f0" }]} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
+                {(catDist.length ? catDist : [{ name: "—", nameEn: "—", value: 1, color: "#e2e8f0" }]).map((e, i) => <Cell key={`rpc-${i}`} fill={e.color} />)}
               </Pie>
               <Tooltip key="rpt-cat-tip" contentStyle={{ borderRadius: 10, border: "none", fontFamily: "Cairo" }} formatter={(v: number, _, p: { payload: { name: string; nameEn: string } }) => [`AED ${v.toLocaleString()}`, isRTL ? p.payload.name : p.payload.nameEn]} />
             </PieChart>
@@ -916,7 +1084,9 @@ export function ExpensesReportScreen({ lang, role, onNavigate }: { lang: Lang; r
           <table className="w-full text-sm">
             <thead><tr className="bg-slate-50/80 border-b border-slate-200">{[isRTL ? "رقم المصروف" : "Exp #", isRTL ? "التاريخ" : "Date", isRTL ? "النوع" : "Type", isRTL ? "التصنيف" : "Category", isRTL ? "الوصف" : "Description", isRTL ? "المبلغ" : "Amount", isRTL ? "الطريقة" : "Method", isRTL ? "المستخدم" : "User"].map((h, i) => <th key={i} className={`px-4 py-3 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {MOCK_EXPENSES.map(e => (
+              {EXPENSES.length === 0 && !IS_MOCK_MODE ? (
+                <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-400">{isRTL ? "لا توجد مصروفات في هذه الفترة" : "No expenses in this period"}</td></tr>
+              ) : EXPENSES.map(e => (
                 <tr key={e.id} className="hover:bg-slate-50/60">
                   <td className="px-4 py-3 font-mono text-xs text-[#0F2C59] font-bold">{e.id}</td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-500">{e.date}</td>

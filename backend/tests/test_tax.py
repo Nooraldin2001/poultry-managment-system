@@ -464,6 +464,27 @@ def test_owner_can_view_summary(api, company, owner):
     assert resp.status_code == 200
 
 
+def test_tax_summary_requires_date_filters(api, company, owner):
+    api.force_authenticate(user=owner)
+    resp = api.get(TAX_SUMMARY_URL)
+    assert resp.status_code == 400
+    assert "date_from" in str(resp.data).lower() or "required" in str(resp.data).lower()
+
+
+def test_tax_summary_empty_tenant_returns_zeros(api, company, owner):
+    api.force_authenticate(user=owner)
+    resp = api.get(TAX_SUMMARY_URL, {"date_from": str(date.today()), "date_to": str(date.today())})
+    assert resp.status_code == 200
+    assert resp.data["sales_vat"] in ("0.00", 0, Decimal("0.00"))
+    assert resp.data["net_vat"] in ("0.00", 0, Decimal("0.00"))
+
+
+def test_sales_vat_requires_date_filters(api, company, owner):
+    api.force_authenticate(user=owner)
+    resp = api.get(SALES_VAT_URL)
+    assert resp.status_code == 400
+
+
 def test_accountant_can_view_net_vat(api, company, accountant, owner):
     _approved_sale(company, owner, trn="123")
     api.force_authenticate(user=accountant)

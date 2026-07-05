@@ -8,6 +8,8 @@ Usage:
     python manage.py purge_tenant_demo_data --company-subdomain firstview --confirm-delete-demo-data
 """
 
+from decimal import Decimal
+
 import re
 
 from django.core.management.base import BaseCommand, CommandError
@@ -26,6 +28,20 @@ _DEMO_PURCHASE_INVOICE_PATTERNS = re.compile(r"(PUR-2025-0042|PINV-DEMO|DEMO-PUR
 _DEMO_SUPPLIER_INV_PATTERNS = re.compile(r"^WST-", re.IGNORECASE)
 
 # Known demo seed customer/supplier names (exact match, case-insensitive).
+_KNOWN_DEMO_EXPENSE_TITLES = {
+    "إيجار السكن",
+    "إيجار السيارات",
+    "رواتب",
+    "إنترنت واتصالات",
+    "اشتراك نظام",
+}
+_KNOWN_DEMO_EXPENSE_AMOUNTS = {
+    Decimal("4500"),
+    Decimal("2300"),
+    Decimal("18000"),
+    Decimal("650"),
+    Decimal("350"),
+}
 _KNOWN_DEMO_NAMES = {
     "مطعم الخليج", "gulf restaurant", "سوبر ماركت المدينة", "al madina supermarket",
     "مطبخ الإمارات", "emirates kitchen", "prime fresh meat llc", "prime fresh meat",
@@ -33,6 +49,24 @@ _KNOWN_DEMO_NAMES = {
     "mnm foodstuff", "نقل الإمارات", "smoke test customer", "test customer", "demo customer",
     "شركة الوطنية للدواجن", "al wataniya poultry company llc", "al wataniya",
 }
+
+
+def _is_demo_expense(obj) -> bool:
+    title = (getattr(obj, "title", None) or "").strip()
+    if title in _KNOWN_DEMO_EXPENSE_TITLES:
+        return True
+    if _looks_demo_name(title):
+        return True
+    amount = getattr(obj, "amount", None)
+    if amount in _KNOWN_DEMO_EXPENSE_AMOUNTS and (
+        title in _KNOWN_DEMO_EXPENSE_TITLES or _looks_demo_name(title)
+    ):
+        return True
+    return False
+
+
+def _is_demo_recurring_expense(obj) -> bool:
+    return _is_demo_expense(obj)
 
 
 def _looks_demo_name(value: str | None) -> bool:
@@ -116,7 +150,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--module",
             default="all",
-            choices=("all", "purchases", "payments", "masters"),
+            choices=("all", "purchases", "payments", "masters", "expenses"),
             help="Scope: all demo masters + purchases/payments, or a single module.",
         )
         parser.add_argument(
@@ -182,6 +216,22 @@ class Command(BaseCommand):
             ]
             plan.append(("payments.PaymentMovement (demo-like)", demo_payments))
 
+        if module in ("all", "expenses"):
+            Expense = django_apps.get_model("expenses", "Expense")
+            RecurringExpense = django_apps.get_model("expenses", "RecurringExpense")
+            demo_expenses = [
+                e for e in Expense.objects.filter(company=company).select_related("category")
+                if _is_demo_expense(e)
+            ]
+            demo_recurring = [
+                r for r in RecurringExpense.objects.filter(company=company).select_related("category")
+                if _is_demo_recurring_expense(r)
+            ]
+            plan.extend([
+                ("expenses.Expense (demo-like)", demo_expenses),
+                ("expenses.RecurringExpense (demo-like)", demo_recurring),
+            ])
+
         self.stdout.write("Demo-like records:")
         total = 0
         for label, items in plan:
@@ -196,7 +246,7 @@ class Command(BaseCommand):
                             f"status={item.status}"
                         )
                     else:
-                        name = getattr(item, "name_en", None) or getattr(item, "name_ar", None) or item.pk
+                        name = getattr(item, "name_en", None) or getattr(item, "name_ar", None) or getattr(item, "title", None) or item.pk
                     self.stdout.write(f"      id={item.pk} {name}")
                 if n > 15:
                     self.stdout.write(f"      ... and {n - 15} more")
@@ -307,8 +357,66 @@ class Command(BaseCommand):
                         deleted_total += 1
                         self.stdout.write(f"Deleted payments.PaymentMovement id={pk} ({mov_no})")
 
+            if module in ("all", "expenses"):
+                from apps.expenses import services as expense_services
+                from apps.expenses.models import ExpenseStatus
+                from apps.accounts.models import User
+
+                expense_items = next(
+                    (items for label, items in plan if label.startswith("expenses.Expense")),
+                    [],
+                )
+                recurring_items = next(
+                    (items for label, items in plan if label.startswith("expenses.RecurringExpense")),
+                    [],
+                )
+                purge_user = (
+                    User.objects.filter(company=company, is_active=True)
+                    .order_by("id")
+                    .first()
+                )
+                for expense in expense_items:
+                    pk = expense.pk
+                    title = getattr(expense, "title", pk)
+                    if expense.status == ExpenseStatus.POSTED:
+                        if not purge_user:
+                            self.stdout.write(
+                                self.style.WARNING(
+                                    f"Skip expense id={pk}: no active user to cancel"
+                                )
+                            )
+                            continue
+                        try:
+                            expense_services.cancel_expense(
+                                expense=expense,
+                                user=purge_user,
+                                reason="Demo data purge",
+                            )
+                            expense.refresh_from_db()
+                        except Exception as exc:
+                            self.stdout.write(
+                                self.style.WARNING(
+                                    f"Could not cancel expense id={pk} ({title}): {exc}"
+                                )
+                            )
+                            continue
+                    expense.delete()
+                    deleted_total += 1
+                    self.stdout.write(f"Deleted expenses.Expense id={pk} ({title})")
+
+                for recurring in recurring_items:
+                    pk = recurring.pk
+                    title = getattr(recurring, "title", pk)
+                    recurring.delete()
+                    deleted_total += 1
+                    self.stdout.write(f"Deleted expenses.RecurringExpense id={pk} ({title})")
+
             for label, items in plan:
-                if "PurchaseInvoice" in label or "PaymentMovement" in label:
+                if (
+                    "PurchaseInvoice" in label
+                    or "PaymentMovement" in label
+                    or label.startswith("expenses.")
+                ):
                     continue
                 for item in items:
                     pk = item.pk

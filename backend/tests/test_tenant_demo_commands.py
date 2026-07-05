@@ -108,6 +108,89 @@ def test_purge_tenant_demo_payments_dry_run(company, owner):
     assert PaymentMovement.objects.filter(company=company).count() == 1
 
 
+def test_purge_tenant_demo_expenses_dry_run(company, owner):
+    from datetime import date
+    from decimal import Decimal
+
+    from apps.expenses.models import Expense, ExpenseCategory, ExpenseCategoryType, ExpenseStatus, RecurringExpense
+
+    from apps.expenses import services as expense_services
+
+    cat = ExpenseCategory.objects.create(
+        company=company, name_ar="إيجار السكن", code="RENT", category_type=ExpenseCategoryType.MONTHLY,
+    )
+    expense_services.create_expense(
+        company=company, category=cat, created_by=owner,
+        title="إيجار السكن", expense_date=date.today(), amount=Decimal("4500.00"),
+    )
+    RecurringExpense.objects.create(
+        company=company,
+        category=cat,
+        title="رواتب",
+        amount=Decimal("18000.00"),
+        total_amount=Decimal("18000.00"),
+        recurrence="monthly",
+        start_date=date.today(),
+        next_due_date=date.today(),
+        created_by=owner,
+    )
+    expense_services.create_expense(
+        company=company, category=cat, created_by=owner,
+        title="FIRST VIEW OFFICE SUPPLIES", expense_date=date.today(), amount=Decimal("120.00"),
+    )
+
+    call_command(
+        "purge_tenant_demo_data",
+        company_subdomain=company.subdomain,
+        module="expenses",
+        dry_run=True,
+    )
+    assert Expense.objects.filter(company=company).count() == 2
+    assert RecurringExpense.objects.filter(company=company).count() == 1
+
+
+def test_purge_tenant_demo_expenses_confirm_deletes_only_demo(company, owner):
+    from datetime import date
+    from decimal import Decimal
+
+    from apps.expenses.models import Expense, ExpenseCategory, ExpenseCategoryType, ExpenseStatus, RecurringExpense
+
+    from apps.expenses import services as expense_services
+
+    cat = ExpenseCategory.objects.create(
+        company=company, name_ar="إيجار السكن", code="RENT2", category_type=ExpenseCategoryType.MONTHLY,
+    )
+    demo = expense_services.create_expense(
+        company=company, category=cat, created_by=owner,
+        title="إيجار السيارات", expense_date=date.today(), amount=Decimal("2300.00"),
+    )
+    real = expense_services.create_expense(
+        company=company, category=cat, created_by=owner,
+        title="FIRST VIEW OFFICE SUPPLIES", expense_date=date.today(), amount=Decimal("120.00"),
+    )
+    demo_recurring = RecurringExpense.objects.create(
+        company=company,
+        category=cat,
+        title="اشتراك نظام",
+        amount=Decimal("350.00"),
+        total_amount=Decimal("350.00"),
+        recurrence="monthly",
+        start_date=date.today(),
+        next_due_date=date.today(),
+        created_by=owner,
+    )
+
+    call_command(
+        "purge_tenant_demo_data",
+        company_subdomain=company.subdomain,
+        module="expenses",
+        confirm_delete_demo_data=True,
+    )
+    assert not Expense.objects.filter(pk=demo.pk).exists()
+    assert Expense.objects.filter(pk=real.pk).exists()
+    assert not RecurringExpense.objects.filter(pk=demo_recurring.pk).exists()
+
+
 def test_reset_tenant_operational_data_dry_run(company, owner):
     cat = ProductCategory.objects.create(
         company=company, name_ar="فئة", code="CAT1", sort_order=1

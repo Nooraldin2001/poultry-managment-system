@@ -113,10 +113,11 @@ export async function listRecurringExpenses(): Promise<RecurringExpenseRow[]> {
   const rows = Array.isArray(data) ? data : (data.results ?? []);
   return rows.map((r: Record<string, unknown>, i: number) => ({
     id: String(r.id ?? i),
+    title: String(r.title ?? ""),
     category: String(r.category_name ?? ""),
     amount: parseAmount(r.amount as string),
-    frequency: String(r.frequency ?? ""),
-    nextDate: String(r.next_run_date ?? "").slice(0, 10),
+    frequency: String(r.recurrence ?? r.frequency ?? ""),
+    nextDate: String(r.next_due_date ?? r.next_run_date ?? "").slice(0, 10),
     active: r.is_active !== false,
   }));
 }

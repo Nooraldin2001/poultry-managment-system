@@ -234,6 +234,7 @@ export interface ExpenseCategoryRow {
 
 export interface RecurringExpenseRow {
   id: string;
+  title?: string;
   category: string;
   amount: number;
   frequency: string;
@@ -244,10 +245,13 @@ export interface RecurringExpenseRow {
 export interface TaxSummary {
   outputVat: number;
   inputVat: number;
+  purchaseVat?: number;
+  expenseVat?: number;
   netVat: number;
   payableOrRecoverable?: string;
   warningCount?: number;
   disabledVatCount?: number;
+  note?: string;
 }
 
 export interface TaxWarning {

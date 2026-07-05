@@ -12,7 +12,8 @@ import {
 import { toast } from "sonner";
 import { LoadingState, ErrorState, PermissionDeniedState } from "@/shared/components/ApiStates";
 import { IS_MOCK_MODE } from "@/services/config";
-import { getTaxSummaryLive, getTaxSalesVat, getTaxPurchaseVat, getTaxNetVat, listTaxWarnings, generateTaxWarnings, dismissTaxWarning, resolveTaxWarning } from "@/services/taxService";
+import { getTaxSummaryLive, getTaxSalesVat, getTaxPurchaseVat, getTaxNetVat, getTaxExportPayload, listTaxWarnings, generateTaxWarnings, dismissTaxWarning, resolveTaxWarning, mapSalesVatRecords, mapPurchaseVatRecords } from "@/services/taxService";
+import { getDefaultTaxDateRange } from "@/shared/utils/dateRanges";
 import { ReasonModal } from "@/features/invoices/ReasonModal";
 import { ApiError } from "@/services/api/errors";
 
@@ -141,22 +142,64 @@ function BackBtn({ lang, onClick }: { lang: Lang; onClick: () => void }) {
   );
 }
 
+function TaxDateFilters({
+  lang,
+  dateFrom,
+  dateTo,
+  onChange,
+}: {
+  lang: Lang;
+  dateFrom: string;
+  dateTo: string;
+  onChange: (from: string, to: string) => void;
+}) {
+  const isRTL = lang === "ar";
+  return (
+    <div className={`flex flex-wrap items-center gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+      <Calendar size={14} className="text-slate-400" />
+      <input
+        type="date"
+        value={dateFrom}
+        onChange={(e) => onChange(e.target.value, dateTo)}
+        className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#0F2C59]"
+      />
+      <span className="text-slate-400">—</span>
+      <input
+        type="date"
+        value={dateTo}
+        onChange={(e) => onChange(dateFrom, e.target.value)}
+        className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#0F2C59]"
+      />
+    </div>
+  );
+}
+
 // ── 1. TAX DASHBOARD ─────────────────────────────────────────────────────────
 export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
   const canAccess = role !== "cashier";
-  const [summary, setSummary] = useState({ outputVat: 21250, inputVat: 14900, netVat: 6350, warningCount: 5 });
+  const defaultRange = getDefaultTaxDateRange();
+  const [dateFrom, setDateFrom] = useState(defaultRange.date_from);
+  const [dateTo, setDateTo] = useState(defaultRange.date_to);
+  const [summary, setSummary] = useState({
+    outputVat: IS_MOCK_MODE ? 21250 : 0,
+    inputVat: IS_MOCK_MODE ? 14900 : 0,
+    netVat: IS_MOCK_MODE ? 6350 : 0,
+    warningCount: IS_MOCK_MODE ? 5 : 0,
+  });
   const [warnings, setWarnings] = useState(TAX_WARNINGS);
   const [loading, setLoading] = useState(!IS_MOCK_MODE);
   const [error, setError] = useState<unknown>(null);
 
-  useEffect(() => {
+  const loadDashboard = () => {
     if (IS_MOCK_MODE) return;
-    let cancelled = false;
     setLoading(true);
-    Promise.all([getTaxSummaryLive(), listTaxWarnings()])
+    setError(null);
+    Promise.all([
+      getTaxSummaryLive({ date_from: dateFrom, date_to: dateTo }),
+      listTaxWarnings(),
+    ])
       .then(([taxSummary, taxWarnings]) => {
-        if (cancelled) return;
         setSummary({
           outputVat: taxSummary.outputVat,
           inputVat: taxSummary.inputVat,
@@ -173,10 +216,13 @@ export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; rol
           type: w.documentType,
         })) as typeof TAX_WARNINGS);
       })
-      .catch((err) => { if (!cancelled) setError(err); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+      .catch((err) => setError(err))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadDashboard();
+  }, [dateFrom, dateTo]);
 
   if (!canAccess) return (
     <div className="flex flex-col items-center justify-center h-64 gap-3 text-center p-6">
@@ -185,7 +231,7 @@ export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; rol
     </div>
   );
   if (loading) return <LoadingState lang={lang} />;
-  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={loadDashboard} />;
 
   const netVat = summary.netVat;
   return (
@@ -196,7 +242,13 @@ export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; rol
           <h1 className="text-xl font-bold text-[#0F2C59]">{isRTL ? "إدارة الضريبة VAT" : "VAT Management"}</h1>
           <p className="text-sm text-slate-500 mt-0.5">{isRTL ? "مراجعة وإعداد تقارير ضريبة القيمة المضافة" : "Review and report VAT position"}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
+          <TaxDateFilters
+            lang={lang}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
+          />
           <button onClick={() => onNavigate("tax-export-preview")} className="flex items-center gap-1.5 px-3 py-2 bg-[#0F2C59] text-white rounded-lg text-sm hover:bg-[#0F2C59]/90">
             <Download size={14} />{isRTL ? "تصدير التقرير" : "Export Report"}
           </button>
@@ -219,12 +271,14 @@ export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; rol
         <KpiCard label={isRTL ? "صافي الضريبة التقديري" : "Net VAT Estimate"} value={fmtAED(netVat)} sub={isRTL ? "ضريبة مستحقة تقديرية" : "Est. VAT payable"} color="blue" icon={Hash} />
         <KpiCard label={isRTL ? "تحذيرات TRN" : "TRN Warnings"} value={String(summary.warningCount)} color="red" icon={AlertTriangle} />
       </div>
+      {IS_MOCK_MODE && (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiCard label={isRTL ? "فواتير مبيعات ضريبية" : "Taxable Sales Inv."} value="86" color="green" icon={FileText} />
         <KpiCard label={isRTL ? "فواتير شراء ضريبية" : "Taxable Purch. Inv."} value="62" color="amber" icon={FileText} />
         <KpiCard label={isRTL ? "فواتير بدون ضريبة" : "Non-taxable Inv."} value="4" color="slate" icon={Shield} />
         <KpiCard label={isRTL ? "تغييرات ضريبية يدوية" : "Manual VAT Changes"} value="7" color="purple" icon={RefreshCw} />
       </div>
+      )}
 
       {/* Net VAT formula */}
       <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
@@ -249,6 +303,7 @@ export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; rol
       </div>
 
       {/* Trend chart */}
+      {IS_MOCK_MODE ? (
       <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
         <p className="text-sm font-semibold text-[#0F2C59] mb-3">{isRTL ? "اتجاه الضريبة الشهري" : "Monthly VAT Trend"}</p>
         <ResponsiveContainer width="100%" height={220}>
@@ -263,6 +318,11 @@ export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; rol
           </BarChart>
         </ResponsiveContainer>
       </div>
+      ) : (
+      <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm text-center text-sm text-slate-500">
+        {isRTL ? "لا يتوفر اتجاه شهري متعدد في الوضع المباشر — استخدم تقارير المبيعات والمشتريات للفترة المحددة." : "Multi-month trend is unavailable in live mode — use sales and purchase VAT reports for the selected period."}
+      </div>
+      )}
 
       {/* Warnings & Quick actions */}
       <div className="grid md:grid-cols-2 gap-4">
@@ -311,54 +371,46 @@ export function TaxDashboardScreen({ lang, role, onNavigate }: { lang: Lang; rol
 // ── 2. SALES VAT REPORT ───────────────────────────────────────────────────────
 export function SalesVATReportScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
+  const defaultRange = getDefaultTaxDateRange();
   const [search, setSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("2025-06-01");
-  const [dateTo, setDateTo] = useState("2025-06-30");
+  const [dateFrom, setDateFrom] = useState(defaultRange.date_from);
+  const [dateTo, setDateTo] = useState(defaultRange.date_to);
   const [apiRows, setApiRows] = useState<typeof SALES_VAT_ROWS>([]);
+  const [apiTotals, setApiTotals] = useState({ subtotal: 0, vat: 0, total: 0, invoiceCount: 0, missingTrnCount: 0, vatDisabledCount: 0 });
   const [loading, setLoading] = useState(!IS_MOCK_MODE);
   const [error, setError] = useState<unknown>(null);
   const canExport = role !== "cashier";
 
-  useEffect(() => {
+  const reload = () => {
     if (IS_MOCK_MODE) return;
-    let cancelled = false;
     setLoading(true);
     getTaxSalesVat({ date_from: dateFrom, date_to: dateTo })
       .then((data) => {
-        if (cancelled) return;
-        const raw = Array.isArray(data.rows) ? data.rows : [];
-        setApiRows(raw.map((r: Record<string, unknown>, i: number) => ({
-          id: String(r.id ?? r.number ?? i),
-          date: String(r.date ?? ""),
-          customer: String(r.customer ?? r.customer_name ?? ""),
-          trn: String(r.trn ?? ""),
-          subtotal: Number(r.subtotal ?? 0),
-          vatRate: Number(r.vat_rate ?? 5),
-          vat: Number(r.vat ?? 0),
-          total: Number(r.total ?? 0),
-          taxStatus: String(r.tax_status ?? "taxable"),
-          trnStatus: String(r.trn_status ?? "ok"),
-          user: String(r.user ?? ""),
-        })));
+        const mapped = mapSalesVatRecords(data as Record<string, unknown>);
+        setApiRows(mapped.rows as typeof SALES_VAT_ROWS);
+        setApiTotals(mapped.totals);
       })
-      .catch((err) => { if (!cancelled) setError(err); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .catch((err) => setError(err))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    reload();
   }, [dateFrom, dateTo]);
 
   if (loading) return <LoadingState lang={lang} />;
-  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={reload} />;
 
   const sourceRows = IS_MOCK_MODE ? SALES_VAT_ROWS : apiRows;
   const rows = sourceRows.filter(r =>
     r.id.toLowerCase().includes(search.toLowerCase()) ||
     r.customer.includes(search)
   );
-  const totalSub = rows.reduce((a, r) => a + r.subtotal, 0);
-  const totalVat = rows.reduce((a, r) => a + r.vat, 0);
-  const totalGrand = rows.reduce((a, r) => a + r.total, 0);
-  const missingTrn = rows.filter(r => r.trnStatus === "missing").length;
-  const adjusted = rows.filter(r => r.taxStatus === "adjusted").length;
+  const totalSub = IS_MOCK_MODE ? rows.reduce((a, r) => a + r.subtotal, 0) : apiTotals.subtotal;
+  const totalVat = IS_MOCK_MODE ? rows.reduce((a, r) => a + r.vat, 0) : apiTotals.vat;
+  const totalGrand = IS_MOCK_MODE ? rows.reduce((a, r) => a + r.total, 0) : apiTotals.total;
+  const missingTrn = IS_MOCK_MODE ? rows.filter(r => r.trnStatus === "missing").length : apiTotals.missingTrnCount;
+  const adjusted = IS_MOCK_MODE ? rows.filter(r => r.taxStatus === "adjusted").length : apiTotals.vatDisabledCount;
 
   return (
     <div className={`p-4 md:p-6 space-y-5 ${isRTL ? "text-right" : "text-left"}`} dir={isRTL ? "rtl" : "ltr"}>
@@ -366,9 +418,10 @@ export function SalesVATReportScreen({ lang, role, onNavigate }: { lang: Lang; r
       <div className={`flex items-start justify-between gap-3 flex-wrap`}>
         <div>
           <h1 className="text-xl font-bold text-[#0F2C59]">{isRTL ? "تقرير ضريبة المبيعات" : "Sales VAT Report"}</h1>
-          <p className="text-sm text-slate-500">{isRTL ? "يونيو 2026" : "June 2026"}</p>
+          <p className="text-sm text-slate-500">{dateFrom} — {dateTo}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
+          <TaxDateFilters lang={lang} dateFrom={dateFrom} dateTo={dateTo} onChange={(f, t) => { setDateFrom(f); setDateTo(t); }} />
           <PermBtn allowed={canExport} onClick={() => toast.success(isRTL ? "جاري تجهيز ملف PDF..." : "Preparing PDF...")}
             className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm hover:bg-red-100">
             <FileText size={13} />PDF
@@ -381,10 +434,10 @@ export function SalesVATReportScreen({ lang, role, onNavigate }: { lang: Lang; r
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <KpiCard label={isRTL ? "إجمالي المبيعات قبل الضريبة" : "Sales Before VAT"} value={fmtAED(425000)} color="slate" />
-        <KpiCard label={isRTL ? "إجمالي ضريبة المبيعات" : "Total Sales VAT"} value={fmtAED(21250)} color="green" />
-        <KpiCard label={isRTL ? "إجمالي المبيعات بعد الضريبة" : "Sales incl. VAT"} value={fmtAED(446250)} color="blue" />
-        <KpiCard label={isRTL ? "عدد الفواتير الضريبية" : "Taxable Invoices"} value="86" color="green" />
+        <KpiCard label={isRTL ? "إجمالي المبيعات قبل الضريبة" : "Sales Before VAT"} value={fmtAED(IS_MOCK_MODE ? 425000 : totalSub)} color="slate" />
+        <KpiCard label={isRTL ? "إجمالي ضريبة المبيعات" : "Total Sales VAT"} value={fmtAED(IS_MOCK_MODE ? 21250 : totalVat)} color="green" />
+        <KpiCard label={isRTL ? "إجمالي المبيعات بعد الضريبة" : "Sales incl. VAT"} value={fmtAED(IS_MOCK_MODE ? 446250 : totalGrand)} color="blue" />
+        <KpiCard label={isRTL ? "عدد الفواتير الضريبية" : "Taxable Invoices"} value={String(IS_MOCK_MODE ? 86 : apiTotals.invoiceCount)} color="green" />
         <KpiCard label={isRTL ? "فواتير بدون TRN" : "Missing TRN"} value={String(missingTrn)} color="red" />
         <KpiCard label={isRTL ? "فواتير ضريبة معدلة" : "VAT Adjusted"} value={String(adjusted)} color="amber" />
       </div>
@@ -472,53 +525,44 @@ export function SalesVATReportScreen({ lang, role, onNavigate }: { lang: Lang; r
 // ── 3. PURCHASE VAT REPORT ────────────────────────────────────────────────────
 export function PurchaseVATReportScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
+  const defaultRange = getDefaultTaxDateRange();
   const [search, setSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("2025-06-01");
-  const [dateTo, setDateTo] = useState("2025-06-30");
+  const [dateFrom, setDateFrom] = useState(defaultRange.date_from);
+  const [dateTo, setDateTo] = useState(defaultRange.date_to);
   const [apiRows, setApiRows] = useState<typeof PURCH_VAT_ROWS>([]);
+  const [apiTotals, setApiTotals] = useState({ subtotal: 0, vat: 0, total: 0, invoiceCount: 0, missingTrnCount: 0, vatDisabledCount: 0 });
   const [loading, setLoading] = useState(!IS_MOCK_MODE);
   const [error, setError] = useState<unknown>(null);
   const canExport = role !== "cashier";
 
-  useEffect(() => {
+  const reload = () => {
     if (IS_MOCK_MODE) return;
-    let cancelled = false;
     setLoading(true);
     getTaxPurchaseVat({ date_from: dateFrom, date_to: dateTo })
       .then((data) => {
-        if (cancelled) return;
-        const raw = Array.isArray(data.rows) ? data.rows : [];
-        setApiRows(raw.map((r: Record<string, unknown>, i: number) => ({
-          id: String(r.id ?? r.number ?? i),
-          suppInv: String(r.supplier_invoice_number ?? r.supp_inv ?? ""),
-          date: String(r.date ?? ""),
-          supplier: String(r.supplier ?? r.supplier_name ?? ""),
-          trn: String(r.trn ?? ""),
-          subtotal: Number(r.subtotal ?? 0),
-          vatRate: Number(r.vat_rate ?? 5),
-          vat: Number(r.vat ?? 0),
-          total: Number(r.total ?? 0),
-          taxStatus: String(r.tax_status ?? "taxable"),
-          trnStatus: String(r.trn_status ?? "ok"),
-          user: String(r.user ?? ""),
-        })));
+        const mapped = mapPurchaseVatRecords(data as Record<string, unknown>);
+        setApiRows(mapped.rows as typeof PURCH_VAT_ROWS);
+        setApiTotals(mapped.totals);
       })
-      .catch((err) => { if (!cancelled) setError(err); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .catch((err) => setError(err))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    reload();
   }, [dateFrom, dateTo]);
 
   if (loading) return <LoadingState lang={lang} />;
-  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={reload} />;
 
   const sourceRows = IS_MOCK_MODE ? PURCH_VAT_ROWS : apiRows;
   const rows = sourceRows.filter(r =>
     r.id.toLowerCase().includes(search.toLowerCase()) ||
     r.supplier.includes(search)
   );
-  const totalSub = rows.reduce((a, r) => a + r.subtotal, 0);
-  const totalVat = rows.reduce((a, r) => a + r.vat, 0);
-  const totalGrand = rows.reduce((a, r) => a + r.total, 0);
+  const totalSub = IS_MOCK_MODE ? rows.reduce((a, r) => a + r.subtotal, 0) : apiTotals.subtotal;
+  const totalVat = IS_MOCK_MODE ? rows.reduce((a, r) => a + r.vat, 0) : apiTotals.vat;
+  const totalGrand = IS_MOCK_MODE ? rows.reduce((a, r) => a + r.total, 0) : apiTotals.total;
 
   return (
     <div className={`p-4 md:p-6 space-y-5 ${isRTL ? "text-right" : "text-left"}`} dir={isRTL ? "rtl" : "ltr"}>
@@ -526,9 +570,10 @@ export function PurchaseVATReportScreen({ lang, role, onNavigate }: { lang: Lang
       <div className={`flex items-start justify-between gap-3 flex-wrap`}>
         <div>
           <h1 className="text-xl font-bold text-[#0F2C59]">{isRTL ? "تقرير ضريبة المشتريات" : "Purchase VAT Report"}</h1>
-          <p className="text-sm text-slate-500">{isRTL ? "يونيو 2026" : "June 2026"}</p>
+          <p className="text-sm text-slate-500">{dateFrom} — {dateTo}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
+          <TaxDateFilters lang={lang} dateFrom={dateFrom} dateTo={dateTo} onChange={(f, t) => { setDateFrom(f); setDateTo(t); }} />
           <PermBtn allowed={canExport} onClick={() => toast.success(isRTL ? "جاري تجهيز PDF..." : "Preparing PDF...")}
             className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm hover:bg-red-100">
             <FileText size={13} />PDF
@@ -541,12 +586,12 @@ export function PurchaseVATReportScreen({ lang, role, onNavigate }: { lang: Lang
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <KpiCard label={isRTL ? "إجمالي المشتريات قبل الضريبة" : "Purchases Before VAT"} value={fmtAED(298000)} color="slate" />
-        <KpiCard label={isRTL ? "إجمالي ضريبة المشتريات" : "Total Purchase VAT"} value={fmtAED(14900)} color="amber" />
-        <KpiCard label={isRTL ? "إجمالي المشتريات بعد الضريبة" : "Purchases incl. VAT"} value={fmtAED(312900)} color="blue" />
-        <KpiCard label={isRTL ? "فواتير شراء ضريبية" : "Taxable Invoices"} value="62" color="amber" />
-        <KpiCard label={isRTL ? "فواتير بدون TRN للمورد" : "Missing Supplier TRN"} value="2" color="red" />
-        <KpiCard label={isRTL ? "فواتير ضريبة معدلة" : "VAT Adjusted"} value="1" color="amber" />
+        <KpiCard label={isRTL ? "إجمالي المشتريات قبل الضريبة" : "Purchases Before VAT"} value={fmtAED(IS_MOCK_MODE ? 298000 : totalSub)} color="slate" />
+        <KpiCard label={isRTL ? "إجمالي ضريبة المشتريات" : "Total Purchase VAT"} value={fmtAED(IS_MOCK_MODE ? 14900 : totalVat)} color="amber" />
+        <KpiCard label={isRTL ? "إجمالي المشتريات بعد الضريبة" : "Purchases incl. VAT"} value={fmtAED(IS_MOCK_MODE ? 312900 : totalGrand)} color="blue" />
+        <KpiCard label={isRTL ? "فواتير شراء ضريبية" : "Taxable Invoices"} value={String(IS_MOCK_MODE ? 62 : apiTotals.invoiceCount)} color="amber" />
+        <KpiCard label={isRTL ? "فواتير بدون TRN للمورد" : "Missing Supplier TRN"} value={String(IS_MOCK_MODE ? 2 : apiTotals.missingTrnCount)} color="red" />
+        <KpiCard label={isRTL ? "فواتير ضريبة معدلة" : "VAT Adjusted"} value={String(IS_MOCK_MODE ? 1 : apiTotals.vatDisabledCount)} color="amber" />
       </div>
 
       <div className="bg-white rounded-xl border border-slate-100 p-3 flex flex-wrap gap-2">
@@ -610,40 +655,42 @@ export function PurchaseVATReportScreen({ lang, role, onNavigate }: { lang: Lang
 // ── 4. NET VAT ESTIMATE ───────────────────────────────────────────────────────
 export function NetVATScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
+  const defaultRange = getDefaultTaxDateRange();
   const [inclCancelled, setInclCancelled] = useState(false);
   const [inclManual, setInclManual] = useState(true);
-  const [dateFrom, setDateFrom] = useState("2025-06-01");
-  const [dateTo, setDateTo] = useState("2025-06-30");
-  const [salesVat, setSalesVat] = useState(21250);
-  const [purchVat, setPurchVat] = useState(14900);
+  const [dateFrom, setDateFrom] = useState(defaultRange.date_from);
+  const [dateTo, setDateTo] = useState(defaultRange.date_to);
+  const [salesVat, setSalesVat] = useState(IS_MOCK_MODE ? 21250 : 0);
+  const [purchVat, setPurchVat] = useState(IS_MOCK_MODE ? 14900 : 0);
+  const [expenseVat, setExpenseVat] = useState(0);
+  const [netVatApi, setNetVatApi] = useState(IS_MOCK_MODE ? 6350 : 0);
   const [loading, setLoading] = useState(!IS_MOCK_MODE);
   const [error, setError] = useState<unknown>(null);
   const canExport = role !== "cashier";
 
-  useEffect(() => {
+  const reload = () => {
     if (IS_MOCK_MODE) return;
-    let cancelled = false;
     setLoading(true);
-    Promise.all([
-      getTaxSummaryLive({ date_from: dateFrom, date_to: dateTo }),
-      getTaxNetVat({ date_from: dateFrom, date_to: dateTo }),
-    ])
-      .then(([summary, netData]) => {
-        if (cancelled) return;
-        setSalesVat(summary.outputVat);
-        setPurchVat(summary.inputVat);
-        if (typeof netData.output_vat === "number") setSalesVat(netData.output_vat as number);
-        if (typeof netData.input_vat === "number") setPurchVat(netData.input_vat as number);
+    getTaxNetVat({ date_from: dateFrom, date_to: dateTo })
+      .then((netData) => {
+        setSalesVat(Number(netData.output_vat ?? 0));
+        setPurchVat(Number(netData.purchase_input_vat ?? 0));
+        setExpenseVat(Number(netData.expense_input_vat ?? 0));
+        setNetVatApi(Number(netData.net_vat ?? 0));
       })
-      .catch((err) => { if (!cancelled) setError(err); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .catch((err) => setError(err))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    reload();
   }, [dateFrom, dateTo]);
 
   if (loading) return <LoadingState lang={lang} />;
-  if (error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+  if (error) return <ErrorState lang={lang} error={error} onRetry={reload} />;
 
-  const netVat = salesVat - purchVat;
+  const inputVat = purchVat + expenseVat;
+  const netVat = IS_MOCK_MODE ? salesVat - purchVat : netVatApi;
 
   return (
     <div className={`p-4 md:p-6 space-y-5 ${isRTL ? "text-right" : "text-left"}`} dir={isRTL ? "rtl" : "ltr"}>
@@ -651,9 +698,10 @@ export function NetVATScreen({ lang, role, onNavigate }: { lang: Lang; role: Ten
       <div className={`flex items-start justify-between gap-3 flex-wrap`}>
         <div>
           <h1 className="text-xl font-bold text-[#0F2C59]">{isRTL ? "صافي الضريبة التقديري" : "Net VAT Estimate"}</h1>
-          <p className="text-sm text-slate-500">{isRTL ? "فترة: يونيو 2026" : "Period: June 2026"}</p>
+          <p className="text-sm text-slate-500">{dateFrom} — {dateTo}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
+          <TaxDateFilters lang={lang} dateFrom={dateFrom} dateTo={dateTo} onChange={(f, t) => { setDateFrom(f); setDateTo(t); }} />
           <PermBtn allowed={canExport} onClick={() => toast.success(isRTL ? "جاري التجهيز..." : "Preparing...")}
             className="flex items-center gap-1.5 px-3 py-2 bg-[#0F2C59] text-white rounded-lg text-sm hover:bg-[#0F2C59]/90">
             <Download size={13} />{isRTL ? "تصدير PDF" : "Export PDF"}
@@ -691,9 +739,9 @@ export function NetVATScreen({ lang, role, onNavigate }: { lang: Lang; role: Ten
           </div>
           <div className="space-y-2">
             {[
-              { label: isRTL ? "مبيعات خاضعة للضريبة" : "Taxable sales", val: 425000 },
+              { label: isRTL ? "مبيعات خاضعة للضريبة" : "Taxable sales", val: IS_MOCK_MODE ? 425000 : salesVat * 20 },
               { label: isRTL ? "ضريبة المبيعات (5%)" : "Sales VAT (5%)", val: salesVat, bold: true, color: "text-emerald-700" },
-              { label: isRTL ? "مبيعات غير خاضعة" : "Non-taxable sales", val: 31200 },
+              { label: isRTL ? "مبيعات غير خاضعة" : "Non-taxable sales", val: IS_MOCK_MODE ? 31200 : 0 },
             ].map((row, i) => (
               <div key={`net-a-${i}`} className={`flex justify-between text-sm ${row.bold ? "font-bold" : ""} ${row.color ?? "text-slate-700"}`}>
                 <span className="text-xs text-slate-500">{row.label}</span>
@@ -713,9 +761,10 @@ export function NetVATScreen({ lang, role, onNavigate }: { lang: Lang; role: Ten
           </div>
           <div className="space-y-2">
             {[
-              { label: isRTL ? "مشتريات خاضعة للضريبة" : "Taxable purchases", val: 298000 },
+              { label: isRTL ? "مشتريات خاضعة للضريبة" : "Taxable purchases", val: IS_MOCK_MODE ? 298000 : purchVat * 20 },
               { label: isRTL ? "ضريبة المشتريات (5%)" : "Purchase VAT (5%)", val: purchVat, bold: true, color: "text-amber-700" },
-              { label: isRTL ? "مشتريات غير خاضعة" : "Non-taxable purchases", val: 38500 },
+              { label: isRTL ? "ضريبة المصروفات" : "Expense VAT", val: expenseVat },
+              { label: isRTL ? "مشتريات غير خاضعة" : "Non-taxable purchases", val: IS_MOCK_MODE ? 38500 : 0 },
             ].map((row, i) => (
               <div key={`net-b-${i}`} className={`flex justify-between text-sm ${row.bold ? "font-bold" : ""} ${row.color ?? "text-slate-700"}`}>
                 <span className="text-xs text-slate-500">{row.label}</span>
@@ -739,8 +788,8 @@ export function NetVATScreen({ lang, role, onNavigate }: { lang: Lang; role: Ten
               <span>{fmtAED(salesVat)}</span>
             </div>
             <div className="flex justify-between text-sm text-white/70">
-              <span>{isRTL ? "ضريبة المشتريات (B)" : "Purchase VAT (B)"}</span>
-              <span>− {fmtAED(purchVat)}</span>
+              <span>{isRTL ? "ضريبة المشتريات + المصروفات (B)" : "Purchase + expense VAT (B)"}</span>
+              <span>− {fmtAED(IS_MOCK_MODE ? purchVat : inputVat)}</span>
             </div>
             <div className="border-t border-white/20 pt-2 flex justify-between font-bold text-lg">
               <span>{isRTL ? "صافي الضريبة" : "Net VAT"}</span>
@@ -753,7 +802,7 @@ export function NetVATScreen({ lang, role, onNavigate }: { lang: Lang; role: Ten
         </div>
       </div>
 
-      {/* Mini trend */}
+      {IS_MOCK_MODE ? (
       <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
         <p className="text-sm font-semibold text-[#0F2C59] mb-3">{isRTL ? "صافي الضريبة الشهري" : "Monthly Net VAT"}</p>
         <ResponsiveContainer width="100%" height={180}>
@@ -766,6 +815,7 @@ export function NetVATScreen({ lang, role, onNavigate }: { lang: Lang; role: Ten
           </LineChart>
         </ResponsiveContainer>
       </div>
+      ) : null}
     </div>
   );
 }
