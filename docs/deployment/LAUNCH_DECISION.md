@@ -7,13 +7,37 @@
 
 ## Final status
 
+# **NO-GO** (pending manual ERP smoke on First View)
+
+Code fixes for customer, product, supplier, sales/purchase invoices, and reports demo fallback are on `main` (`ded78f1`, `bff86fe`, `c7d747a`). Production bundle on First View is `index-DLgOG8Hc.js` (2026-07-05). **Manual owner login smoke not completed** for product/invoice/report flows.
+
+---
+
+## Production status (2026-07-05)
+
+| Item | Status |
+|------|--------|
+| VPS deploy (`c7d747a` family) | **Likely done** — bundle `index-DLgOG8Hc.js` on First View |
+| First View health | **Pass** — `{"status":"ok","service":"poultryhero-api"}` |
+| Tenant login API | **Pass** — JSON responses |
+| Customer create | **Code fixed** — manual POST 201 smoke **pending** |
+| Product create | **Code fixed** (`c7d747a`) — smoke **pending** |
+| Sales invoice create | **Code fixed** — smoke **pending** |
+| Purchase invoice create | **Code fixed** — smoke **pending** |
+| Reports demo fix | **Code fixed** (`bff86fe`) — verify empty states on First View |
+| DB purge dry-run | **Not run** |
+
+---
+
+## Final status (superseded 2026-07-04)
+
 # **NO-GO**
 
 Customer creation fix (`ded78f1`) is **deployed** to production but **not manually verified** (no owner login in agent session). Reports demo-data fix is **not deployed** (local changes only). DB audit/purge not run.
 
 ---
 
-## Production status (2026-07-04 evening)
+## Production status (2026-07-04 evening — superseded)
 
 | Item | Status |
 |------|--------|

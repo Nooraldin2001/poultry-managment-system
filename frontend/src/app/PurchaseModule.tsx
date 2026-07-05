@@ -292,6 +292,10 @@ export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId 
     setSelectedPurchaseId?.(recordId);
     onNavigate("purchases-new");
   };
+  const openPrint = (recordId: string) => {
+    setSelectedPurchaseId?.(recordId);
+    onNavigate("purchases-preview");
+  };
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -355,7 +359,7 @@ export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId 
                         {inv.status === "draft" && <button onClick={() => openEdit(inv.recordId)} className="text-xs px-2 py-1 bg-[#0F2C59] text-white rounded-lg font-bold">{isRTL ? "تعديل" : "Edit"}</button>}
                         {(inv.status === "approved" || inv.status === "partial" || inv.status === "credit") && <button onClick={() => setShowPay(inv.id)} className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg font-bold">{isRTL ? "دفعة" : "Pay"}</button>}
                         <button onClick={() => openDetail(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#0F2C59] hover:text-white transition-all"><Eye size={13} /></button>
-                        <button onClick={() => onNavigate("purchases-preview")} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all"><Printer size={13} /></button>
+                        <button onClick={() => openPrint(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all" title={isRTL ? "طباعة / حفظ PDF" : "Print / Save PDF"}><Printer size={13} /></button>
                         {inv.status !== "cancelled" && inv.status !== "draft" && role === "owner" && <button onClick={() => setShowCancel(inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all"><Ban size={13} /></button>}
                       </div>
                     </td>
@@ -963,8 +967,9 @@ export function PurchNewScreen({ lang, role, onNavigate, purchaseId, onSaved }: 
 }
 
 // ── SCREEN: PURCHASE INVOICE DETAIL ───────────────────────────────────────────
-export function PurchDetailScreen({ lang, role, onNavigate, purchaseId }: {
+export function PurchDetailScreen({ lang, role, onNavigate, purchaseId, onOpenPrint }: {
   lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; purchaseId?: string;
+  onOpenPrint?: () => void;
 }) {
   if (!IS_MOCK_MODE) {
     if (!purchaseId) {
@@ -976,6 +981,7 @@ export function PurchDetailScreen({ lang, role, onNavigate, purchaseId }: {
         role={role}
         onNavigate={onNavigate}
         invoiceId={purchaseId}
+        onOpenPrint={onOpenPrint}
       />
     );
   }

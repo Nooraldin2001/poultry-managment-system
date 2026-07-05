@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Check, Trash2 } from "lucide-react";
+import { Check, Trash2, Printer } from "lucide-react";
 import type { Lang } from "@/shared/types";
 import type { TenantRole } from "@/shared/types/roles";
 import type { TenantScreen } from "@/shared/types";
@@ -21,9 +21,10 @@ type Props = {
   onNavigate: (s: TenantScreen) => void;
   invoiceId?: string | null;
   onSaved?: (id: string) => void;
+  onOpenPrint?: () => void;
 };
 
-export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, onSaved }: Props) {
+export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, onSaved, onOpenPrint }: Props) {
   const isRTL = lang === "ar";
   const canApprove = role === "owner" || role === "accountant";
   const [docId, setDocId] = useState(invoiceId ?? "");
@@ -196,6 +197,16 @@ export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, o
           {invoiceId ? (isRTL ? "فاتورة شراء" : "Purchase Invoice") : isRTL ? "فاتورة شراء جديدة" : "New Purchase"}
         </h2>
         {invoiceNumber && <span className="font-mono text-sm">{invoiceNumber}</span>}
+        {docId && onOpenPrint && (
+          <button
+            type="button"
+            onClick={onOpenPrint}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-[#0F2C59]/30 text-[#0F2C59] text-sm font-bold"
+          >
+            <Printer size={15} />
+            {isRTL ? "طباعة / حفظ PDF" : "Print / Save PDF"}
+          </button>
+        )}
       </div>
       <FormErrors lang={lang} error={error} fieldErrors={fieldErrors} />
       <div className="grid lg:grid-cols-3 gap-4">

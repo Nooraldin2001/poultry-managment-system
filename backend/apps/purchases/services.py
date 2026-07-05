@@ -507,3 +507,57 @@ def get_supplier_purchase_history(company, supplier):
         PurchaseInvoice.objects.filter(company=company, supplier=supplier)
         .order_by("-invoice_date", "-id")
     )
+
+
+def build_purchase_print_preview(invoice) -> dict:
+    """JSON payload for tenant purchase print preview (browser print / save as PDF)."""
+    company = invoice.company
+    lines = list(invoice.lines.all().order_by("sort_order", "id"))
+    return {
+        "title_en": "PURCHASE INVOICE",
+        "title_ar": "فاتورة شراء",
+        "company": {
+            "name_ar": company.name_ar,
+            "name_en": company.name_en,
+            "trn": company.trn,
+            "address": company.address,
+            "phone": company.phone,
+            "logo_url": company.logo.url if company.logo else None,
+        },
+        "supplier": {
+            "name": invoice.supplier_name_snapshot,
+            "name_ar": invoice.supplier_name_snapshot,
+            "trn": invoice.supplier_trn_snapshot,
+            "supplier_invoice_number": invoice.supplier_invoice_number,
+        },
+        "invoice": {
+            "number": invoice.invoice_number,
+            "date": str(invoice.invoice_date),
+            "due_date": str(invoice.due_date) if invoice.due_date else None,
+            "status": invoice.status,
+            "notes": invoice.notes,
+        },
+        "lines": [
+            {
+                "product_name": ln.product_name_snapshot,
+                "sku": ln.product_sku_snapshot,
+                "quantity_cartons": str(ln.quantity_cartons),
+                "quantity_pieces": str(ln.quantity_pieces),
+                "quantity_kg": str(ln.quantity_kg),
+                "unit_price": str(ln.unit_price),
+                "line_total": str(ln.line_total),
+            }
+            for ln in lines
+        ],
+        "totals": {
+            "subtotal": str(invoice.subtotal),
+            "deduction_total": str(invoice.adjustment_total),
+            "vat_rate": str(invoice.vat_rate),
+            "vat_amount": str(invoice.vat_amount),
+            "total_amount": str(invoice.total_amount),
+            "amount_paid": str(invoice.amount_paid),
+            "balance_due": str(invoice.balance_due),
+        },
+        "prepared_by": invoice.created_by.full_name if invoice.created_by else "",
+        "approved_by": invoice.approved_by.full_name if invoice.approved_by else "",
+    }

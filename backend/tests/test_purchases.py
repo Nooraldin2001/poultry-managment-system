@@ -396,6 +396,28 @@ def test_stock_tracked_line_requires_quantity(api, company, owner):
     assert resp.status_code == 400
 
 
+def test_print_preview_structure(api, company, owner):
+    supplier = _supplier(company, name_ar="WESTLAND FOODSTUFF", name_en="Westland")
+    product = _product(company)
+    inv = _create(company, supplier, owner, [_line(product, quantity_kg="100")])
+    api.force_authenticate(owner)
+    resp = api.get(f"{PURCHASES_URL}{inv.id}/print-preview/")
+    assert resp.status_code == 200
+    assert resp.data["title_en"] == "PURCHASE INVOICE"
+    assert "company" in resp.data
+    assert "supplier" in resp.data
+    assert "lines" in resp.data
+    assert "totals" in resp.data
+
+
+def test_print_preview_tenant_isolation(api, company, owner, other_company, other_owner):
+    supplier = _supplier(other_company, sku="OS")
+    product = _product(other_company, sku="OP")
+    inv = _create(other_company, supplier, other_owner, [_line(product, quantity_kg="10")])
+    api.force_authenticate(owner)
+    assert api.get(f"{PURCHASES_URL}{inv.id}/print-preview/").status_code == 404
+
+
 def test_cashier_cannot_access_purchases(api, company, cashier):
     api.force_authenticate(cashier)
     assert api.get(PURCHASES_URL).status_code == 403
@@ -446,10 +468,11 @@ def test_production_env_example_disables_demo_data():
 
 
 def test_frontend_production_defaults_to_live_api():
-    client = (REPO_ROOT / "frontend" / "src" / "services" / "api" / "client.ts").read_text(
+    config = (REPO_ROOT / "frontend" / "src" / "services" / "config.ts").read_text(
         encoding="utf-8"
     )
-    assert "VITE_USE_MOCK_DATA" in client
+    assert "VITE_USE_MOCK_DATA" in config
+    assert "IS_MOCK_MODE" in config
     env_example = (REPO_ROOT / "frontend" / ".env.production.example").read_text(encoding="utf-8")
     assert "VITE_USE_MOCK_DATA=false" in env_example
 

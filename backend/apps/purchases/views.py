@@ -72,6 +72,7 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
         "approve": "purchases.approve",
         "cancel": "purchases.cancel",
         "summary": "purchases.view",
+        "print_preview": "purchases.print",
         "lines": "purchases.view",
         "line_detail": "purchases.edit",
         "adjustments": "purchases.view",
@@ -213,6 +214,11 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
     def summary(self, request):
         data = services.get_purchase_summary(self.company)
         return Response(PurchaseSummarySerializer(data).data)
+
+    @action(detail=True, methods=["get"], url_path="print-preview")
+    def print_preview(self, request, pk=None):
+        invoice = self.get_object()
+        return Response(services.build_purchase_print_preview(invoice))
 
     # --- Lines sub-resource ----------------------------------------------
     @action(detail=True, methods=["get", "post"])

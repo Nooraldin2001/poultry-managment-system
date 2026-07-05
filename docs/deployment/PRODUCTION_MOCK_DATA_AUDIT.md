@@ -213,3 +213,27 @@ Deployed asset: `index-dMIyB4tH.js` at commit **`ded78f1`** (customer fix only).
 
 **Conclusion:** Demo report data source on current production is **frontend mock fallback** in the pre-fix reports bundle. DB purge not assessed (dry-run not run).
 
+---
+
+## Production bundle audit (2026-07-05)
+
+Deployed asset: **`index-DLgOG8Hc.js`** on First View (includes `bff86fe` + `c7d747a`).
+
+| String / indicator | Count | Meaning |
+|--------------------|------:|---------|
+| `tenant/customers` | 6 | Customer live API |
+| `tenant/products` | 2 | Product live API |
+| `WESTLAND` | 14 | Mock literals in bundle — runtime gated by `IS_MOCK_MODE=false` |
+| `liveOrMockRows` | In source | Live mode returns API rows or `[]` — no mock merge |
+
+### Tenant create workflows — code status
+
+| Module | Fix | Prod verified? |
+|--------|-----|----------------|
+| Customer | `ded78f1` | Pending |
+| Product + categories | `c7d747a` | Pending |
+| Supplier | `c7d747a` | Pending |
+| Sales / purchase invoices | `c7d747a` | Pending |
+| Reports demo fallback | `bff86fe` | Pending UI smoke |
+
+If client still sees demo names after deploy, run `purge_tenant_demo_data --company-subdomain firstview --dry-run` on VPS.

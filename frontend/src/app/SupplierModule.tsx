@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSuppliers, useSupplierDetail } from "@/hooks/api/useTenantResources";
-import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState, ApiUnavailableState } from "@/shared/components/ApiStates";
 import { toModuleSupplier } from "./moduleMappers";
 import { IS_MOCK_MODE } from "@/services/config";
 import { useSupplierProfileTabs, type SupplierProfileTabKey } from "@/features/profiles/useSupplierProfileTabs";

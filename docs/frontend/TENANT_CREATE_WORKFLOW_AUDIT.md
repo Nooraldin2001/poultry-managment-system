@@ -1,105 +1,211 @@
 # Tenant Create Workflow Audit
 
-Production tenant: **First View** (`https://firstview.poultryhero.solutions`)
+Production tenant: **First View** (`https://firstview.poultryhero.solutions`)  
+API base: `https://firstview.poultryhero.solutions/api`  
+Constraint: `VITE_USE_MOCK_DATA=false` — no fake success before API resolves.
 
-Constraint: `VITE_USE_MOCK_DATA=false` — live API only; no fake success toasts without POST.
+Last updated: **2026-07-05**  
+Code commits: `ded78f1` (customer), `bff86fe` (reports + dashboard), `c7d747a` (product/supplier/invoice services)
 
-## Summary
+---
 
-| Module | Live POST wired | Status |
-|--------|-----------------|--------|
-| Customer create | `POST /api/v1/tenant/customers/` | Fixed & deployed (`ded78f1`) |
-| Supplier create | `POST /api/v1/tenant/suppliers/` | Fixed locally — `CreateSupplierScreen` → `createSupplier()` |
-| Product create | `POST /api/v1/tenant/products/` | Fixed locally — SKU + category validation, no mock category fallback |
-| Product category create | `POST /api/v1/tenant/product-categories/` | Fixed locally — `ProductCategoriesScreen` |
-| Sales invoice draft | `POST /api/v1/tenant/sales/` | Live via `LiveSalesInvoiceScreen`; Save draft button added |
-| Sales approve/cancel | `POST .../approve/`, `.../cancel/` | Fixed — body uses `{ reason }`; credit override `{ credit_override: true }` |
-| Purchase invoice draft | `POST /api/v1/tenant/purchases/` | Live via `LivePurchaseInvoiceScreen`; Save draft button added |
-| Purchase approve/cancel | Same pattern as sales | Fixed — body uses `{ reason }` |
-| Reports | Tenant dashboard + reports module | Fixed locally — no hardcoded `R_*` demo rows in live mode |
-| Quotations | — | Still mock toast-only (out of scope for ops create) |
-| Bulk product setup | — | Still mock toast-only (dev/setup tool) |
+## Module audit table
+
+| Module | Create screen | Calls POST API? | Loading? | DRF errors? | Refetches list? | Persists after refresh? | Status |
+| ------ | ------------- | --------------: | -------: | ----------: | --------------: | ----------------------: | ------ |
+| **Customers** | `CreateCustomerScreen` | Yes — `POST /api/v1/tenant/customers/` | Yes | Yes (`FormErrors`) | On navigate back (hook remount) | Yes | **Fixed** — deploy verify pending |
+| **Suppliers** | `CreateSupplierScreen` | Yes — `POST /api/v1/tenant/suppliers/` | Yes | Yes | On navigate back | Yes | **Fixed** in `c7d747a` |
+| **Products** | `CreateProductScreen` | Yes — `POST /api/v1/tenant/products/` | Yes | Yes | On navigate back | Yes | **Fixed** in `c7d747a` |
+| **Product categories** | `ProductCategoriesScreen` | Yes — `POST /api/v1/tenant/product-categories/` | Yes | Yes | Local state + reload on open | Yes | **Fixed** in `c7d747a` |
+| **Sales invoices** | `LiveSalesInvoiceScreen` | Yes — `POST /api/v1/tenant/sales/` (+ lines) | Yes | Yes | List on remount; `onSaved` sets id | Yes | **Fixed** — Save draft + approve payload |
+| **Purchase invoices** | `LivePurchaseInvoiceScreen` | Yes — `POST /api/v1/tenant/purchases/` (+ lines) | Yes | Yes | Same as sales | Yes | **Fixed** — Save draft + approve payload |
+| **Quotations** | `QuotationsModule` builder | **No** — toast-only | No | No | No | No | **Open** — mock UI only |
+| **Payments (collection)** | `LiveCustomerPaymentModal` | Yes — live modal in prod | Yes | Yes | Yes | Yes | **OK** in live mode |
+| **Payments (mock modals)** | `CustomerCollectionModal` etc. | Mock only (`IS_MOCK_MODE`) | — | — | — | — | Dev mock only |
+| **Expenses** | Expense create screens | Partial — check expense service | Varies | Varies | Varies | Varies | Not in client report |
+| **Reports** | All report screens | GET report APIs | Yes | Yes | N/A | N/A | **Fixed** — `liveOrMockRows` never falls back in prod |
+| **Bulk product setup** | `BulkProductSetupScreen` | **No** — toast-only | No | No | No | No | Dev tool — not used in prod routing |
+
+---
 
 ## Root cause pattern
 
-Several screens followed the same anti-pattern as the original **Add Customer** bug:
+Same anti-pattern as original **Add Customer** bug:
 
 1. Save button shows success toast and navigates away
-2. No call to tenant API
-3. Validation errors from API never surfaced
-4. List views never refresh because nothing was persisted
+2. No tenant API call
+3. DRF validation errors never surfaced
+4. Lists never refresh because nothing persisted
+
+Additional product-specific bugs (fixed):
+
+- Category dropdown fell back to mock `PROD_CATEGORIES` string keys → `NaN` category id on POST
+- SKU not required in UI but required by backend
+- Fixed-weight products missing `weight_grams` / `default_pieces_per_carton`
+- No product categories in tenant → blocked with clear banner (must create category first)
+
+Additional invoice-specific bugs (fixed):
+
+- Approve/cancel sent `approval_reason` / `cancel_reason`; backend expects `{ "reason": "..." }`
+- `salesPricePreview` / `salesStockCheck` used POST; backend expects GET query params
+- Credit override sent wrong field; backend expects `{ "credit_override": true, "reason": "..." }`
+- No explicit **Save draft** — header-only draft impossible without adding a line first
+
+---
 
 ## Fixes by module
 
 ### Customer (`CustomerModule.tsx`)
 
 - `handleSave` → `createCustomer(buildCustomerCreatePayload(...))`
-- Loading state, `FormErrors`, field validation
-- Deployed to VPS in commit `ded78f1`
+- Deployed in `ded78f1`
 
 ### Supplier (`SupplierModule.tsx`)
 
 - `CreateSupplierScreen.handleSave` → `createSupplier(buildSupplierCreatePayload(...))`
-- Buttons disabled while saving; requires name + phone
-- Mock mode preserved for local demos only
+- `FormErrors`, loading, permission check
 
 ### Product (`ProductModule.tsx`)
 
-- Live mode loads categories from `listProductCategories()` — no fallback to `PROD_CATEGORIES` string keys (which caused `NaN` category ID)
-- SKU required in UI; fixed-weight products require `weight_grams` + `default_pieces_per_carton`
-- Empty category banner directs user to Product Categories screen
+- Live categories from `listProductCategories()` only
+- SKU + fixed-weight validation before POST
+- `buildProductCreatePayload` maps to backend serializer fields
 
 ### Product categories (`ProductCategoriesScreen`)
 
-- Loads from API in live mode; empty state when none exist
-- Add category → `createProductCategory()` with auto-generated `code`
+- `listProductCategories()` on mount
+- `createProductCategory()` on save with auto `code`
 
 ### Sales invoice (`LiveSalesInvoiceScreen.tsx`)
 
-- Draft created on first line add or explicit **Save draft**
-- `salesPricePreview` / `salesStockCheck` use GET with query params (matches backend)
-- Approve sends `{ reason }`; credit limit retry sends `{ reason, credit_override: true }`
+- Production route: `SalesNewScreen` → `LiveSalesInvoiceScreen` when `!IS_MOCK_MODE`
+- Save draft → `POST /api/v1/tenant/sales/` then `PATCH`
+- Lines → `POST .../lines/`
+- Approve → `POST .../approve/` with `{ reason }`
 
 ### Purchase invoice (`LivePurchaseInvoiceScreen.tsx`)
 
-- Same draft pattern as sales
-- **Save draft** persists header without requiring a line first
+- Production route: `PurchNewScreen` → `LivePurchaseInvoiceScreen` when `!IS_MOCK_MODE`
+- Same draft/approve pattern as sales
 
 ### Reports (`ReportsModule.tsx`, `reportLiveData.ts`, `App.tsx`)
 
-- Live mode fetches tenant data or shows empty states
-- Removed hardcoded demo customer/supplier names from tenant dashboard lists
+- `liveOrMockRows()` / `liveOrMockChart()` return `[]` in live mode when API empty
+- Tenant dashboard KPIs from `useTenantDashboard` API, not `T_*` mock arrays
+- Daily report shows `ApiUnavailableState` until daily endpoint exists (no fake rows)
 
-## Backend endpoints (reference)
+### Shared rule (`liveFormSubmit.ts`)
 
-| Action | Method | Path |
-|--------|--------|------|
-| Create customer | POST | `/api/v1/tenant/customers/` |
-| Create supplier | POST | `/api/v1/tenant/suppliers/` |
-| Create product | POST | `/api/v1/tenant/products/` |
-| Create category | POST | `/api/v1/tenant/product-categories/` |
-| Create sales draft | POST | `/api/v1/tenant/sales/` |
-| Approve sale | POST | `/api/v1/tenant/sales/{id}/approve/` body `{ "reason": "..." }` |
-| Price preview | GET | `/api/v1/tenant/sales/price-preview/?customer=&product=&price_type=` |
-| Stock check | GET | `/api/v1/tenant/sales/stock-check/?product=&cartons=&pieces=&kg=` |
-| Create purchase draft | POST | `/api/v1/tenant/purchases/` |
-| Approve purchase | POST | `/api/v1/tenant/purchases/{id}/approve/` body `{ "reason": "..." }` |
+- `submitLiveResource()` — success toast only after `await run()` resolves
 
-## Production verification checklist (First View)
+---
 
-- [ ] Create customer → 201, appears in list
-- [ ] Create supplier → 201, appears in list
-- [ ] Create product category → 201
-- [ ] Create product (fixed weight) → 201
-- [ ] Sales: Save draft (header only) → 201
-- [ ] Sales: Add line, approve with reason → 200
-- [ ] Purchase: Save draft → 201
-- [ ] Reports: no demo names (`مطعم الخليج`, `WESTLAND`) in live bundle after deploy
+## Backend endpoints (confirmed)
 
-## Demo data cleanup (optional, tenant-scoped)
+| Action | Method | Path | Body (key fields) |
+|--------|--------|------|-------------------|
+| Create customer | POST | `/api/v1/tenant/customers/` | `name_ar`, `phone`, … |
+| Create supplier | POST | `/api/v1/tenant/suppliers/` | `name_ar`, `phone`, … |
+| Create category | POST | `/api/v1/tenant/product-categories/` | `name_ar`, `code` |
+| Create product | POST | `/api/v1/tenant/products/` | `name_ar`, `sku`, `category`, `product_type`, `weight_grams`, … |
+| Create sales draft | POST | `/api/v1/tenant/sales/` | `customer`, `invoice_date`, `payment_method`, … |
+| Add sales line | POST | `/api/v1/tenant/sales/{id}/lines/` | `product`, `quantity_kg`, `unit_price`, … |
+| Approve sale | POST | `/api/v1/tenant/sales/{id}/approve/` | `{ "reason": "...", "credit_override": true? }` |
+| Price preview | GET | `/api/v1/tenant/sales/price-preview/?customer=&product=&price_type=` | — |
+| Stock check | GET | `/api/v1/tenant/sales/stock-check/?product=&cartons=&pieces=&kg=` | — |
+| Create purchase draft | POST | `/api/v1/tenant/purchases/` | `supplier`, `invoice_date`, … |
+| Approve purchase | POST | `/api/v1/tenant/purchases/{id}/approve/` | `{ "reason": "..." }` |
+
+---
+
+## Request/response examples
+
+### Product create (201)
+
+```http
+POST /api/v1/tenant/products/
+Authorization: Bearer <tenant_token>
+Content-Type: application/json
+
+{
+  "name_ar": "1000 جرام",
+  "name_en": "1000 GRAM",
+  "sku": "CHK-1000",
+  "category": 1,
+  "product_type": "fixed_weight",
+  "weight_grams": 1000,
+  "default_pieces_per_carton": 10,
+  "sales_price": "14.75",
+  "sales_price_type": "kg",
+  "purchase_price": "1.15",
+  "purchase_price_type": "piece",
+  "track_inventory": true,
+  "vat_taxable": true
+}
+```
+
+### Sales draft (201)
+
+```http
+POST /api/v1/tenant/sales/
+{
+  "customer": 1,
+  "invoice_date": "2026-07-05",
+  "payment_method": "cash",
+  "amount_paid": "0",
+  "vat_rate": "5.00"
+}
+```
+
+### Sales approve (200)
+
+```http
+POST /api/v1/tenant/sales/42/approve/
+{ "reason": "Approved for delivery" }
+```
+
+---
+
+## Dependency chain for First View
+
+1. **Product category** must exist before product create
+2. **Customer** must exist before sales invoice
+3. **Supplier** must exist before purchase invoice
+4. **Product** must exist before invoice line items
+5. **Inventory** must exist (from approved purchase) before sales approval stock check passes
+
+---
+
+## Production verification checklist
+
+- [ ] Add customer → POST 201, list refresh, browser refresh persists
+- [ ] Add supplier → POST 201
+- [ ] Add product category → POST 201
+- [ ] Add product → POST 201, appears in invoice product dropdown
+- [ ] Purchase: Save draft → POST 201; add line; Approve → stock increases
+- [ ] Sales: Save draft → POST 201; add line; Approve → stock decreases; credit balance updates
+- [ ] Reports: no demo transaction rows; empty/zero states when no data
+
+---
+
+## Demo data cleanup (tenant-scoped, optional)
 
 ```bash
 python manage.py purge_tenant_demo_data --company-subdomain firstview --dry-run
+# Review output, then:
+python manage.py purge_tenant_demo_data --company-subdomain firstview --confirm-delete-demo-data
 ```
 
-Do not run without `--dry-run` review on production.
+Do not run without reviewing dry-run output.
+
+---
+
+## Remaining open items
+
+| Item | Priority | Notes |
+|------|----------|-------|
+| Quotations create | Low | Mock toast-only; `LiveQuotationScreen` exists for edit flow |
+| Bulk product setup | Low | Dev tool; toast-only |
+| Customer credit limit modal | Low | Toast-only special price save |
+| Production manual smoke | **High** | Requires First View owner credentials |
+| DB demo purge on VPS | Medium | After dry-run review |

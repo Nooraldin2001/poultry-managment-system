@@ -53,7 +53,7 @@ export function PrintPreviewLayout({
           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0F2C59] text-white text-sm font-bold"
         >
           <Printer size={15} />
-          {isRTL ? "طباعة" : "Print"}
+          {isRTL ? "طباعة / حفظ PDF" : "Print / Save PDF"}
         </button>
       </div>
       <div className="bg-white border border-slate-200 rounded-2xl p-6 print:border-0 print:shadow-none print-preview-doc">

@@ -3391,20 +3391,32 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {(tScreen === "purchases" || tScreen === "purchases-list") && <PurchListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedPurchaseId={setSelectedPurchaseId} />}
           {tScreen === "purchases-new"     && <PurchNewScreen lang={lang} role={role} onNavigate={navTenant} purchaseId={selectedPurchaseId || undefined} onSaved={setSelectedPurchaseId} />}
           {tScreen === "purchases-preview" && (
-            !IS_MOCK_MODE && selectedPurchaseId ? (
-              <LivePrintPreviewScreen
-                lang={lang}
-                onNavigate={navTenant}
-                backScreen="purchases-list"
-                titleAr="فاتورة شراء"
-                titleEn="Purchase Invoice"
-                loadPreview={() => getPurchasePrintPreview(selectedPurchaseId)}
-              />
+            !IS_MOCK_MODE ? (
+              selectedPurchaseId ? (
+                <LivePrintPreviewScreen
+                  lang={lang}
+                  onNavigate={navTenant}
+                  backScreen="purchases-list"
+                  titleAr="فاتورة شراء"
+                  titleEn="Purchase Invoice"
+                  loadPreview={() => getPurchasePrintPreview(selectedPurchaseId)}
+                />
+              ) : (
+                <EmptyState lang={lang} messageAr="اختر فاتورة شراء للطباعة" messageEn="Select a purchase invoice to print" />
+              )
             ) : (
               <PurchPreviewScreen lang={lang} onNavigate={navTenant} role={role} />
             )
           )}
-          {tScreen === "purchases-detail"  && <PurchDetailScreen lang={lang} role={role} onNavigate={navTenant} purchaseId={selectedPurchaseId || undefined} />}
+          {tScreen === "purchases-detail"  && (
+            <PurchDetailScreen
+              lang={lang}
+              role={role}
+              onNavigate={navTenant}
+              purchaseId={selectedPurchaseId || undefined}
+              onOpenPrint={() => navTenant("purchases-preview")}
+            />
+          )}
           {tScreen === "customers"          && <CustomersListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedCustomer={setSelectedCustomerId} />}
           {tScreen === "customers-create"  && <CreateCustomerScreen lang={lang} role={role} onNavigate={navTenant} setSelectedCustomer={setSelectedCustomerId} />}
           {tScreen === "customers-profile" && <CustomerProfileScreen lang={lang} role={role} onNavigate={navTenant} customerId={selectedCustomerId} />}

@@ -330,3 +330,38 @@ cd /var/www/poultryhero && git pull origin main && bash scripts/deploy_vps.sh
 ```
 
 **Launch stance:** **NO-GO** — customer fix deployed but not manually verified; reports demo fix not deployed; DB audit not run.
+
+---
+
+## Part L — Tenant create workflow deploy + verification (2026-07-05)
+
+### Deploy status
+
+| Item | Result | Notes |
+|---|---|---|
+| Commits on `main` | **`bff86fe`**, **`c7d747a`** | Reports demo guard + product/supplier/invoice fixes |
+| First View bundle | **`index-DLgOG8Hc.js`** | Newer than `index-dMIyB4tH.js` — suggests redeploy occurred |
+| Health | **Pass** | `{"status":"ok","service":"poultryhero-api"}` |
+| Mock safety (local) | **Pass** | typecheck + build pass after fixes |
+
+### Production bundle audit (2026-07-05)
+
+| String / indicator | Count | Meaning |
+|--------------------|------:|---------|
+| `tenant/customers` | 6 | Customer API wired |
+| `tenant/products` / createProduct | 2 | Product API wired |
+| `WESTLAND` | 14 | Mock string literals still in bundle (dead code when `IS_MOCK_MODE=false`) |
+| `مطعم الخليج` | 0* | Reports demo customer string not found in bundle (*encoding may affect count) |
+
+### Manual smoke — **all pending** (requires First View owner login)
+
+| Flow | Expected | Status |
+|------|----------|--------|
+| Add customer | POST 201, list refresh | Pending |
+| Add product category | POST 201 | Pending |
+| Add product | POST 201, SKU + category | Pending |
+| Purchase draft + approve | POST 201, stock + | Pending |
+| Sales draft + approve | POST 201, stock − | Pending |
+| Reports | Empty/zero only | Pending |
+
+**Launch stance:** **NO-GO** until owner completes manual smoke on First View.

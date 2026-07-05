@@ -35,6 +35,26 @@ type Props = {
   loadPreview: () => Promise<unknown>;
 };
 
+function normalizePrintPreviewData(raw: Record<string, unknown>): Record<string, unknown> {
+  const invoice = (raw.invoice ?? {}) as Record<string, unknown>;
+  const totals = (raw.totals ?? {}) as Record<string, unknown>;
+  const party = (raw.customer ?? raw.supplier ?? raw.party ?? {}) as Record<string, unknown>;
+  return {
+    ...raw,
+    customer: party,
+    supplier: party,
+    invoice_number: raw.invoice_number ?? invoice.number,
+    invoice_date: raw.invoice_date ?? invoice.date,
+    notes: raw.notes ?? invoice.notes,
+    subtotal: raw.subtotal ?? totals.subtotal,
+    vat_amount: raw.vat_amount ?? totals.vat_amount,
+    total_amount: raw.total_amount ?? totals.total_amount,
+    amount_paid: raw.amount_paid ?? totals.amount_paid,
+    balance: raw.balance ?? totals.balance_due,
+    lines: raw.lines ?? [],
+  };
+}
+
 export function LivePrintPreviewScreen({ lang, onNavigate, backScreen, titleAr, titleEn, loadPreview }: Props) {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,7 +65,7 @@ export function LivePrintPreviewScreen({ lang, onNavigate, backScreen, titleAr, 
     setError(null);
     try {
       const res = await loadPreview();
-      setData((res ?? {}) as Record<string, unknown>);
+      setData(normalizePrintPreviewData((res ?? {}) as Record<string, unknown>));
     } catch (err) {
       setError(err);
     } finally {

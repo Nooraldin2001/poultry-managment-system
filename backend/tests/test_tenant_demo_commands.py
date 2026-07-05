@@ -50,6 +50,33 @@ def test_purge_tenant_demo_data_deletes_only_demo_like(company, owner):
     assert Customer.objects.filter(pk=real.pk).exists()
 
 
+def test_purge_tenant_demo_purchases_dry_run(company, owner):
+    from datetime import date
+
+    from apps.purchases.models import PurchaseInvoice, PurchaseStatus
+    from apps.suppliers.models import Supplier
+
+    demo_supplier = Supplier.objects.create(
+        company=company, name_ar="WESTLAND FOODSTUFF", phone="+971500000001"
+    )
+    PurchaseInvoice.objects.create(
+        company=company,
+        supplier=demo_supplier,
+        supplier_name_snapshot="WESTLAND FOODSTUFF",
+        invoice_number="PUR-2025-0042",
+        supplier_invoice_number="WST-2025-1234",
+        invoice_date=date.today(),
+        status=PurchaseStatus.DRAFT,
+    )
+    call_command(
+        "purge_tenant_demo_data",
+        company_subdomain=company.subdomain,
+        module="purchases",
+        dry_run=True,
+    )
+    assert PurchaseInvoice.objects.filter(company=company).count() == 1
+
+
 def test_reset_tenant_operational_data_dry_run(company, owner):
     cat = ProductCategory.objects.create(
         company=company, name_ar="فئة", code="CAT1", sort_order=1

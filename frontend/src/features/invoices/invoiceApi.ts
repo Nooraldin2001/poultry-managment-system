@@ -102,7 +102,7 @@ export async function approveDocument(
         : ENDPOINTS.tenant.quotation(id);
   await request(`${base}approve/`, {
     method: "POST",
-    body: { approval_reason: reason ?? "", ...extra },
+    body: { reason: reason ?? "", ...extra },
   });
 }
 
@@ -113,5 +113,5 @@ export async function cancelDocument(kind: InvoiceKind, id: string, reason: stri
       : kind === "purchase"
         ? ENDPOINTS.tenant.purchase(id)
         : ENDPOINTS.tenant.quotation(id);
-  await request(`${base}cancel/`, { method: "POST", body: { cancel_reason: reason } });
+  await request(`${base}cancel/`, { method: "POST", body: { reason } });
 }
