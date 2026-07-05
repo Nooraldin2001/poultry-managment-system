@@ -28,6 +28,20 @@
 
 Backend date filters optional (defaults to current month). Existing tests in `tests/test_reports.py`.
 
+## Users & Permissions (2026-07-05)
+
+| Issue | Root cause | Fix |
+|---|---|---|
+| المستخدمون والصلاحيات not opening for tenant admin | `GET /tenant/users/` required `users.manage`; settings card gated on `role === owner` only; frontend API contract mismatch | Backend: GET uses `users.view`. Frontend: `canManageUsers()`, fixed override PATCH payload, live mobile user list |
+
+Endpoints:
+
+- `GET /api/v1/tenant/users/` — list (requires `users.view`)
+- `GET /api/v1/tenant/permissions/` — catalog
+- `GET/PATCH /api/v1/tenant/users/{id}/permissions/` — `{ effective, overrides }` / `{ overrides, reason }`
+
+Tests: `backend/tests/test_users.py`
+
 ## Production verification (pending deploy)
 
 1. Reports → كشوف الحساب → select customer → View Statement → loads or empty state (no spinner forever).

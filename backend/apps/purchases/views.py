@@ -78,6 +78,7 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
         "adjustments": "purchases.view",
         "adjustment_detail": "purchases.manage_adjustments",
         "attachments": "purchases.view",
+        "price_history": "purchases.view",
     }
 
     @property
@@ -96,6 +97,11 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
             qs = qs.filter(supplier_id=p["supplier"])
         if p.get("status"):
             qs = qs.filter(status=p["status"])
+        elif not _truthy(p.get("include_cancelled")):
+            # Cancelled invoices are audit records: hidden from the default
+            # active list unless explicitly requested via ?status= or
+            # ?include_cancelled=1.
+            qs = qs.exclude(status=PurchaseStatus.CANCELLED)
         if p.get("payment_status"):
             qs = qs.filter(payment_status=p["payment_status"])
         if p.get("date_from"):
@@ -176,7 +182,10 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
             if "lines" in vd:
                 invoice.lines.all().delete()
                 for index, line in enumerate(vd["lines"]):
-                    services._create_line(self.company, invoice, line, default_sort=index)
+                    services._create_line(
+                        self.company, invoice, line,
+                        default_sort=index, user=request.user,
+                    )
             if "adjustments" in vd:
                 invoice.adjustments.all().delete()
                 for adj in vd["adjustments"]:
@@ -220,6 +229,25 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
         invoice = self.get_object()
         return Response(services.build_purchase_print_preview(invoice))
 
+    @action(detail=False, methods=["get"], url_path="price-history")
+    def price_history(self, request):
+        from apps.products.models import Product
+        from apps.suppliers.models import Supplier
+
+        supplier_id = request.query_params.get("supplier")
+        product_id = request.query_params.get("product")
+        if not supplier_id or not product_id:
+            raise ValidationError("supplier and product query params are required.")
+        supplier = get_object_or_404(
+            Supplier, pk=supplier_id, company_id=self.company.id
+        )
+        product = get_object_or_404(
+            Product, pk=product_id, company_id=self.company.id
+        )
+        return Response(services.get_purchase_price_history(
+            company=self.company, supplier=supplier, product=product,
+        ))
+
     # --- Lines sub-resource ----------------------------------------------
     @action(detail=True, methods=["get", "post"])
     def lines(self, request, pk=None):
@@ -234,7 +262,9 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
             data=request.data, context={"company": self.company}
         )
         serializer.is_valid(raise_exception=True)
-        line = services._create_line(self.company, invoice, serializer.validated_data)
+        line = services._create_line(
+            self.company, invoice, serializer.validated_data, user=request.user
+        )
         services.recalculate_purchase_invoice(invoice)
         line.refresh_from_db()
         return Response(
@@ -263,11 +293,35 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
             line.product = vd["product"]
             line.product_name_snapshot = vd["product"].name_ar if vd["product"] else ""
             line.product_sku_snapshot = vd["product"].sku if vd["product"] else ""
+        # Changing the stored price on an existing line is a manual override:
+        # permission-gated and audit-logged.
+        new_price = vd.get("unit_price")
+        if new_price is not None and new_price != line.unit_price:
+            _require(request.user, "purchases.override_price")
+            if new_price <= 0:
+                raise ValidationError(
+                    {"unit_price": "Overridden purchase price must be greater than zero."}
+                )
+            from apps.audit.services import create_audit_log
+
+            create_audit_log(
+                action="override_purchase_price",
+                user=request.user, company=self.company, module="purchases",
+                reference_type="purchase_invoice", reference_id=invoice.id,
+                reason=vd.get("override_reason", ""),
+                previous_value={"unit_price": str(line.unit_price)},
+                new_value={
+                    "product_id": line.product_id,
+                    "unit_price": str(new_price),
+                },
+            )
         for field in ("line_type", "quantity_cartons", "quantity_pieces",
-                      "quantity_kg", "unit_price", "price_type", "vat_rate",
+                      "quantity_kg", "price_type", "vat_rate",
                       "notes", "sort_order"):
             if field in vd:
                 setattr(line, field, vd[field])
+        if new_price is not None:
+            line.unit_price = new_price
         line.save()
         services.recalculate_purchase_invoice(invoice)
         line.refresh_from_db()

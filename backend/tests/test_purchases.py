@@ -451,6 +451,87 @@ def test_summary_requires_permission(api, company, owner):
     assert "supplier_payable_total" in resp.data
 
 
+# ── Cancelled invoices hidden from default list ─────────────────────────────
+def test_purchase_list_hides_cancelled_by_default(api, company, owner):
+    supplier = _supplier(company)
+    product = _product(company)
+    active = _create(company, supplier, owner, [_line(product, quantity_kg="100")])
+    cancelled = _create(company, supplier, owner, [_line(product, quantity_kg="50")])
+    services.cancel_purchase_invoice(invoice=cancelled, user=owner, reason="mistake")
+
+    api.force_authenticate(owner)
+    resp = api.get(PURCHASES_URL)
+    assert resp.status_code == 200
+    ids = [row["id"] for row in resp.data["results"]]
+    assert active.id in ids
+    assert cancelled.id not in ids
+
+    resp = api.get(f"{PURCHASES_URL}?status=cancelled")
+    ids = [row["id"] for row in resp.data["results"]]
+    assert ids == [cancelled.id]
+
+
+# ── Purchase price override ──────────────────────────────────────────────────
+def test_purchase_line_price_override_requires_permission(api, company, owner, accountant):
+    supplier = _supplier(company)
+    product = _product(company, purchase_price=Decimal("10.00"))
+    inv = _create(company, supplier, owner, [_line(product, quantity_kg="100")])
+    line = inv.lines.first()
+    url = f"{PURCHASES_URL}{inv.id}/lines/{line.id}/"
+
+    api.force_authenticate(accountant)
+    resp = api.patch(url, {"unit_price": "15.00"}, format="json")
+    assert resp.status_code == 403, resp.data
+
+    api.force_authenticate(owner)
+    resp = api.patch(
+        url, {"unit_price": "15.00", "override_reason": "supplier old price"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    line.refresh_from_db()
+    assert line.unit_price == Decimal("15.00")
+    assert AuditLog.objects.filter(
+        company=company, action="override_purchase_price", reference_id=inv.id
+    ).exists()
+
+
+def test_purchase_price_history_returns_real_prices(api, company, owner):
+    from apps.suppliers.models import SupplierSpecialPrice
+
+    supplier = _supplier(company)
+    product = _product(company, purchase_price=Decimal("10.00"))
+    _create(company, supplier, owner, [_line(
+        product, quantity_kg="100", unit_price=Decimal("14.50"),
+    )])
+    SupplierSpecialPrice.objects.create(
+        company=company, supplier=supplier, product=product,
+        price=Decimal("12.00"), price_type="kg", is_active=True,
+    )
+
+    api.force_authenticate(owner)
+    resp = api.get(
+        f"{PURCHASES_URL}price-history/?supplier={supplier.id}&product={product.id}"
+    )
+    assert resp.status_code == 200, resp.data
+    sources = {row["source"] for row in resp.data}
+    assert "previous_invoice" in sources
+    assert "supplier_special_price" in sources
+    assert "default_purchase_price" in sources
+    prices = {row["price"] for row in resp.data}
+    assert "14.50" in prices and "12.00" in prices and "10.00" in prices
+
+
+def test_purchase_price_history_respects_tenant(api, company, owner, other_owner):
+    supplier = _supplier(company)
+    product = _product(company)
+    api.force_authenticate(other_owner)
+    resp = api.get(
+        f"{PURCHASES_URL}price-history/?supplier={supplier.id}&product={product.id}"
+    )
+    assert resp.status_code == 404
+
+
 # ── Production data hygiene checks ──────────────────────────────────────────
 def test_deploy_scripts_do_not_seed_demo_data():
     scripts_dir = REPO_ROOT / "scripts"

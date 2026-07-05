@@ -11,22 +11,28 @@ import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/s
 import { FormErrors } from "@/shared/components/FormErrors";
 import { ApiError } from "@/services/api/errors";
 import type { InvoiceLineDraft } from "./types";
+import type { LinePayloadOptions } from "./invoiceApi";
 import { addDraftLine, createDraftHeader, patchDraftHeader, removeDraftLine, updateDraftLine } from "./invoiceApi";
+import { applyLineTotals } from "./lineTotals";
+import { PurchaseLinePriceCell } from "./PurchaseLinePriceCell";
+import { canOverridePurchasePrice } from "@/shared/utils/permissions";
 import { ReasonModal } from "./ReasonModal";
 import { parseAmount } from "@/services/crud/parse";
 
 type Props = {
   lang: Lang;
   role: TenantRole;
+  permissions?: string[];
   onNavigate: (s: TenantScreen) => void;
   invoiceId?: string | null;
   onSaved?: (id: string) => void;
   onOpenPrint?: () => void;
 };
 
-export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, onSaved, onOpenPrint }: Props) {
+export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavigate, invoiceId, onSaved, onOpenPrint }: Props) {
   const isRTL = lang === "ar";
   const canApprove = role === "owner" || role === "accountant";
+  const canEditPrice = canOverridePurchasePrice(role, permissions);
   const [docId, setDocId] = useState(invoiceId ?? "");
   const [supplierId, setSupplierId] = useState("");
   const [supplierInvNo, setSupplierInvNo] = useState("");
@@ -158,10 +164,9 @@ export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, o
         lineSubtotal: 0,
         lineTotal: 0,
       };
-      draft.lineSubtotal = draft.pieces * draft.unitPrice;
-      draft.lineTotal = draft.lineSubtotal;
-      const serverId = await addDraftLine("purchase", id, draft);
-      setLines((prev) => [...prev, { ...draft, serverId }]);
+      const finalized = applyLineTotals(draft);
+      const serverId = await addDraftLine("purchase", id, finalized);
+      setLines((prev) => [...prev, { ...finalized, serverId }]);
       await patchDraftHeader("purchase", id, { supplier_invoice_number: supplierInvNo });
     } catch (err) {
       if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
@@ -176,9 +181,20 @@ export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, o
     setLines((prev) => prev.filter((l) => l.id !== line.id));
   };
 
-  const persistLine = async (line: InvoiceLineDraft) => {
+  const persistLine = async (line: InvoiceLineDraft, options?: LinePayloadOptions) => {
     if (!docId || !line.serverId || status !== "draft") return;
-    await updateDraftLine("purchase", docId, line.serverId, line);
+    const payloadOpts: LinePayloadOptions =
+      options ??
+      (line.priceSource === "manual_override"
+        ? { manualPriceOverride: true, priceOverrideReason: line.priceOverrideReason }
+        : {});
+    await updateDraftLine("purchase", docId, line.serverId, line, payloadOpts);
+  };
+
+  const updateLine = (next: InvoiceLineDraft) => {
+    const withTotals = applyLineTotals(next);
+    setLines((prev) => prev.map((l) => (l.id === withTotals.id ? withTotals : l)));
+    void persistLine(withTotals);
   };
 
   const handleApprove = async (reason: string) => {
@@ -273,8 +289,17 @@ export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, o
                 {lines.map((line) => (
                   <tr key={line.id} className="border-b">
                     <td className="p-2 font-semibold">{line.productName}</td>
-                    <td className="p-2"><input type="number" disabled={!isDraft} className="w-20 border rounded px-1" value={line.kg} onChange={(e) => { const kg = Number(e.target.value); const next = { ...line, kg, lineSubtotal: kg * line.unitPrice, lineTotal: kg * line.unitPrice }; setLines((p) => p.map((l) => l.id === line.id ? next : l)); void persistLine(next); }} /></td>
-                    <td className="p-2 font-mono">{line.unitPrice.toFixed(2)}</td>
+                    <td className="p-2"><input type="number" disabled={!isDraft} className="w-20 border rounded px-1" value={line.kg} onChange={(e) => { updateLine({ ...line, kg: Number(e.target.value) }); }} /></td>
+                    <td className="p-2">
+                      <PurchaseLinePriceCell
+                        lang={lang}
+                        supplierId={supplierId}
+                        line={line}
+                        isDraft={isDraft}
+                        canEditPrice={canEditPrice}
+                        onPriceChange={updateLine}
+                      />
+                    </td>
                     <td className="p-2">{isDraft && <button type="button" onClick={() => void removeLine(line)}><Trash2 size={14} className="text-red-500" /></button>}</td>
                   </tr>
                 ))}
@@ -308,7 +333,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, o
         </div>
       </div>
       {showApprove && <ReasonModal lang={lang} titleAr="اعتماد الشراء" titleEn="Approve purchase" confirmLabelAr="اعتماد" confirmLabelEn="Approve" loading={saving} onClose={() => setShowApprove(false)} onConfirm={(r) => void handleApprove(r)} />}
-      {showCancel && <ReasonModal lang={lang} titleAr="إلغاء الشراء" titleEn="Cancel purchase" confirmLabelAr="إلغاء" confirmLabelEn="Cancel" loading={saving} onClose={() => setShowCancel(false)} onConfirm={async (r) => { if (!docId) return; setSaving(true); try { await cancelPurchase(docId, r); setStatus("cancelled"); toast.success(isRTL ? "تم الإلغاء" : "Cancelled"); setShowCancel(false); } catch (e) { toast.error(e instanceof ApiError ? e.message : "Failed"); } finally { setSaving(false); } }} />}
+      {showCancel && <ReasonModal lang={lang} titleAr="إلغاء الشراء" titleEn="Cancel purchase" confirmLabelAr="إلغاء" confirmLabelEn="Cancel" loading={saving} onClose={() => setShowCancel(false)} onConfirm={async (r) => { if (!docId) return; setSaving(true); try { await cancelPurchase(docId, r); setStatus("cancelled"); toast.success(isRTL ? "تم إلغاء الفاتورة بنجاح" : "Invoice cancelled successfully"); setShowCancel(false); } catch (e) { toast.error(e instanceof ApiError ? e.message : "Failed"); } finally { setSaving(false); } }} />}
     </div>
   );
 }

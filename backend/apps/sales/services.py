@@ -109,6 +109,10 @@ def resolve_line_pricing(*, customer, product, price_type, manual_price=None,
             raise ValidationError(
                 {"unit_price": "Manual price override requires sales.override_price."}
             )
+        if _d(manual_price) <= 0:
+            raise ValidationError(
+                {"unit_price": "Overridden price must be greater than zero."}
+            )
         return _d(manual_price), SalesPriceSource.MANUAL_OVERRIDE, False
 
     special = _active_special_price(customer, product, price_type)
@@ -116,6 +120,68 @@ def resolve_line_pricing(*, customer, product, price_type, manual_price=None,
         return _d(special.price), SalesPriceSource.CUSTOMER_SPECIAL_PRICE, False
 
     return _d(product.sales_price or 0), SalesPriceSource.DEFAULT_PRODUCT_PRICE, False
+
+
+def get_sales_price_history(*, company, customer, product, limit=10):
+    """Real previous prices for a customer+product (no fabricated data).
+
+    Sources, most recent first:
+    * previous non-cancelled sales invoice lines (deduped by price+price_type),
+    * active customer special prices,
+    * current default product sales price.
+    """
+    _check_customer(company, customer)
+    if product.company_id != company.id:
+        raise ValidationError({"product": "Product does not belong to this company."})
+
+    items = []
+    seen = set()
+
+    lines = (
+        SalesInvoiceLine.objects.filter(
+            company=company, invoice__customer=customer, product=product,
+        )
+        .exclude(invoice__status=SalesStatus.CANCELLED)
+        .exclude(is_free=True)
+        .select_related("invoice")
+        .order_by("-invoice__invoice_date", "-id")
+    )
+    for line in lines:
+        key = (str(_d(line.unit_price)), line.price_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({
+            "price": str(_d(line.unit_price)),
+            "price_type": line.price_type,
+            "source": "previous_invoice",
+            "invoice_number": line.invoice.invoice_number,
+            "date": str(line.invoice.invoice_date),
+        })
+        if len(items) >= limit:
+            break
+
+    specials = CustomerSpecialPrice.objects.filter(
+        company_id=company.id, customer=customer, product=product, is_active=True,
+    ).order_by("-id")
+    for sp in specials:
+        items.append({
+            "price": str(_d(sp.price)),
+            "price_type": sp.price_type,
+            "source": "customer_special_price",
+            "invoice_number": None,
+            "date": str(sp.created_at.date()) if getattr(sp, "created_at", None) else None,
+        })
+
+    if _d(product.sales_price or 0) > 0:
+        items.append({
+            "price": str(_d(product.sales_price)),
+            "price_type": product.sales_price_type or "kg",
+            "source": "default_product_price",
+            "invoice_number": None,
+            "date": None,
+        })
+    return items
 
 
 def price_preview(*, company, customer, product, price_type):

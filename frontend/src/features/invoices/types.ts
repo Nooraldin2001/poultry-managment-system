@@ -2,6 +2,14 @@ export type InvoiceKind = "sales" | "purchase" | "quotation";
 
 export type PriceType = "kg" | "piece" | "carton" | "tray";
 
+export type PriceSource =
+  | "default_product_price"
+  | "customer_special_price"
+  | "manual_override"
+  | "free_product"
+  | "default_purchase_price"
+  | "supplier_special_price";
+
 export interface InvoiceLineDraft {
   id: string;
   serverId?: string;
@@ -12,6 +20,8 @@ export interface InvoiceLineDraft {
   kg: number;
   unitPrice: number;
   priceType: PriceType;
+  priceSource?: PriceSource | string;
+  priceOverrideReason?: string;
   vatRate: number;
   lineSubtotal: number;
   lineTotal: number;

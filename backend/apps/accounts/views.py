@@ -45,7 +45,13 @@ class LogoutView(APIView):
 
 class _TenantUserMixin:
     permission_classes = [IsTenantUser, HasTenantPermission]
-    required_permission = "users.manage"
+
+    @property
+    def required_permission(self):
+        # Read-only access needs users.view; any mutation needs users.manage.
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return "users.view"
+        return "users.manage"
 
     def get_queryset(self):
         return User.objects.filter(

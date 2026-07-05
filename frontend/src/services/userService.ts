@@ -76,21 +76,42 @@ export async function reactivateTenantUser(id: string): Promise<void> {
   await request(ENDPOINTS.tenant.userReactivate(id), { method: "POST", body: {} });
 }
 
-export async function getUserPermissionOverrides(id: string): Promise<{ code: string; allowed: boolean }[]> {
-  if (IS_MOCK_MODE) return [];
-  const data = await request<{ permissions?: { code: string; allowed: boolean }[] } | { code: string; allowed: boolean }[]>(
-    ENDPOINTS.tenant.userPermissions(id),
-  );
-  if (Array.isArray(data)) return data;
-  return data.permissions ?? [];
+export interface UserPermissionState {
+  effective: Record<string, boolean>;
+  overrides: Record<string, boolean>;
+}
+
+export async function getUserPermissionOverrides(id: string): Promise<UserPermissionState> {
+  if (IS_MOCK_MODE) return { effective: {}, overrides: {} };
+  const data = await request<{
+    effective?: Record<string, boolean>;
+    overrides?: Record<string, boolean>;
+    permissions?: { code: string; allowed: boolean }[];
+  }>(ENDPOINTS.tenant.userPermissions(id));
+  if (data.effective != null || data.overrides != null) {
+    return {
+      effective: data.effective ?? {},
+      overrides: data.overrides ?? {},
+    };
+  }
+  if (Array.isArray(data)) {
+    const overrides: Record<string, boolean> = {};
+    for (const p of data) overrides[p.code] = p.allowed;
+    return { effective: {}, overrides };
+  }
+  const list = data.permissions ?? [];
+  const overrides: Record<string, boolean> = {};
+  for (const p of list) overrides[p.code] = p.allowed;
+  return { effective: {}, overrides };
 }
 
 export async function updateUserPermissionOverrides(
   id: string,
   permissions: { code: string; allowed: boolean }[],
+  reason: string,
 ): Promise<void> {
   await request(ENDPOINTS.tenant.userPermissions(id), {
     method: "PATCH",
-    body: { permissions },
+    body: { overrides: permissions, reason },
   });
 }

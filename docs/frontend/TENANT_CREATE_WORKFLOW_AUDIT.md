@@ -24,6 +24,7 @@ Code commits: `ded78f1` (customer), `bff86fe` (reports + dashboard), `c7d747a` (
 | **Payments (mock modals)** | `CustomerCollectionModal` etc. | Mock only (`IS_MOCK_MODE`) | — | — | — | — | Dev mock only |
 | **Expenses** | Expense create screens | Partial — check expense service | Varies | Varies | Varies | Varies | Not in client report |
 | **Reports** | All report screens | GET report APIs | Yes | Yes | N/A | N/A | **Fixed** — `liveOrMockRows` never falls back in prod |
+| **Users & Permissions** | `LiveUserPermissionsScreen` | `GET/PATCH /tenant/users/...` | Yes | Yes | Yes | Yes | **Fixed** (2026-07-05) — `users.view` on list GET |
 | **Bulk product setup** | `BulkProductSetupScreen` | **No** — toast-only | No | No | No | No | Dev tool — not used in prod routing |
 
 ---

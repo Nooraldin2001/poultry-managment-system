@@ -118,11 +118,17 @@ class PurchaseInvoiceLineInputSerializer(_NonNegativeMixin, serializers.Serializ
     quantity_cartons = serializers.DecimalField(max_digits=14, decimal_places=2, default=ZERO)
     quantity_pieces = serializers.DecimalField(max_digits=14, decimal_places=2, default=ZERO)
     quantity_kg = serializers.DecimalField(max_digits=14, decimal_places=3, default=ZERO)
-    unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, default=ZERO)
+    # None means "use the resolved default" (supplier special price, then the
+    # product's default purchase price). An explicit different value is a
+    # manual override and requires purchases.override_price.
+    unit_price = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=False, allow_null=True, default=None
+    )
     price_type = serializers.CharField(required=False)
     vat_rate = serializers.DecimalField(max_digits=5, decimal_places=2, default=ZERO)
     notes = serializers.CharField(required=False, allow_blank=True)
     sort_order = serializers.IntegerField(required=False, default=0)
+    override_reason = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
         self._check_non_negative(attrs)
@@ -131,7 +137,7 @@ class PurchaseInvoiceLineInputSerializer(_NonNegativeMixin, serializers.Serializ
         company = self.context["company"]
 
         if line_type in (PurchaseLineType.PRODUCT, PurchaseLineType.BY_PRODUCT):
-            if product is None:
+            if product is None and not self.partial:
                 raise serializers.ValidationError(
                     {"product": "Product is required for product lines."}
                 )

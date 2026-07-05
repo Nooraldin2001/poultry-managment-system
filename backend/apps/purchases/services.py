@@ -34,7 +34,8 @@ from apps.company_settings.services import generate_document_number
 from apps.inventory import services as inventory_services
 from apps.inventory.models import MovementType, StockSourceType
 from apps.inventory.services import StockConsumedError
-from apps.suppliers.models import Supplier
+from apps.permissions.services import has_permission
+from apps.suppliers.models import Supplier, SupplierSpecialPrice
 from apps.suppliers import services as supplier_services
 
 from . import calculations as calc
@@ -227,7 +228,7 @@ def create_purchase_invoice(*, company, supplier, created_by, invoice_date,
     )
 
     for index, line in enumerate(lines):
-        _create_line(company, invoice, line, default_sort=index)
+        _create_line(company, invoice, line, default_sort=index, user=created_by)
     for adj in adjustments:
         _create_adjustment(company, invoice, adj, created_by=created_by)
 
@@ -236,9 +237,70 @@ def create_purchase_invoice(*, company, supplier, created_by, invoice_date,
     return invoice
 
 
-def _create_line(company, invoice, data, *, default_sort=0) -> PurchaseInvoiceLine:
+def _resolve_purchase_price(company, supplier, product, price_type):
+    """Return (default_price, source) for a purchase line."""
+    if product is None:
+        return None, "manual"
+    special = (
+        SupplierSpecialPrice.objects.filter(
+            company_id=company.id, supplier=supplier, product=product,
+            price_type=price_type, is_active=True,
+        )
+        .order_by("-id")
+        .first()
+    )
+    if special:
+        return _d(special.price), "supplier_special_price"
+    return _d(product.purchase_price or 0), "default_purchase_price"
+
+
+def _create_line(company, invoice, data, *, default_sort=0, user=None) -> PurchaseInvoiceLine:
     line_type = data.get("line_type", PurchaseLineType.PRODUCT)
     product = _resolve_product(company, data.get("product"), line_type)
+    price_type = data.get("price_type") or (
+        product.purchase_price_type if product else "kg"
+    )
+    provided = data.get("unit_price")
+    default_price, _source = _resolve_purchase_price(
+        company, invoice.supplier, product, price_type
+    )
+
+    if provided is None:
+        unit_price = default_price if default_price is not None else ZERO
+    else:
+        unit_price = _d(provided)
+        # A price that differs from the resolved default is a manual override:
+        # permission-gated and audit-logged. Internal callers (user=None) are
+        # trusted; all API paths pass the requesting user.
+        if (
+            user is not None
+            and product is not None
+            and default_price is not None
+            and unit_price != default_price
+        ):
+            if not has_permission(user, "purchases.override_price"):
+                raise ValidationError({
+                    "unit_price": (
+                        "Manual purchase price override requires "
+                        "purchases.override_price."
+                    )
+                })
+            if unit_price <= 0:
+                raise ValidationError(
+                    {"unit_price": "Overridden purchase price must be greater than zero."}
+                )
+            create_audit_log(
+                action="override_purchase_price",
+                user=user, company=company, module="purchases",
+                reference_type="purchase_invoice", reference_id=invoice.id,
+                reason=data.get("override_reason", ""),
+                previous_value={"default_price": str(default_price)},
+                new_value={
+                    "product_id": product.id,
+                    "unit_price": str(unit_price),
+                },
+            )
+
     return PurchaseInvoiceLine.objects.create(
         company=company,
         invoice=invoice,
@@ -249,8 +311,8 @@ def _create_line(company, invoice, data, *, default_sort=0) -> PurchaseInvoiceLi
         quantity_cartons=_d(data.get("quantity_cartons")),
         quantity_pieces=_d(data.get("quantity_pieces")),
         quantity_kg=_d(data.get("quantity_kg")),
-        unit_price=_d(data.get("unit_price")),
-        price_type=data.get("price_type", product.purchase_price_type if product else "kg"),
+        unit_price=unit_price,
+        price_type=price_type,
         vat_rate=_d(data.get("vat_rate")),
         notes=data.get("notes", ""),
         sort_order=data.get("sort_order", default_sort),
@@ -505,8 +567,70 @@ def get_supplier_purchase_history(company, supplier):
     _check_supplier(company, supplier)
     return (
         PurchaseInvoice.objects.filter(company=company, supplier=supplier)
+        .exclude(status=PurchaseStatus.CANCELLED)
         .order_by("-invoice_date", "-id")
     )
+
+
+def get_purchase_price_history(*, company, supplier, product, limit=10):
+    """Real previous purchase prices for a supplier+product (no fake data).
+
+    Sources, most recent first:
+    * previous non-cancelled purchase invoice lines (deduped by price+type),
+    * active supplier special prices,
+    * current default product purchase price.
+    """
+    _check_supplier(company, supplier)
+    if product.company_id != company.id:
+        raise ValidationError({"product": "Product does not belong to this company."})
+
+    items = []
+    seen = set()
+
+    lines = (
+        PurchaseInvoiceLine.objects.filter(
+            company=company, invoice__supplier=supplier, product=product,
+        )
+        .exclude(invoice__status=PurchaseStatus.CANCELLED)
+        .select_related("invoice")
+        .order_by("-invoice__invoice_date", "-id")
+    )
+    for line in lines:
+        key = (str(_d(line.unit_price)), line.price_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({
+            "price": str(_d(line.unit_price)),
+            "price_type": line.price_type,
+            "source": "previous_invoice",
+            "invoice_number": line.invoice.invoice_number,
+            "date": str(line.invoice.invoice_date),
+        })
+        if len(items) >= limit:
+            break
+
+    specials = SupplierSpecialPrice.objects.filter(
+        company_id=company.id, supplier=supplier, product=product, is_active=True,
+    ).order_by("-id")
+    for sp in specials:
+        items.append({
+            "price": str(_d(sp.price)),
+            "price_type": sp.price_type,
+            "source": "supplier_special_price",
+            "invoice_number": None,
+            "date": str(sp.created_at.date()) if getattr(sp, "created_at", None) else None,
+        })
+
+    if _d(product.purchase_price or 0) > 0:
+        items.append({
+            "price": str(_d(product.purchase_price)),
+            "price_type": product.purchase_price_type or "kg",
+            "source": "default_purchase_price",
+            "invoice_number": None,
+            "date": None,
+        })
+    return items
 
 
 def build_purchase_print_preview(invoice) -> dict:

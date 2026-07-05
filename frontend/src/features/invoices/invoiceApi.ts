@@ -2,8 +2,16 @@ import { request } from "@/services/api/client";
 import { ENDPOINTS } from "@/services/api/endpoints";
 import type { InvoiceKind, InvoiceLineDraft } from "./types";
 
-export function lineToPayload(line: InvoiceLineDraft): Record<string, unknown> {
-  return {
+export type LinePayloadOptions = {
+  manualPriceOverride?: boolean;
+  priceOverrideReason?: string;
+};
+
+export function lineToPayload(
+  line: InvoiceLineDraft,
+  options?: LinePayloadOptions,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
     product: Number(line.productId),
     quantity_cartons: String(line.cartons),
     quantity_pieces: String(line.pieces),
@@ -13,6 +21,12 @@ export function lineToPayload(line: InvoiceLineDraft): Record<string, unknown> {
     vat_rate: String(line.vatRate),
     notes: line.notes ?? "",
   };
+  if (options?.manualPriceOverride || line.priceSource === "manual_override") {
+    payload.price_source = "manual_override";
+    const reason = options?.priceOverrideReason ?? line.priceOverrideReason;
+    if (reason) payload.override_reason = reason;
+  }
+  return payload;
 }
 
 export async function createDraftHeader(
@@ -49,7 +63,12 @@ export async function patchDraftHeader(
   await request(path, { method: "PATCH", body: payload });
 }
 
-export async function addDraftLine(kind: InvoiceKind, id: string, line: InvoiceLineDraft): Promise<string> {
+export async function addDraftLine(
+  kind: InvoiceKind,
+  id: string,
+  line: InvoiceLineDraft,
+  options?: LinePayloadOptions,
+): Promise<string> {
   const base =
     kind === "sales"
       ? ENDPOINTS.tenant.sale(id)
@@ -58,7 +77,7 @@ export async function addDraftLine(kind: InvoiceKind, id: string, line: InvoiceL
         : ENDPOINTS.tenant.quotation(id);
   const created = await request<{ id: number }>(`${base}lines/`, {
     method: "POST",
-    body: lineToPayload(line),
+    body: lineToPayload(line, options),
   });
   return String(created.id);
 }
@@ -68,6 +87,7 @@ export async function updateDraftLine(
   docId: string,
   lineId: string,
   line: InvoiceLineDraft,
+  options?: LinePayloadOptions,
 ): Promise<void> {
   const base =
     kind === "sales"
@@ -75,7 +95,10 @@ export async function updateDraftLine(
       : kind === "purchase"
         ? ENDPOINTS.tenant.purchase(docId)
         : ENDPOINTS.tenant.quotation(docId);
-  await request(`${base}lines/${lineId}/`, { method: "PATCH", body: lineToPayload(line) });
+  await request(`${base}lines/${lineId}/`, {
+    method: "PATCH",
+    body: lineToPayload(line, options),
+  });
 }
 
 export async function removeDraftLine(kind: InvoiceKind, docId: string, lineId: string): Promise<void> {

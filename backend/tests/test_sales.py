@@ -544,3 +544,116 @@ def test_price_preview_respects_tenant(api, company, owner, other_owner):
         f"{SALES_URL}price-preview/?customer={customer.id}&product={product.id}&price_type=kg"
     )
     assert resp.status_code == 404
+
+
+# ── Cancelled invoices hidden from default list ─────────────────────────────
+def test_sales_list_hides_cancelled_by_default(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    active = _create(company, customer, owner, [_line(product, quantity_kg="10")])
+    cancelled = _create(company, customer, owner, [_line(product, quantity_kg="5")])
+    services.cancel_sales_invoice(invoice=cancelled, user=owner, reason="mistake")
+
+    api.force_authenticate(owner)
+    resp = api.get(SALES_URL)
+    assert resp.status_code == 200
+    ids = [row["id"] for row in resp.data["results"]]
+    assert active.id in ids
+    assert cancelled.id not in ids
+
+    resp = api.get(f"{SALES_URL}?status=cancelled")
+    ids = [row["id"] for row in resp.data["results"]]
+    assert ids == [cancelled.id]
+
+    resp = api.get(f"{SALES_URL}?include_cancelled=1")
+    ids = [row["id"] for row in resp.data["results"]]
+    assert active.id in ids and cancelled.id in ids
+
+
+# ── Price override on line PATCH ─────────────────────────────────────────────
+def test_line_price_patch_requires_override_permission(api, company, owner, accountant):
+    customer = _customer(company)
+    product = _product(company)
+    inv = _create(company, customer, owner, [_line(product, quantity_kg="10")])
+    line = inv.lines.first()
+    url = f"{SALES_URL}{inv.id}/lines/{line.id}/"
+
+    # Accountant has sales.edit but NOT sales.override_price.
+    api.force_authenticate(accountant)
+    resp = api.patch(url, {"unit_price": "55.00"}, format="json")
+    assert resp.status_code == 403, resp.data
+
+    # Quantity-only edits (price unchanged) stay allowed.
+    resp = api.patch(url, {"quantity_kg": "12", "unit_price": str(line.unit_price)}, format="json")
+    assert resp.status_code == 200, resp.data
+
+    # Owner can override; the line stores the price and is audit-logged.
+    api.force_authenticate(owner)
+    resp = api.patch(url, {"unit_price": "55.00", "override_reason": "old agreed price"}, format="json")
+    assert resp.status_code == 200, resp.data
+    line.refresh_from_db()
+    assert line.unit_price == Decimal("55.00")
+    assert line.price_source == SalesPriceSource.MANUAL_OVERRIDE
+    assert AuditLog.objects.filter(
+        company=company, action="override_sales_price", reference_id=inv.id
+    ).exists()
+
+
+def test_manual_override_price_must_be_positive(company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    with pytest.raises(ValidationError):
+        _create(company, customer, owner, [_line(
+            product, quantity_kg="10", unit_price="0",
+            price_source=SalesPriceSource.MANUAL_OVERRIDE,
+        )])
+
+
+# ── Price history ────────────────────────────────────────────────────────────
+def test_sales_price_history_returns_real_prices(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    _create(company, customer, owner, [_line(
+        product, quantity_kg="10", unit_price="88.00",
+        price_source=SalesPriceSource.MANUAL_OVERRIDE,
+    )])
+    CustomerSpecialPrice.objects.create(
+        company=company, customer=customer, product=product,
+        price=Decimal("77.00"), price_type="kg", is_active=True,
+    )
+
+    api.force_authenticate(owner)
+    resp = api.get(f"{SALES_URL}price-history/?customer={customer.id}&product={product.id}")
+    assert resp.status_code == 200, resp.data
+    sources = {row["source"] for row in resp.data}
+    assert "previous_invoice" in sources
+    assert "customer_special_price" in sources
+    assert "default_product_price" in sources
+    prices = {row["price"] for row in resp.data}
+    assert "88.00" in prices and "77.00" in prices and "100.00" in prices
+    inv_entry = next(r for r in resp.data if r["source"] == "previous_invoice")
+    assert inv_entry["invoice_number"].startswith("SAL-")
+    assert inv_entry["date"]
+
+
+def test_sales_price_history_excludes_cancelled_invoices(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    inv = _create(company, customer, owner, [_line(
+        product, quantity_kg="10", unit_price="66.00",
+        price_source=SalesPriceSource.MANUAL_OVERRIDE,
+    )])
+    services.cancel_sales_invoice(invoice=inv, user=owner, reason="mistake")
+
+    api.force_authenticate(owner)
+    resp = api.get(f"{SALES_URL}price-history/?customer={customer.id}&product={product.id}")
+    assert resp.status_code == 200
+    assert "66.00" not in {row["price"] for row in resp.data}
+
+
+def test_sales_price_history_respects_tenant(api, company, owner, other_owner):
+    customer = _customer(company)
+    product = _product(company)
+    api.force_authenticate(other_owner)
+    resp = api.get(f"{SALES_URL}price-history/?customer={customer.id}&product={product.id}")
+    assert resp.status_code == 404

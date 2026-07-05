@@ -11,6 +11,10 @@ import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/s
 import { FormErrors } from "@/shared/components/FormErrors";
 import { ApiError } from "@/services/api/errors";
 import type { InvoiceLineDraft } from "./types";
+import type { LinePayloadOptions } from "./invoiceApi";
+import { applyLineTotals } from "./lineTotals";
+import { SalesLinePriceCell } from "./SalesLinePriceCell";
+import { canOverrideSalesPrice } from "@/shared/utils/permissions";
 import {
   addDraftLine,
   createDraftHeader,
@@ -24,14 +28,16 @@ import { parseAmount } from "@/services/crud/parse";
 type Props = {
   lang: Lang;
   role: TenantRole;
+  permissions?: string[];
   onNavigate: (s: TenantScreen) => void;
   invoiceId?: string | null;
   onSaved?: (id: string) => void;
 };
 
-export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSaved }: Props) {
+export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigate, invoiceId, onSaved }: Props) {
   const isRTL = lang === "ar";
   const canApprove = role === "owner" || role === "accountant";
+  const canEditPrice = canOverrideSalesPrice(role, permissions);
   const [docId, setDocId] = useState(invoiceId ?? "");
   const [customerId, setCustomerId] = useState("");
   const [lines, setLines] = useState<InvoiceLineDraft[]>([]);
@@ -161,8 +167,7 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
         lineSubtotal: 0,
         lineTotal: 0,
       };
-      draft.lineSubtotal = draft.kg * draft.unitPrice;
-      draft.lineTotal = draft.lineSubtotal;
+      let withTotals = applyLineTotals(draft);
       try {
         const preview = await salesPricePreview({
           customer: Number(customerId),
@@ -171,15 +176,14 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
         });
         const price = parseAmount((preview as { unit_price?: string }).unit_price);
         if (price > 0) {
-          draft.unitPrice = price;
-          draft.lineSubtotal = draft.kg * price;
-          draft.lineTotal = draft.lineSubtotal;
+          withTotals = applyLineTotals({ ...withTotals, unitPrice: price });
         }
       } catch {
         /* use product default */
       }
-      const serverId = await addDraftLine("sales", id, draft);
-      setLines((prev) => [...prev, { ...draft, serverId }]);
+      const finalized = withTotals;
+      const serverId = await addDraftLine("sales", id, finalized);
+      setLines((prev) => [...prev, { ...finalized, serverId }]);
       await saveHeader(id);
     } catch (err) {
       if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
@@ -190,9 +194,20 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
     }
   };
 
-  const persistLine = async (line: InvoiceLineDraft) => {
+  const persistLine = async (line: InvoiceLineDraft, options?: LinePayloadOptions) => {
     if (!docId || !line.serverId || status !== "draft") return;
-    await updateDraftLine("sales", docId, line.serverId, line);
+    const payloadOpts: LinePayloadOptions =
+      options ??
+      (line.priceSource === "manual_override"
+        ? { manualPriceOverride: true, priceOverrideReason: line.priceOverrideReason }
+        : {});
+    await updateDraftLine("sales", docId, line.serverId, line, payloadOpts);
+  };
+
+  const updateLine = (next: InvoiceLineDraft) => {
+    const withTotals = applyLineTotals(next);
+    setLines((prev) => prev.map((l) => (l.id === withTotals.id ? withTotals : l)));
+    void persistLine(withTotals);
   };
 
   const removeLine = async (line: InvoiceLineDraft) => {
@@ -283,7 +298,7 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
       await cancelSale(docId, reason);
       setStatus("cancelled");
       setShowCancel(false);
-      toast.success(isRTL ? "تم الإلغاء" : "Cancelled");
+      toast.success(isRTL ? "تم إلغاء الفاتورة بنجاح" : "Invoice cancelled successfully");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Cancel failed");
     } finally {
@@ -370,9 +385,7 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
                           value={line.cartons}
                           onChange={(e) => {
                             const cartons = Number(e.target.value);
-                            const next = { ...line, cartons, lineSubtotal: cartons * line.unitPrice, lineTotal: cartons * line.unitPrice };
-                            setLines((prev) => prev.map((l) => (l.id === line.id ? next : l)));
-                            void persistLine(next);
+                            updateLine({ ...line, cartons });
                           }}
                         />
                       </td>
@@ -384,13 +397,20 @@ export function LiveSalesInvoiceScreen({ lang, role, onNavigate, invoiceId, onSa
                           value={line.kg}
                           onChange={(e) => {
                             const kg = Number(e.target.value);
-                            const next = { ...line, kg, lineSubtotal: kg * line.unitPrice, lineTotal: kg * line.unitPrice };
-                            setLines((prev) => prev.map((l) => (l.id === line.id ? next : l)));
-                            void persistLine(next);
+                            updateLine({ ...line, kg });
                           }}
                         />
                       </td>
-                      <td className="p-2 font-mono text-xs">{line.unitPrice.toFixed(2)}</td>
+                      <td className="p-2">
+                        <SalesLinePriceCell
+                          lang={lang}
+                          customerId={customerId}
+                          line={line}
+                          isDraft={isDraft}
+                          canEditPrice={canEditPrice}
+                          onPriceChange={updateLine}
+                        />
+                      </td>
                       <td className="p-2 font-mono font-bold">{line.lineTotal.toFixed(2)}</td>
                       <td className="p-2">
                         {isDraft && (

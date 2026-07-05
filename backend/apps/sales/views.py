@@ -19,6 +19,7 @@ from .models import (
     SalesInvoice,
     SalesInvoiceAdjustment,
     SalesInvoiceLine,
+    SalesPriceSource,
     SalesStatus,
 )
 from .serializers import (
@@ -87,6 +88,7 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
         "adjustment_detail": "sales.apply_discount",
         "collection_adjustment": "sales.collection_adjustment",
         "price_preview": "sales.view",
+        "price_history": "sales.view",
         "stock_check": "sales.view",
     }
 
@@ -106,6 +108,11 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
             qs = qs.filter(customer_id=p["customer"])
         if p.get("status"):
             qs = qs.filter(status=p["status"])
+        elif not _truthy(p.get("include_cancelled")):
+            # Cancelled invoices are audit records: hidden from the default
+            # active list unless explicitly requested via ?status= or
+            # ?include_cancelled=1.
+            qs = qs.exclude(status=SalesStatus.CANCELLED)
         if p.get("payment_status"):
             qs = qs.filter(payment_status=p["payment_status"])
         if p.get("date_from"):
@@ -285,6 +292,22 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
         )
         return Response(SalesPricePreviewSerializer(data).data)
 
+    @action(detail=False, methods=["get"], url_path="price-history")
+    def price_history(self, request):
+        customer_id = request.query_params.get("customer")
+        product_id = request.query_params.get("product")
+        if not customer_id or not product_id:
+            raise ValidationError("customer and product query params are required.")
+        customer = get_object_or_404(
+            Customer, pk=customer_id, company_id=self.company.id
+        )
+        product = get_object_or_404(
+            Product, pk=product_id, company_id=self.company.id
+        )
+        return Response(services.get_sales_price_history(
+            company=self.company, customer=customer, product=product,
+        ))
+
     @action(detail=False, methods=["get"], url_path="stock-check")
     def stock_check(self, request):
         product_id = request.query_params.get("product")
@@ -352,6 +375,30 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
             line.product = product
             line.product_name_snapshot = product.name_ar if product else ""
             line.product_sku_snapshot = product.sku if product else ""
+        # Price edits on an existing line are a manual override: they require
+        # sales.override_price and are written to the audit log.
+        new_price = vd.get("unit_price")
+        price_changed = new_price is not None and new_price != line.unit_price
+        if price_changed:
+            _require(request.user, "sales.override_price")
+            if new_price <= 0 and not vd.get("is_free", line.is_free):
+                raise ValidationError(
+                    {"unit_price": "Overridden price must be greater than zero."}
+                )
+            from apps.audit.services import create_audit_log
+
+            create_audit_log(
+                action="override_sales_price",
+                user=request.user, company=self.company, module="sales",
+                reference_type="sales_invoice", reference_id=invoice.id,
+                reason=vd.get("override_reason", ""),
+                previous_value={"unit_price": str(line.unit_price)},
+                new_value={
+                    "product_id": line.product_id,
+                    "unit_price": str(new_price),
+                },
+            )
+            line.price_source = SalesPriceSource.MANUAL_OVERRIDE
         for field in (
             "line_type", "quantity_cartons", "quantity_pieces", "quantity_kg",
             "unit_price", "price_type", "is_free", "free_reason",

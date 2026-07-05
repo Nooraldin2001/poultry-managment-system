@@ -22,6 +22,8 @@ import { LoadingState, ErrorState, PermissionDeniedState, ApiUnavailableState, E
 import { FormErrors } from "@/shared/components/FormErrors";
 import { ApiError } from "@/services/api/errors";
 import { LiveUserPermissionsScreen } from "@/features/permissions/LiveUserPermissionsScreen";
+import { canManageUsers } from "@/shared/utils/permissions";
+import { mapBackendRole } from "@/services/tenantService";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -238,10 +240,13 @@ export function SensitiveActionModal({ lang, actionAr, actionEn, prevValue, newV
 }
 
 // ── SCREEN: SETTINGS HOME ──────────────────────────────────────────────────────
-export function SettingsHomeScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+export function SettingsHomeScreen({ lang, role, onNavigate, permissions = [] }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; permissions?: string[];
+}) {
   const isRTL = lang === "ar";
   const [search, setSearch] = useState("");
   const isOwner = role === "owner";
+  const canUsers = canManageUsers(role, permissions);
   const [identity, setIdentity] = useState<{ trn?: string; logo_url?: string | null; stamp_url?: string | null; signature_url?: string | null; name_en?: string }>({});
 
   useEffect(() => {
@@ -342,7 +347,9 @@ export function SettingsHomeScreen({ lang, role, onNavigate }: { lang: Lang; rol
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {settingCards.map((c, i) => {
           const Icon = c.icon;
-          const accessible = c.nav === "settings-plan" || c.nav === "settings-security" || isOwner || c.nav.includes("reports");
+          const accessible = c.nav === "settings-plan" || c.nav === "settings-security" || c.nav.includes("reports")
+            || (c.nav === "settings-users" && canUsers)
+            || (c.nav !== "settings-users" && isOwner);
           return (
             <div key={i} onClick={() => accessible && onNavigate(c.nav)}
               className={`bg-white rounded-2xl border shadow-sm p-5 flex flex-col transition-all hover:shadow-md ${accessible ? "cursor-pointer hover:border-[#0F2C59]/30 border-slate-200/80" : "border-slate-200/80 opacity-70"}`}>
@@ -535,11 +542,12 @@ export function CompanyProfileScreen({ lang, role, onNavigate }: { lang: Lang; r
 }
 
 // ── SCREEN: USERS LIST ─────────────────────────────────────────────────────────
-export function UsersListScreen({ lang, role, onNavigate, setSelectedUserId }: {
+export function UsersListScreen({ lang, role, onNavigate, setSelectedUserId, permissions = [] }: {
   lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void;
-  setSelectedUserId: (id: string) => void;
+  setSelectedUserId: (id: string) => void; permissions?: string[];
 }) {
   const isRTL = lang === "ar";
+  const canManage = canManageUsers(role, permissions);
   const isOwner = role === "owner";
   const [liveUsers, setLiveUsers] = useState<{ id: string; name: string; email: string; role: UserRole; active: boolean; lastLogin: string; customPerms: boolean }[]>([]);
   const [loading, setLoading] = useState(!IS_MOCK_MODE);
@@ -553,7 +561,7 @@ export function UsersListScreen({ lang, role, onNavigate, setSelectedUserId }: {
         id: u.id,
         name: u.fullName,
         email: u.email,
-        role: u.role as UserRole,
+        role: mapBackendRole(u.role) as UserRole,
         active: u.isActive,
         lastLogin: u.dateJoined,
         customPerms: false,
@@ -566,7 +574,7 @@ export function UsersListScreen({ lang, role, onNavigate, setSelectedUserId }: {
   const userLimit = 50;
   const limitReached = !IS_MOCK_MODE && users.length >= userLimit;
 
-  if (!IS_MOCK_MODE && role === "cashier") return <PermissionDeniedState lang={lang} />;
+  if (!IS_MOCK_MODE && !canManage) return <PermissionDeniedState lang={lang} />;
   if (loading) return <LoadingState lang={lang} />;
   if (error && liveUsers.length === 0) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
 
@@ -577,7 +585,7 @@ export function UsersListScreen({ lang, role, onNavigate, setSelectedUserId }: {
       else await reactivateTenantUser(userId);
       const rows = await listTenantUsers();
       setLiveUsers(rows.map((u) => ({
-        id: u.id, name: u.fullName, email: u.email, role: u.role as UserRole,
+        id: u.id, name: u.fullName, email: u.email, role: mapBackendRole(u.role) as UserRole,
         active: u.isActive, lastLogin: u.dateJoined, customPerms: false,
       })));
       toast.success(isRTL ? "تم تحديث حالة المستخدم" : "User status updated");
@@ -657,7 +665,7 @@ export function UsersListScreen({ lang, role, onNavigate, setSelectedUserId }: {
 
       {/* Mobile cards */}
       <div className="lg:hidden space-y-3">
-        {SETTINGS_USERS.map(u => (
+        {users.map(u => (
           <Card key={u.id} className="p-4">
             <div className="flex items-start justify-between mb-2">
               <div className="flex items-center gap-2.5">

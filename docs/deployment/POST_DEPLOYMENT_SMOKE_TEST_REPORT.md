@@ -562,3 +562,26 @@ Dry-run on VPS: **not executed** (awaiting deploy + operator review).
 
 **Launch stance (Phase 2):** **NO-GO** until deploy + First View verification passes.
 
+---
+
+## Phase 3 — First View ERP fixes (2026-07-05)
+
+| Area | Code status | Tests |
+|---|---|---|
+| Users & Permissions (`users.view` on GET) | Fixed | `test_users.py` pass |
+| Cancelled sales/purchases hidden from default list | Fixed | `test_sales.py`, `test_purchases.py` |
+| Cancel modal → real API | Fixed | — |
+| Sales/purchase price override | Fixed | override permission tests |
+| Price history endpoints + UI dropdown | Fixed | history + tenant isolation tests |
+| Frontend typecheck/build | **Pass** | `pnpm run typecheck`, `pnpm run build` |
+| Backend targeted pytest | **89 passed** | users + sales + purchases |
+
+### Manual smoke (First View admin — after deploy)
+
+1. Settings → **المستخدمون والصلاحيات** → list + catalog load, no infinite spinner
+2. Cancel approved sale/purchase with reason → disappears from active list → visible under **ملغاة**
+3. Sales invoice → edit unit price → approve → print shows manual price
+4. **اختيار سعر سابق** dropdown → select old price → save
+
+Docs: [PRICING_OVERRIDE_AND_HISTORY.md](./PRICING_OVERRIDE_AND_HISTORY.md), [SALES_MODULE_AUDIT.md](./SALES_MODULE_AUDIT.md)
+

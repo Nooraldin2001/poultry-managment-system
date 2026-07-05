@@ -9,6 +9,7 @@ import { listPermissionCodes, type PermissionCodeRow } from "@/services/permissi
 import { getTenantUser, getUserPermissionOverrides, updateUserPermissionOverrides } from "@/services/userService";
 import { ApiError } from "@/services/api/errors";
 import { useAuth } from "@/state/authStore";
+import { canManageUsers } from "@/shared/utils/permissions";
 import {
   LoadingState,
   ErrorState,
@@ -98,8 +99,8 @@ export function LiveUserPermissionsScreen({
   SensitiveActionModal,
 }: Props) {
   const isRTL = lang === "ar";
-  const { user: currentUser } = useAuth();
-  const canManage = role === "owner";
+  const { user: currentUser, permissions } = useAuth();
+  const canManage = canManageUsers(role, permissions);
 
   const [catalog, setCatalog] = useState<PermissionCodeRow[]>([]);
   const [user, setUser] = useState<{ fullName: string; email: string; role: string } | null>(null);
@@ -126,17 +127,22 @@ export function LiveUserPermissionsScreen({
     setForbidden(false);
     setUnavailable(false);
     try {
-      const [codes, u, perms] = await Promise.all([
+      const [codes, u, permState] = await Promise.all([
         listPermissionCodes(),
         getTenantUser(userId),
         getUserPermissionOverrides(userId),
       ]);
       setCatalog(codes);
       if (u) setUser({ fullName: u.fullName, email: u.email, role: u.role });
-      const map: Record<string, boolean> = {};
-      for (const p of perms) map[p.code] = p.allowed;
+      const map: Record<string, boolean> = { ...permState.overrides };
+      // When no explicit overrides exist, seed checkboxes from effective permissions.
+      if (Object.keys(map).length === 0 && Object.keys(permState.effective).length > 0) {
+        for (const [code, allowed] of Object.entries(permState.effective)) {
+          map[code] = allowed;
+        }
+      }
       setOverrides(map);
-      setUseCustom(perms.length > 0);
+      setUseCustom(Object.keys(permState.overrides).length > 0);
       if (codes.length === 0) setUnavailable(true);
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setForbidden(true);
@@ -200,7 +206,7 @@ export function LiveUserPermissionsScreen({
       const permissions = useCustom
         ? Object.entries(overrides).map(([code, allowed]) => ({ code, allowed }))
         : [];
-      await updateUserPermissionOverrides(userId, permissions);
+      await updateUserPermissionOverrides(userId, permissions, reason);
       toast.success(isRTL ? "تم حفظ صلاحيات المستخدم" : "User permissions saved");
       setShowSensitiveModal(false);
       onNavigate("settings-users");

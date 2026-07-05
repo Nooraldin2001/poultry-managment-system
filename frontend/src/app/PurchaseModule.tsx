@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // POULTRY HERO — PHASE 4: PURCHASE INVOICE MODULE (self-contained)
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import type { ReactNode, ElementType } from "react";
 import {
   Plus, Search, Eye, Ban, Check, ChevronRight, ChevronLeft,
@@ -15,6 +15,8 @@ import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/s
 import { toModulePurchase } from "./moduleMappers";
 import { IS_MOCK_MODE } from "@/services/config";
 import { LivePurchaseInvoiceScreen } from "@/features/invoices/LivePurchaseInvoiceScreen";
+import { cancelPurchase } from "@/services/purchaseService";
+import { ApiError } from "@/services/api/errors";
 
 // ── LOCAL TYPE ALIASES (mirrors App.tsx — no circular import) ──────────────────
 type Lang = "ar" | "en";
@@ -264,12 +266,25 @@ export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId 
 }) {
   const isRTL = lang === "ar";
   const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("active");
   const [showPay, setShowPay] = useState<string | null>(null);
   const [showCancel, setShowCancel] = useState<string | null>(null);
 
+  const listFilters = useMemo(() => {
+    const f: Record<string, string> = {};
+    if (search) f.search = search;
+    if (filterStatus === "cancelled") f.status = "cancelled";
+    else if (filterStatus === "draft") f.status = "draft";
+    else if (filterStatus === "approved") f.status = "approved";
+    else if (filterStatus === "partial") f.status = "partially_paid";
+    else if (filterStatus === "paid") f.status = "paid";
+    else if (filterStatus === "credit") f.status = "credit";
+    else if (filterStatus === "all") f.include_cancelled = "1";
+    return Object.keys(f).length ? f : undefined;
+  }, [search, filterStatus]);
+
   const { items: purchaseRows, loading, error, forbidden, reload } = usePurchases(
-    search ? { search } : undefined,
+    listFilters,
     async () => MOCK_P_INVOICES.map(purchaseRowFromMock),
   );
   const P_INVOICES = purchaseRows.map(mergePurchaseListItem);
@@ -278,11 +293,7 @@ export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId 
   if (loading) return <LoadingState lang={lang} />;
   if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
 
-  const filtered = P_INVOICES.filter(inv => {
-    const s = search.toLowerCase();
-    return (!s || inv.id.toLowerCase().includes(s) || inv.supplier.toLowerCase().includes(s) || inv.supplierInvNo.toLowerCase().includes(s)) &&
-      (filterStatus === "all" || inv.status === filterStatus);
-  });
+  const filtered = P_INVOICES;
 
   const openDetail = (recordId: string) => {
     setSelectedPurchaseId?.(recordId);
@@ -316,7 +327,8 @@ export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId 
           </div>
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
             className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white font-semibold text-slate-600 focus:outline-none">
-            <option value="all">{isRTL ? "كل الحالات" : "All Status"}</option>
+            <option value="active">{isRTL ? "نشطة (بدون الملغاة)" : "Active (excl. cancelled)"}</option>
+            <option value="all">{isRTL ? "الكل (مع الملغاة)" : "All (incl. cancelled)"}</option>
             <option value="draft">{isRTL ? "مسودة" : "Draft"}</option>
             <option value="approved">{isRTL ? "معتمدة" : "Approved"}</option>
             <option value="paid">{isRTL ? "مدفوعة" : "Paid"}</option>
@@ -360,7 +372,7 @@ export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId 
                         {(inv.status === "approved" || inv.status === "partial" || inv.status === "credit") && <button onClick={() => setShowPay(inv.id)} className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg font-bold">{isRTL ? "دفعة" : "Pay"}</button>}
                         <button onClick={() => openDetail(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#0F2C59] hover:text-white transition-all"><Eye size={13} /></button>
                         <button onClick={() => openPrint(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all" title={isRTL ? "طباعة / حفظ PDF" : "Print / Save PDF"}><Printer size={13} /></button>
-                        {inv.status !== "cancelled" && inv.status !== "draft" && role === "owner" && <button onClick={() => setShowCancel(inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all"><Ban size={13} /></button>}
+                        {inv.status !== "cancelled" && inv.status !== "draft" && role === "owner" && <button onClick={() => setShowCancel(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all"><Ban size={13} /></button>}
                       </div>
                     </td>
                   </tr>
@@ -398,20 +410,21 @@ export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId 
       )}
 
       {showPay && <SupplierPayModal lang={lang} invoiceId={showPay} onClose={() => setShowPay(null)} />}
-      {showCancel && <CancelPurchModal lang={lang} invoiceId={showCancel} onClose={() => setShowCancel(null)} />}
+      {showCancel && <CancelPurchModal lang={lang} invoiceId={showCancel} onClose={() => setShowCancel(null)} onSuccess={() => { setShowCancel(null); void reload(); }} />}
     </div>
   );
 }
 
 // ── SCREEN: NEW PURCHASE INVOICE ───────────────────────────────────────────────
-export function PurchNewScreen({ lang, role, onNavigate, purchaseId, onSaved }: {
-  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; purchaseId?: string; onSaved?: (id: string) => void;
+export function PurchNewScreen({ lang, role, permissions, onNavigate, purchaseId, onSaved }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; purchaseId?: string; onSaved?: (id: string) => void;
 }) {
   if (!IS_MOCK_MODE) {
     return (
       <LivePurchaseInvoiceScreen
         lang={lang}
         role={role}
+        permissions={permissions}
         onNavigate={onNavigate}
         invoiceId={purchaseId ?? null}
         onSaved={onSaved}
@@ -1390,11 +1403,33 @@ export function SupplierPayModal({ lang, invoiceId, onClose }: { lang: Lang; inv
 }
 
 // ── MODAL: CANCEL PURCHASE INVOICE ────────────────────────────────────────────
-export function CancelPurchModal({ lang, invoiceId, onClose }: { lang: Lang; invoiceId: string; onClose: () => void }) {
+export function CancelPurchModal({ lang, invoiceId, onClose, onSuccess }: { lang: Lang; invoiceId: string; onClose: () => void; onSuccess?: () => void }) {
   const isRTL = lang === "ar";
   const [reason, setReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
-  const [stockPartlySold, setStockPartlySold] = useState(false); // toggle for demo
+  const [saving, setSaving] = useState(false);
+  const [stockPartlySold, setStockPartlySold] = useState(false); // demo toggle only in mock flows
+
+  const handleConfirm = async () => {
+    if (!reason.trim() || !confirmed || stockPartlySold) return;
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم إلغاء فاتورة الشراء" : "Purchase invoice cancelled");
+      onSuccess?.();
+      onClose();
+      return;
+    }
+    setSaving(true);
+    try {
+      await cancelPurchase(invoiceId, reason);
+      toast.success(isRTL ? "تم إلغاء الفاتورة بنجاح" : "Invoice cancelled successfully");
+      onSuccess?.();
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : (isRTL ? "فشل الإلغاء" : "Cancel failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -1472,7 +1507,7 @@ export function CancelPurchModal({ lang, invoiceId, onClose }: { lang: Lang; inv
                   {isRTL ? "ليس لديك صلاحية لتنفيذ هذا الإجراء" : "You do not have permission for this action"}
                 </div>
               </div>
-            : <Btn variant="danger" disabled={!reason.trim() || !confirmed} onClick={() => { toast.success(isRTL ? "تم إلغاء فاتورة الشراء" : "Purchase invoice cancelled"); onClose(); }} className="flex-1 justify-center"><Ban size={14} />{isRTL ? "تأكيد الإلغاء" : "Confirm Cancel"}</Btn>}
+            : <Btn variant="danger" disabled={!reason.trim() || !confirmed || saving} onClick={() => void handleConfirm()} className="flex-1 justify-center"><Ban size={14} />{isRTL ? "تأكيد الإلغاء" : "Confirm Cancel"}</Btn>}
         </div>
       </div>
     </div>

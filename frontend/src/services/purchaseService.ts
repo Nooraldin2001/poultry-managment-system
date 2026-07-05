@@ -5,6 +5,7 @@ import type { ApiListFilters } from "@/services/crud/types";
 import { request } from "./api/client";
 import { ENDPOINTS } from "./api/endpoints";
 import type { PurchaseInvoiceLineRow, PurchaseInvoiceRow } from "@/shared/types/entities";
+import type { PriceHistoryEntry } from "@/services/salesService";
 import * as purchaseMock from "./mock/purchaseService.mock";
 
 const crud = createCrudService<ApiPurchaseList, ApiPurchaseDetail>(ENDPOINTS.tenant.purchases);
@@ -33,9 +34,13 @@ interface ApiPurchaseLine {
   id: number;
   product: number;
   product_name_snapshot?: string;
+  quantity_cartons?: string;
+  quantity_pieces?: string;
+  quantity_kg?: string;
   quantity?: string;
   unit?: string;
   unit_price?: string;
+  price_type?: string;
   line_total?: string;
 }
 
@@ -58,12 +63,14 @@ export function mapApiPurchaseToRow(row: ApiPurchaseList): PurchaseInvoiceRow {
 }
 
 function mapPurchaseLine(line: ApiPurchaseLine): PurchaseInvoiceLineRow {
+  const kg = parseAmount(line.quantity_kg ?? line.quantity);
+  const pieces = parseAmount(line.quantity_pieces ?? line.quantity);
   return {
     id: String(line.id),
     productId: String(line.product),
     productName: line.product_name_snapshot ?? "",
-    qty: parseAmount(line.quantity),
-    unit: line.unit ?? "kg",
+    qty: kg || pieces,
+    unit: line.price_type ?? line.unit ?? "kg",
     price: parseAmount(line.unit_price),
     total: parseAmount(line.line_total),
   };
@@ -160,4 +167,18 @@ export async function deletePurchaseLine(purchaseId: string, lineId: string): Pr
 
 export async function getPurchasePrintPreview(id: string): Promise<unknown> {
   return request(`${ENDPOINTS.tenant.purchase(id)}print-preview/`);
+}
+
+export async function purchasePriceHistory(query: {
+  supplier: number;
+  product: number;
+}): Promise<PriceHistoryEntry[]> {
+  if (IS_MOCK_MODE) return [];
+  const data = await request<PriceHistoryEntry[]>(ENDPOINTS.tenant.purchasesPriceHistory, {
+    query: {
+      supplier: String(query.supplier),
+      product: String(query.product),
+    },
+  });
+  return Array.isArray(data) ? data : [];
 }

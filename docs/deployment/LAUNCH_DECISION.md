@@ -25,6 +25,9 @@ Code fixes for customer, product, supplier, sales/purchase invoices, and reports
 | Sales invoice create | **Code fixed** — smoke **pending** |
 | Purchase invoice create | **Code fixed** — smoke **pending** |
 | Reports demo fix | **Code fixed** (`bff86fe`) — verify empty states on First View |
+| Users & Permissions (tenant admin) | **Code fixed** — smoke **pending** |
+| Cancelled invoice list behavior | **Code fixed** — smoke **pending** |
+| Price override + history | **Code fixed** — smoke **pending** |
 | DB purge dry-run | **Not run** |
 
 ---

@@ -128,7 +128,7 @@ class SalesInvoiceLineInputSerializer(_NonNegativeMixin, serializers.Serializer)
         product = attrs.get("product")
         company = self.context["company"]
         if line_type in (SalesLineType.PRODUCT, SalesLineType.BY_PRODUCT):
-            if product is None:
+            if product is None and not self.partial:
                 raise serializers.ValidationError({"product": "Product is required."})
         if product is not None:
             if product.company_id != company.id:

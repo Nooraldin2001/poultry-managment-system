@@ -98,3 +98,28 @@ def test_cashier_cannot_manage_users(api, cashier):
     api.force_authenticate(user=cashier)
     resp = api.get("/api/v1/tenant/users/")
     assert resp.status_code == 403
+
+
+def test_owner_can_list_users_with_view_permission(api, owner, cashier):
+    """GET /tenant/users/ requires users.view (not users.manage)."""
+    api.force_authenticate(user=owner)
+    resp = api.get("/api/v1/tenant/users/")
+    assert resp.status_code == 200
+    emails = {row["email"] for row in resp.data["results"]}
+    assert owner.email in emails
+    assert cashier.email in emails
+
+
+def test_accountant_cannot_list_users_without_view_permission(api, accountant):
+    api.force_authenticate(user=accountant)
+    resp = api.get("/api/v1/tenant/users/")
+    assert resp.status_code == 403
+
+
+def test_owner_can_read_permission_catalog(api, owner):
+    api.force_authenticate(user=owner)
+    resp = api.get("/api/v1/tenant/permissions/")
+    assert resp.status_code == 200
+    codes = {row["code"] for row in resp.data}
+    assert "users.view" in codes
+    assert "users.manage" in codes

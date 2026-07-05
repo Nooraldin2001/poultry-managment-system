@@ -34,10 +34,23 @@ interface ApiSalesLine {
   id: number;
   product: number;
   product_name_snapshot?: string;
+  quantity_cartons?: string;
+  quantity_pieces?: string;
+  quantity_kg?: string;
   quantity?: string;
   unit?: string;
   unit_price?: string;
+  price_type?: string;
+  price_source?: string;
   line_total?: string;
+}
+
+export interface PriceHistoryEntry {
+  price: string;
+  price_type: string;
+  source: string;
+  invoice_number?: string | null;
+  date?: string | null;
 }
 
 export function mapApiSalesToRow(row: ApiSalesList): SalesInvoiceRow {
@@ -60,12 +73,14 @@ export function mapApiSalesToRow(row: ApiSalesList): SalesInvoiceRow {
 }
 
 function mapSalesLine(line: ApiSalesLine): SalesInvoiceLineRow {
+  const kg = parseAmount(line.quantity_kg ?? line.quantity);
+  const pieces = parseAmount(line.quantity_pieces ?? line.quantity);
   return {
     id: String(line.id),
     productId: String(line.product),
     productName: line.product_name_snapshot ?? "",
-    qty: parseAmount(line.quantity),
-    unit: line.unit ?? "kg",
+    qty: kg || pieces,
+    unit: line.price_type ?? line.unit ?? "kg",
     price: parseAmount(line.unit_price),
     total: parseAmount(line.line_total),
   };
@@ -161,6 +176,20 @@ export async function salesPricePreview(query: {
   };
   if (query.price_type) params.price_type = query.price_type;
   return request(ENDPOINTS.tenant.salesPricePreview, { query: params });
+}
+
+export async function salesPriceHistory(query: {
+  customer: number;
+  product: number;
+}): Promise<PriceHistoryEntry[]> {
+  if (IS_MOCK_MODE) return [];
+  const data = await request<PriceHistoryEntry[]>(ENDPOINTS.tenant.salesPriceHistory, {
+    query: {
+      customer: String(query.customer),
+      product: String(query.product),
+    },
+  });
+  return Array.isArray(data) ? data : [];
 }
 
 export async function salesStockCheck(query: {

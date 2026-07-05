@@ -93,3 +93,17 @@ Approved demo purchases are **cancelled first** (reverses inventory/supplier led
 - Full tabbed detail view (costing, attachments, audit) only in mock `PurchDetailScreen`
 - Attachment upload/download UI needs live wiring
 - Export button on list is placeholder toast
+
+---
+
+## 2026-07-05 — Cancelled list + price override
+
+| Issue | Fix |
+|-------|-----|
+| Cancelled purchases still in default list | Backend excludes `cancelled` unless `?status=cancelled` or `?include_cancelled=1`; frontend default filter **Active (excl. cancelled)** |
+| Cancel modal toast-only | `CancelPurchModal` calls `POST /tenant/purchases/{id}/cancel/` with reason |
+| Admin cannot change purchase price | `LivePurchaseInvoiceScreen` + `PurchaseLinePriceCell`; permission `purchases.override_price` |
+| Old supplier/product price | `GET /tenant/purchases/price-history/?supplier=&product=` + dropdown |
+
+See [PRICING_OVERRIDE_AND_HISTORY.md](./PRICING_OVERRIDE_AND_HISTORY.md).
+

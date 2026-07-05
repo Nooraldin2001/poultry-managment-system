@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { ReactNode, ElementType } from "react";
 import {
   LayoutDashboard, Building2, CreditCard, AlertCircle,
@@ -1444,13 +1444,25 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
 }) {
   const isRTL = lang === "ar";
   const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("active");
   const [showCollect, setShowCollect] = useState<string | null>(null);
   const [showCancel, setShowCancel] = useState<string | null>(null);
   const [showNumbering, setShowNumbering] = useState(false);
 
+  const listFilters = useMemo(() => {
+    const f: Record<string, string> = {};
+    if (search) f.search = search;
+    if (filterStatus === "cancelled") f.status = "cancelled";
+    else if (filterStatus === "draft") f.status = "draft";
+    else if (filterStatus === "approved") f.status = "approved";
+    else if (filterStatus === "partial") f.status = "partially_paid";
+    else if (filterStatus === "paid") f.status = "paid";
+    else if (filterStatus === "all") f.include_cancelled = "1";
+    return Object.keys(f).length ? f : undefined;
+  }, [search, filterStatus]);
+
   const { items: saleRows, loading, error, forbidden, reload } = useSales(
-    search ? { search } : undefined,
+    listFilters,
     async () =>
       S_INVOICES.map((inv) => ({
         id: inv.id,
@@ -1495,11 +1507,7 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
     };
   });
 
-  const filtered = displayInvoices.filter(inv => {
-    const s = search.toLowerCase();
-    return (!s || inv.id.toLowerCase().includes(s) || inv.customer.includes(search) || inv.customerEn.toLowerCase().includes(s)) &&
-      (filterStatus === "all" || inv.status === filterStatus);
-  });
+  const filtered = displayInvoices;
 
   const openDetail = (recordId: string) => {
     setSelectedSalesId?.(recordId);
@@ -1534,7 +1542,8 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
           </div>
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
             className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white font-semibold text-slate-600 focus:outline-none">
-            <option value="all">{isRTL ? "كل الحالات" : "All Status"}</option>
+            <option value="active">{isRTL ? "نشطة (بدون الملغاة)" : "Active (excl. cancelled)"}</option>
+            <option value="all">{isRTL ? "الكل (مع الملغاة)" : "All (incl. cancelled)"}</option>
             <option value="draft">{isRTL ? "مسودة" : "Draft"}</option>
             <option value="approved">{isRTL ? "معتمدة" : "Approved"}</option>
             <option value="partial">{isRTL ? "مدفوعة جزئياً" : "Partial"}</option>
@@ -1576,7 +1585,7 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
                         {(inv.status === "approved" || inv.status === "partial") && <button onClick={() => setShowCollect(inv.id)} className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg font-bold hover:bg-emerald-600">{isRTL ? "تحصيل" : "Collect"}</button>}
                         <button onClick={() => openDetail((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-[#0F2C59] transition-all" title={isRTL ? "عرض" : "View"}><Eye size={13} /></button>
                         <button onClick={() => openPreview((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all" title={isRTL ? "طباعة" : "Print"}><Printer size={13} /></button>
-                        {(inv.status === "approved" || inv.status === "partial") && role === "owner" && <button onClick={() => setShowCancel(inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all" title={isRTL ? "إلغاء" : "Cancel"}><Ban size={13} /></button>}
+                        {(inv.status === "approved" || inv.status === "partial") && role === "owner" && <button onClick={() => setShowCancel((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all" title={isRTL ? "إلغاء" : "Cancel"}><Ban size={13} /></button>}
                       </div>
                     </td>
                   </tr>
@@ -1621,21 +1630,22 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
       )}
 
       {showCollect && <SalesCollectModal lang={lang} invoiceId={showCollect} onClose={() => setShowCollect(null)} />}
-      {showCancel && <CancelInvoiceModal lang={lang} invoiceId={showCancel} onClose={() => setShowCancel(null)} />}
+      {showCancel && <CancelInvoiceModal lang={lang} invoiceId={showCancel} onClose={() => setShowCancel(null)} onSuccess={() => { setShowCancel(null); void reload(); }} />}
       {showNumbering && <InvoiceNumberingModal lang={lang} role={role} onClose={() => setShowNumbering(false)} />}
     </div>
   );
 }
 
 // ── SCREEN: NEW SALES INVOICE ─────────────────────────────────────────────────
-function SalesNewScreen({ lang, role, onNavigate, salesId, onSaved }: {
-  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; salesId?: string; onSaved?: (id: string) => void;
+function SalesNewScreen({ lang, role, permissions, onNavigate, salesId, onSaved }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; salesId?: string; onSaved?: (id: string) => void;
 }) {
   if (!IS_MOCK_MODE) {
     return (
       <LiveSalesInvoiceScreen
         lang={lang}
         role={role}
+        permissions={permissions}
         onNavigate={onNavigate}
         invoiceId={salesId ?? null}
         onSaved={onSaved}
@@ -1980,8 +1990,8 @@ function SalesNewScreen({ lang, role, onNavigate, salesId, onSaved }: {
 }
 
 // ── SCREEN: INVOICE PREVIEW / PRINT ───────────────────────────────────────────
-function SalesDetailLiveRouter({ lang, role, onNavigate, salesId, canApprove }: {
-  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; salesId: string; canApprove: boolean;
+function SalesDetailLiveRouter({ lang, role, permissions, onNavigate, salesId, canApprove }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; salesId: string; canApprove: boolean;
 }) {
   const [status, setStatus] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
@@ -2005,6 +2015,7 @@ function SalesDetailLiveRouter({ lang, role, onNavigate, salesId, canApprove }: 
       <LiveSalesInvoiceScreen
         lang={lang}
         role={role}
+        permissions={permissions}
         onNavigate={onNavigate}
         invoiceId={salesId}
       />
@@ -2217,8 +2228,8 @@ function SalesPreviewScreen({ lang, onNavigate, role, salesId }: {
 }
 
 // ── SCREEN: INVOICE DETAIL ─────────────────────────────────────────────────────
-function SalesDetailScreen({ lang, role, onNavigate, salesId }: {
-  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; salesId?: string;
+function SalesDetailScreen({ lang, role, permissions, onNavigate, salesId }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; salesId?: string;
 }) {
   const canApprove = role === "owner" || role === "accountant";
   if (!IS_MOCK_MODE) {
@@ -2229,6 +2240,7 @@ function SalesDetailScreen({ lang, role, onNavigate, salesId }: {
       <SalesDetailLiveRouter
         lang={lang}
         role={role}
+        permissions={permissions}
         onNavigate={onNavigate}
         salesId={salesId}
         canApprove={canApprove}
@@ -2568,9 +2580,24 @@ function SalesAdjustModal({ lang, invoiceId, onClose }: { lang: Lang; invoiceId:
 }
 
 // ── MODAL: CANCEL INVOICE ──────────────────────────────────────────────────────
-function CancelInvoiceModal({ lang, invoiceId, onClose }: { lang: Lang; invoiceId: string; onClose: () => void }) {
+function CancelInvoiceModal({ lang, invoiceId, onClose, onSuccess }: { lang: Lang; invoiceId: string; onClose: () => void; onSuccess?: () => void }) {
   const isRTL = lang === "ar";
   const [reason, setReason] = useState(""); const [confirmed, setConfirmed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const handleConfirm = async () => {
+    if (!reason.trim() || !confirmed) return;
+    setSaving(true);
+    try {
+      await cancelSale(invoiceId, reason);
+      toast.success(isRTL ? "تم إلغاء الفاتورة بنجاح" : "Invoice cancelled successfully");
+      onSuccess?.();
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : (isRTL ? "فشل الإلغاء" : "Cancel failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full">
@@ -2595,7 +2622,7 @@ function CancelInvoiceModal({ lang, invoiceId, onClose }: { lang: Lang; invoiceI
         </div>
         <div className="p-6 border-t border-slate-100 flex gap-3">
           <Btn variant="outline" onClick={onClose} className="flex-1 justify-center">{isRTL ? "رجوع" : "Back"}</Btn>
-          <Btn variant="danger" disabled={!reason.trim() || !confirmed} onClick={() => { toast.success(isRTL ? "تم إلغاء الفاتورة" : "Invoice cancelled"); onClose(); }} className="flex-1 justify-center"><Ban size={14} />{isRTL ? "تأكيد الإلغاء" : "Confirm Cancel"}</Btn>
+          <Btn variant="danger" disabled={!reason.trim() || !confirmed || saving} onClick={() => void handleConfirm()} className="flex-1 justify-center"><Ban size={14} />{isRTL ? "تأكيد الإلغاء" : "Confirm Cancel"}</Btn>
         </div>
       </div>
     </div>
@@ -3535,11 +3562,11 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           <>
           {tScreen === "dashboard"    && <TenantDashboardScreen lang={lang} role={role} onNavigate={navTenant} />}
           {(tScreen === "sales" || tScreen === "sales-list") && <SalesListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedSalesId={setSelectedSalesId} />}
-          {tScreen === "sales-new"    && <SalesNewScreen lang={lang} role={role} onNavigate={navTenant} salesId={selectedSalesId || undefined} onSaved={setSelectedSalesId} />}
+          {tScreen === "sales-new"    && <SalesNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} salesId={selectedSalesId || undefined} onSaved={setSelectedSalesId} />}
           {tScreen === "sales-preview"&& <SalesPreviewScreen lang={lang} onNavigate={navTenant} role={role} salesId={selectedSalesId || undefined} />}
-          {tScreen === "sales-detail" && <SalesDetailScreen lang={lang} role={role} onNavigate={navTenant} salesId={selectedSalesId || undefined} />}
+          {tScreen === "sales-detail" && <SalesDetailScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} salesId={selectedSalesId || undefined} />}
           {(tScreen === "purchases" || tScreen === "purchases-list") && <PurchListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedPurchaseId={setSelectedPurchaseId} />}
-          {tScreen === "purchases-new"     && <PurchNewScreen lang={lang} role={role} onNavigate={navTenant} purchaseId={selectedPurchaseId || undefined} onSaved={setSelectedPurchaseId} />}
+          {tScreen === "purchases-new"     && <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} purchaseId={selectedPurchaseId || undefined} onSaved={setSelectedPurchaseId} />}
           {tScreen === "purchases-preview" && (
             !IS_MOCK_MODE ? (
               selectedPurchaseId ? (
@@ -3606,10 +3633,10 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "quotation-preview"   && <QuotationPreviewScreen lang={lang} onNavigate={navTenant} quotId={selectedQuotId} />}
           {tScreen === "quotation-convert"   && <ConvertQuotationScreen lang={lang} role={role} onNavigate={navTenant} quotId={selectedQuotId} />}
           {tScreen === "quotation-analytics" && <QuotationAnalyticsScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {tScreen === "users"                       && <UsersListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedUserId={setSelectedSettingsUserId} />}
-          {tScreen === "settings"                    && <SettingsHomeScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "users"                       && <UsersListScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} setSelectedUserId={setSelectedSettingsUserId} />}
+          {tScreen === "settings"                    && <SettingsHomeScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} />}
           {tScreen === "settings-company"            && <CompanyProfileScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {tScreen === "settings-users"              && <UsersListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedUserId={setSelectedSettingsUserId} />}
+          {tScreen === "settings-users"              && <UsersListScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} setSelectedUserId={setSelectedSettingsUserId} />}
           {tScreen === "settings-user-new"           && <CreateUserScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "settings-user-permissions"   && <UserPermissionsScreen lang={lang} role={role} onNavigate={navTenant} userId={selectedSettingsUserId} />}
           {tScreen === "settings-roles"              && <RolePermissionsScreen lang={lang} role={role} onNavigate={navTenant} />}
