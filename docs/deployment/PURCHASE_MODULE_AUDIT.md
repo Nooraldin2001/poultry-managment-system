@@ -73,6 +73,8 @@ Approved demo purchases are **cancelled first** (reverses inventory/supplier led
 | Approve | `POST .../approve/` body `{ "reason" }` | OK — persists lines + normalizes KG |
 | No-VAT purchase | Header/line `vat_rate: 0`; no TRN required | **Fixed** Phase 9 |
 | VAT toggle UI | `بدون ضريبة` / `No VAT` | **Fixed** Phase 9 |
+| Inventory UI shows zeros | Frontend mapped wrong API fields | **Fixed** Phase 10 — `available_cartons/kg` |
+| Repair approved purchases | `repair_purchase_inventory_side_effects` | **Fixed** Phase 10 |
 | Cancel | `POST .../cancel/` body `{ "reason" }` | OK |
 | Print/PDF | `GET .../print-preview/` + browser print | **Fixed** |
 | Detail (live) | `LivePurchaseInvoiceScreen` | OK (simplified vs mock tabs) |

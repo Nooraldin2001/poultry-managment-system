@@ -632,6 +632,71 @@ def test_cross_tenant_purchase_approval_inventory_isolated(company, owner, other
     assert not InventoryBalance.objects.filter(company=other_company, product=other_product).exists()
 
 
+def test_fixed_weight_50_cartons_equals_250_kg_on_approve(company, owner):
+    supplier = _supplier(company)
+    product = _product(
+        company, sku="500G", weight_grams=500, default_pieces_per_carton=10,
+    )
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_cartons="50", quantity_kg="0", unit_price="10")],
+        vat_rate=Decimal("0"),
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="received")
+    balance = InventoryBalance.objects.get(company=company, product=product)
+    assert balance.available_kg == Decimal("250.000")
+    assert balance.available_cartons == Decimal("50.00")
+    assert balance.available_pieces == Decimal("500.00")
+
+
+def test_repair_dry_run_does_not_add_stock(company, owner):
+    supplier = _supplier(company)
+    product = _product(company)
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="100", unit_price="10")],
+        vat_rate=Decimal("0"),
+    )
+    inv.status = PurchaseStatus.APPROVED
+    inv.save(update_fields=["status", "updated_at"])
+    assert services.purchase_needs_inventory_repair(inv)
+    report = services.repair_purchase_inventory_side_effects(
+        company=company, user=owner, dry_run=True, invoices=[inv],
+    )
+    assert report["dry_run"] is True
+    assert report["repaired_count"] == 0
+    assert not InventoryBalance.objects.filter(company=company, product=product).exists()
+
+
+def test_repair_confirm_adds_missing_stock(company, owner):
+    supplier = _supplier(company)
+    product = _product(company)
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="100", unit_price="10")],
+        vat_rate=Decimal("0"),
+    )
+    inv.status = PurchaseStatus.APPROVED
+    inv.approved_by = owner
+    inv.save(update_fields=["status", "approved_by", "updated_at"])
+    report = services.repair_purchase_inventory_side_effects(
+        company=company, user=owner, dry_run=False, invoices=[inv],
+    )
+    assert report["repaired_count"] == 1
+    balance = InventoryBalance.objects.get(company=company, product=product)
+    assert balance.available_kg == Decimal("100.000")
+    assert StockMovement.objects.filter(
+        company=company, movement_type=MovementType.PURCHASE_APPROVED
+    ).exists()
+    # Idempotent second run
+    report2 = services.repair_purchase_inventory_side_effects(
+        company=company, user=owner, dry_run=False, invoices=[inv],
+    )
+    assert report2["repaired_count"] == 0
+    balance.refresh_from_db()
+    assert balance.available_kg == Decimal("100.000")
+
+
 # ── Production data hygiene checks ──────────────────────────────────────────
 def test_deploy_scripts_do_not_seed_demo_data():
     scripts_dir = REPO_ROOT / "scripts"

@@ -32,11 +32,16 @@ from apps.audit.services import (
 from apps.company_settings.constants import DocumentType
 from apps.company_settings.services import generate_document_number
 from apps.inventory import services as inventory_services
-from apps.inventory.models import MovementType, StockSourceType
+from apps.inventory.models import (
+    MovementDirection,
+    MovementType,
+    StockMovement,
+    StockSourceType,
+)
 from apps.inventory.services import StockConsumedError
 from apps.permissions.services import has_permission
 from apps.products.models import ProductType
-from apps.suppliers.models import Supplier, SupplierSpecialPrice
+from apps.suppliers.models import Supplier, SupplierLedgerEntry, SupplierSpecialPrice
 from apps.suppliers import services as supplier_services
 
 from . import calculations as calc
@@ -59,6 +64,14 @@ STOCK_CONSUMED_MESSAGE = (
     "Cannot cancel purchase because stock from this purchase has already been "
     "consumed."
 )
+
+_POSTED_PURCHASE_STATUSES = (
+    PurchaseStatus.APPROVED,
+    PurchaseStatus.PARTIALLY_PAID,
+    PurchaseStatus.PAID,
+)
+
+REPAIR_REASON = "Repair missing purchase inventory side effects"
 
 
 def _d(value) -> Decimal:
@@ -395,6 +408,203 @@ def _validate_lines_for_approval(lines) -> None:
             )
 
 
+def _posted_stock_deltas(company, invoice, product_id) -> tuple[Decimal, Decimal, Decimal]:
+    """Sum inbound stock already posted for a purchase invoice line product."""
+    agg = StockMovement.objects.filter(
+        company=company,
+        reference_type=StockSourceType.PURCHASE_INVOICE,
+        reference_id=invoice.id,
+        product_id=product_id,
+        movement_type=MovementType.PURCHASE_APPROVED,
+        direction=MovementDirection.IN,
+    ).aggregate(
+        cartons=Sum("cartons_delta"),
+        pieces=Sum("pieces_delta"),
+        kg=Sum("kg_delta"),
+    )
+    return _d(agg["cartons"]), _d(agg["pieces"]), _d(agg["kg"])
+
+
+def _apply_purchase_stock_side_effects(*, invoice, user, reason) -> list[dict]:
+    """Add FIFO stock for stock-tracked purchase lines (idempotent per quantity)."""
+    company = invoice.company
+    lines = list(invoice.lines.select_related("product").all())
+    extra = _inventory_cost_extra(list(invoice.adjustments.all()))
+    product_lines = [ln for ln in lines if ln.is_stock_tracked and ln.has_quantity]
+    allocations = calc.allocate_inventory_cost(
+        [ln.line_subtotal for ln in product_lines], extra
+    )
+
+    applied: list[dict] = []
+    for line, allocated_cost in zip(product_lines, allocations):
+        posted_cartons, posted_pieces, posted_kg = _posted_stock_deltas(
+            company, invoice, line.product_id
+        )
+        need_cartons = _d(line.quantity_cartons) - posted_cartons
+        need_pieces = _d(line.quantity_pieces) - posted_pieces
+        need_kg = _d(line.quantity_kg) - posted_kg
+        if need_cartons <= 0 and need_pieces <= 0 and need_kg <= 0:
+            continue
+
+        unit_cost = calc.unit_cost_per_kg(allocated_cost, line.quantity_kg)
+        line.unit_cost_per_kg = unit_cost
+        line.save(update_fields=["unit_cost_per_kg", "updated_at"])
+        inventory_services.add_stock(
+            company=company,
+            product=line.product,
+            cartons=need_cartons,
+            pieces=need_pieces,
+            kg=need_kg,
+            unit_cost_per_kg=unit_cost,
+            source_type=StockSourceType.PURCHASE_INVOICE,
+            source_id=invoice.id,
+            source_reference=invoice.invoice_number,
+            reason=reason,
+            user=user,
+            movement_type=MovementType.PURCHASE_APPROVED,
+        )
+        applied.append({
+            "product_id": line.product_id,
+            "product": line.product_name_snapshot,
+            "cartons": str(need_cartons),
+            "pieces": str(need_pieces),
+            "kg": str(need_kg),
+        })
+    return applied
+
+
+def _supplier_ledger_posted(invoice) -> bool:
+    return SupplierLedgerEntry.objects.filter(
+        company_id=invoice.company_id,
+        supplier_id=invoice.supplier_id,
+        entry_type=SupplierLedgerEntry.EntryType.PURCHASE_INVOICE,
+        reference_type="purchase_invoice",
+        reference_id=str(invoice.id),
+    ).exists()
+
+
+def purchase_needs_inventory_repair(invoice) -> bool:
+    """True when an approved purchase has stock lines but missing stock deltas."""
+    if invoice.status not in _POSTED_PURCHASE_STATUSES:
+        return False
+    company = invoice.company
+    for line in invoice.lines.select_related("product").all():
+        if not line.is_stock_tracked or not line.has_quantity:
+            continue
+        posted_cartons, posted_pieces, posted_kg = _posted_stock_deltas(
+            company, invoice, line.product_id
+        )
+        if (
+            _d(line.quantity_cartons) > posted_cartons
+            or _d(line.quantity_pieces) > posted_pieces
+            or _d(line.quantity_kg) > posted_kg
+        ):
+            return True
+    return False
+
+
+def find_purchases_missing_inventory(company) -> list[PurchaseInvoice]:
+    qs = (
+        PurchaseInvoice.objects.filter(company=company, status__in=_POSTED_PURCHASE_STATUSES)
+        .prefetch_related("lines__product")
+        .order_by("id")
+    )
+    return [inv for inv in qs if purchase_needs_inventory_repair(inv)]
+
+
+@transaction.atomic
+def repair_purchase_inventory_side_effects(
+    *,
+    company,
+    user,
+    dry_run: bool = True,
+    invoices: list[PurchaseInvoice] | None = None,
+) -> dict:
+    """Backfill missing stock/FIFO/supplier ledger for approved purchases."""
+    targets = invoices if invoices is not None else find_purchases_missing_inventory(company)
+    report = {"dry_run": dry_run, "invoices": [], "repaired_count": 0, "skipped_count": 0}
+
+    for invoice in targets:
+        if invoice.company_id != company.id:
+            raise ValidationError("Purchase invoice does not belong to this company.")
+        if invoice.status not in _POSTED_PURCHASE_STATUSES:
+            report["skipped_count"] += 1
+            continue
+        if not purchase_needs_inventory_repair(invoice):
+            report["skipped_count"] += 1
+            continue
+
+        inv_report = {
+            "id": invoice.id,
+            "invoice_number": invoice.invoice_number,
+            "status": invoice.status,
+            "lines": [],
+            "supplier_ledger": "unchanged",
+        }
+
+        lines = list(invoice.lines.select_related("product").all())
+        normalized = False
+        for line in lines:
+            normalized = _normalize_line_quantities_for_stock(line) or normalized
+        if normalized:
+            recalculate_purchase_invoice(invoice)
+            lines = list(invoice.lines.select_related("product").all())
+
+        for line in lines:
+            if not line.is_stock_tracked:
+                continue
+            inv_report["lines"].append({
+                "line_id": line.id,
+                "product": line.product_name_snapshot,
+                "track_inventory": True,
+                "cartons": str(line.quantity_cartons),
+                "pieces": str(line.quantity_pieces),
+                "kg": str(line.quantity_kg),
+            })
+
+        if dry_run:
+            inv_report["action"] = "would_repair"
+            report["invoices"].append(inv_report)
+            continue
+
+        _validate_lines_for_approval(lines)
+        applied = _apply_purchase_stock_side_effects(
+            invoice=invoice, user=user, reason=REPAIR_REASON,
+        )
+        inv_report["stock_applied"] = applied
+
+        if not _supplier_ledger_posted(invoice):
+            supplier = Supplier.objects.select_for_update().get(pk=invoice.supplier_id)
+            supplier_services.record_purchase_invoice(
+                supplier=supplier,
+                amount=invoice.total_amount,
+                reference_id=invoice.id,
+                reference_number=invoice.invoice_number,
+                created_by=user,
+                reason=REPAIR_REASON,
+                entry_date=invoice.invoice_date,
+            )
+            inv_report["supplier_ledger"] = "created"
+        else:
+            inv_report["supplier_ledger"] = "already_posted"
+
+        create_audit_log(
+            action="repair_purchase_inventory_side_effects",
+            user=user,
+            company=company,
+            module="purchases",
+            reference_type="purchase_invoice",
+            reference_id=invoice.id,
+            reason=REPAIR_REASON,
+            new_value={"stock_applied": applied},
+        )
+        inv_report["action"] = "repaired"
+        report["invoices"].append(inv_report)
+        report["repaired_count"] += 1
+
+    return report
+
+
 # ── Approval ────────────────────────────────────────────────────────────────
 @transaction.atomic
 def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
@@ -430,30 +640,7 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
 
     # Allocate increase_inventory_cost adjustments across product lines (by
     # subtotal) so unit_cost_per_kg reflects the true landed cost.
-    extra = _inventory_cost_extra(list(invoice.adjustments.all()))
-    product_lines = [ln for ln in lines if ln.is_stock_tracked and ln.has_quantity]
-    allocations = calc.allocate_inventory_cost(
-        [ln.line_subtotal for ln in product_lines], extra
-    )
-
-    for line, allocated_cost in zip(product_lines, allocations):
-        unit_cost = calc.unit_cost_per_kg(allocated_cost, line.quantity_kg)
-        line.unit_cost_per_kg = unit_cost
-        line.save(update_fields=["unit_cost_per_kg", "updated_at"])
-        inventory_services.add_stock(
-            company=company,
-            product=line.product,
-            cartons=line.quantity_cartons,
-            pieces=line.quantity_pieces,
-            kg=line.quantity_kg,
-            unit_cost_per_kg=unit_cost,
-            source_type=StockSourceType.PURCHASE_INVOICE,
-            source_id=invoice.id,
-            source_reference=invoice.invoice_number,
-            reason=reason,
-            user=user,
-            movement_type=MovementType.PURCHASE_APPROVED,
-        )
+    _apply_purchase_stock_side_effects(invoice=invoice, user=user, reason=reason)
 
     # Supplier payable: post the gross total. Payment receipt ledger is deferred
     # to the payments phase (documented limitation).

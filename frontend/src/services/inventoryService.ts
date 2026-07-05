@@ -13,23 +13,34 @@ interface ApiInventoryRow {
   product_name?: string;
   product_name_ar?: string;
   product_name_en?: string;
+  /** Legacy / summary aliases */
   total_cartons?: string | number;
   total_pieces?: string | number;
   total_weight_kg?: string | number;
+  /** Current balance API fields (InventoryBalanceSerializer) */
+  available_cartons?: string | number;
+  available_pieces?: string | number;
+  available_kg?: string | number;
   minimum_stock_cartons?: string | number;
   average_cost_per_kg?: string | number;
+  estimated_fifo_value?: string | number;
   stock_status?: string;
 }
 
 function mapInventoryRow(row: ApiInventoryRow, index: number): InventoryBalanceRow {
-  const cartons = parseAmount(row.total_cartons);
-  const pieces = parseAmount(row.total_pieces);
-  const weightKg = parseAmount(row.total_weight_kg);
+  const cartons = parseAmount(row.available_cartons ?? row.total_cartons);
+  const pieces = parseAmount(row.available_pieces ?? row.total_pieces);
+  const weightKg = parseAmount(row.available_kg ?? row.total_weight_kg);
   const minStock = parseAmount(row.minimum_stock_cartons);
+  const fifoValue = parseAmount(row.estimated_fifo_value);
+  const priceKg =
+    weightKg > 0 && fifoValue > 0
+      ? fifoValue / weightKg
+      : parseAmount(row.average_cost_per_kg);
   const statusRaw = (row.stock_status ?? "").toLowerCase();
   let status: InventoryBalanceRow["status"] = "ok";
-  if (statusRaw.includes("out") || (cartons === 0 && weightKg === 0)) status = "out";
-  else if (statusRaw.includes("low") || cartons < minStock) status = "low";
+  if (statusRaw.includes("out") || (cartons === 0 && pieces === 0 && weightKg === 0)) status = "out";
+  else if (statusRaw.includes("low") || (minStock > 0 && cartons < minStock)) status = "low";
   return {
     id: String(row.id ?? row.product_id ?? row.product ?? index),
     productId: String(row.product_id ?? row.product ?? ""),
@@ -39,7 +50,7 @@ function mapInventoryRow(row: ApiInventoryRow, index: number): InventoryBalanceR
     pieces,
     weightKg,
     minStock,
-    priceKg: parseAmount(row.average_cost_per_kg),
+    priceKg,
     status,
   };
 }
@@ -95,14 +106,14 @@ export async function listStockMovements(filters?: ApiListFilters): Promise<Stoc
   const rows = Array.isArray(data) ? data : (data.results ?? []);
   return rows.map((r: Record<string, unknown>, i: number) => ({
     id: String(r.id ?? i),
-    date: String(r.movement_date ?? r.date ?? "").slice(0, 10),
+    date: String(r.created_at ?? r.movement_date ?? r.date ?? "").slice(0, 10),
     product: String(r.product_name ?? ""),
-    type: String(r.movement_type ?? r.type ?? ""),
-    cartons: parseAmount(r.cartons as string),
-    pieces: parseAmount(r.pieces as string),
-    weightKg: parseAmount((r.weight_kg ?? r.weightKg) as string),
-    reference: String(r.reference ?? r.document_number ?? ""),
-    balanceAfter: parseAmount(r.balance_after_kg as string),
+    type: String(r.movement_type ?? r.movement_type_label ?? r.type ?? ""),
+    cartons: parseAmount((r.cartons_delta ?? r.cartons) as string),
+    pieces: parseAmount((r.pieces_delta ?? r.pieces) as string),
+    weightKg: parseAmount((r.kg_delta ?? r.weight_kg ?? r.weightKg) as string),
+    reference: String(r.reference_number ?? r.reference ?? r.document_number ?? ""),
+    balanceAfter: parseAmount((r.balance_kg_after ?? r.balance_after_kg) as string),
   }));
 }
 

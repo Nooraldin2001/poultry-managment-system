@@ -1,6 +1,6 @@
 # Inventory Side Effects Audit
 
-**Date:** 2026-07-05 (updated Phase 9)
+**Date:** 2026-07-06 (Phase 10)
 
 ## Business rules (backend — verified)
 
@@ -15,9 +15,15 @@
 
 ## Root cause — client “inventory not updating” (First View)
 
-1. **Frontend line VAT mismatch:** New purchase lines were saved with `vat_rate: 5` even when VAT was disabled, causing confusing totals (not blocking stock directly).
-2. **Missing KG on approve:** Fixed-weight lines entered as cartons-only could be stored with `quantity_kg=0`. Approval called `add_stock` with `kg=0`, so **KG balance did not increase** (cartons might increase but UI shows KG).
-3. **Stale UI:** Purchase approve did not trigger inventory list refetch; user saw old stock until full navigation/logout.
+**Classification: Case 1 + Case 2 (+ Case 3 for cartons-only lines)**
+
+| Case | Symptom | Root cause |
+|---|---|---|
+| **1 — Backend** | Approved purchases, supplier balance OK, **no** stock movements/balances | `add_stock(kg=0)` when lines saved cartons-only without derived KG |
+| **2 — Frontend** | DB may have balances but UI shows **0 cartons / 0 KG / AED 0** | `inventoryService.ts` mapped `total_cartons` but API returns `available_cartons` |
+| **3 — Payload** | UI shows 250 KG but backend stored `quantity_kg=0` | Fixed-weight derive not applied server-side before approve (pre-Phase 9) |
+
+Additional (Phase 9): VAT line/header mismatch; stale list after approve (fixed via `tenantRefresh`).
 
 ## Fix
 
@@ -25,12 +31,23 @@
 
 - `_normalize_line_quantities_for_stock()` — derive pieces/kg from cartons for fixed-weight products before approval.
 - `_validate_lines_for_approval()` — reject stock-tracked lines with zero quantity; require KG > 0 for moving-weight.
+- `_apply_purchase_stock_side_effects()` — idempotent stock add (delta vs already-posted movements).
+- `repair_purchase_inventory_side_effects` management command — backfill approved purchases missing stock.
 - `recalculate_purchase_invoice()` — when header `vat_rate=0`, force line VAT to zero and set invoice `vat_amount=0`.
 
 ### Frontend
 
 - `LivePurchaseInvoiceScreen`: VAT toggle, persist header/line `vat_rate`, sync lines before approve.
+- `inventoryService.ts`: map `available_cartons/pieces/kg`, movement `*_delta` fields.
 - `shared/utils/tenantRefresh.ts` + `useListResource` refresh scopes — inventory/products/purchases/suppliers lists refetch after approve.
+
+### VPS diagnosis & repair
+
+```bash
+python scripts/diagnose_tenant_purchase_inventory.py firstview
+python manage.py repair_purchase_inventory_side_effects --company-subdomain firstview --dry-run
+python manage.py repair_purchase_inventory_side_effects --company-subdomain firstview --confirm-repair
+```
 
 ## API endpoints
 
@@ -49,4 +66,7 @@
 
 - `test_approve_no_vat_increases_inventory`
 - `test_approve_cartons_only_fixed_weight_derives_kg`
+- `test_fixed_weight_50_cartons_equals_250_kg_on_approve`
+- `test_repair_dry_run_does_not_add_stock`
+- `test_repair_confirm_adds_missing_stock`
 - `test_cross_tenant_purchase_approval_inventory_isolated`

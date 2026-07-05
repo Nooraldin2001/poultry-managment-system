@@ -755,3 +755,31 @@ See [REPORTS_MODULE_AUDIT.md](./REPORTS_MODULE_AUDIT.md).
 
 See [PURCHASE_MODULE_AUDIT.md](./PURCHASE_MODULE_AUDIT.md), [INVENTORY_SIDE_EFFECTS_AUDIT.md](./INVENTORY_SIDE_EFFECTS_AUDIT.md), [TAX_MODULE_AUDIT.md](./TAX_MODULE_AUDIT.md).
 
+---
+
+## Phase 10 — Inventory UI zero + repair command (2026-07-06)
+
+**Client evidence:** Approved `PINV-00005` / `PINV-00006` (supplier `سلسيل الحمال`) show **معتمدة** with net due, but inventory page shows **0 cartons / 0 KG / AED 0**.
+
+| Issue | Classification | Fix |
+|---|---|---|
+| Inventory page all zeros | **Case 2** — API field mismatch | `inventoryService.ts`: map `available_cartons/pieces/kg`, `kg_delta`, `estimated_fifo_value` |
+| Approved purchases no stock | **Case 1** — missing side effects when `quantity_kg=0` | Approve normalize + `repair_purchase_inventory_side_effects` command |
+| Cartons-only lines | **Case 3** | Server derive 50 ct × 10 ppc × 500g = 250 KG |
+
+### VPS diagnosis (agent SSH blocked — run in owner session)
+
+```bash
+python scripts/diagnose_tenant_purchase_inventory.py firstview
+python manage.py repair_purchase_inventory_side_effects --company-subdomain firstview --dry-run
+```
+
+### Checks
+
+| Check | Result |
+|---|---|
+| `pytest tests/test_purchases.py tests/test_inventory.py` | **84 passed** |
+| `pnpm run typecheck` | **Pass** |
+| VPS dry-run / confirm repair | **Pending owner SSH** |
+| First View inventory after repair | **Pending** |
+
