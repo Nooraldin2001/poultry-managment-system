@@ -181,6 +181,34 @@ export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, o
     await updateDraftLine("purchase", docId, line.serverId, line);
   };
 
+  const handleApprove = async (reason: string) => {
+    setSaving(true);
+    setFieldErrors({});
+    setError(null);
+    try {
+      const id = await ensureDraft();
+      await patchDraftHeader("purchase", id, {
+        supplier: Number(supplierId),
+        supplier_invoice_number: supplierInvNo,
+        payment_method: paymentMethod,
+        amount_paid: amountPaid || "0",
+        notes,
+      });
+      for (const line of lines) {
+        if (line.serverId) await updateDraftLine("purchase", id, line.serverId, line);
+      }
+      await approvePurchase(id, reason);
+      setStatus("approved");
+      setShowApprove(false);
+      toast.success(isRTL ? "تم الاعتماد" : "Approved");
+    } catch (e) {
+      if (e instanceof ApiError) setFieldErrors(e.fieldErrors);
+      toast.error(e instanceof ApiError ? e.message : "Failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!IS_MOCK_MODE && ApiError.isForbidden(error)) return <PermissionDeniedState lang={lang} />;
   if (loadingDoc || loadingSuppliers || loadingProducts) return <LoadingState lang={lang} />;
   if (error && !docId && invoiceId) return <ErrorState lang={lang} error={error} onRetry={() => void loadDoc()} />;
@@ -279,7 +307,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, o
           )}
         </div>
       </div>
-      {showApprove && <ReasonModal lang={lang} titleAr="اعتماد الشراء" titleEn="Approve purchase" confirmLabelAr="اعتماد" confirmLabelEn="Approve" loading={saving} onClose={() => setShowApprove(false)} onConfirm={async (r) => { if (!docId) return; setSaving(true); try { await approvePurchase(docId, r); setStatus("approved"); toast.success(isRTL ? "تم الاعتماد" : "Approved"); setShowApprove(false); } catch (e) { toast.error(e instanceof ApiError ? e.message : "Failed"); } finally { setSaving(false); } }} />}
+      {showApprove && <ReasonModal lang={lang} titleAr="اعتماد الشراء" titleEn="Approve purchase" confirmLabelAr="اعتماد" confirmLabelEn="Approve" loading={saving} onClose={() => setShowApprove(false)} onConfirm={(r) => void handleApprove(r)} />}
       {showCancel && <ReasonModal lang={lang} titleAr="إلغاء الشراء" titleEn="Cancel purchase" confirmLabelAr="إلغاء" confirmLabelEn="Cancel" loading={saving} onClose={() => setShowCancel(false)} onConfirm={async (r) => { if (!docId) return; setSaving(true); try { await cancelPurchase(docId, r); setStatus("cancelled"); toast.success(isRTL ? "تم الإلغاء" : "Cancelled"); setShowCancel(false); } catch (e) { toast.error(e instanceof ApiError ? e.message : "Failed"); } finally { setSaving(false); } }} />}
     </div>
   );

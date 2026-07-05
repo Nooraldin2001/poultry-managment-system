@@ -521,3 +521,44 @@ Dry-run on VPS: **not executed** (awaiting deploy + operator review).
 | `https://firstview.poultryhero.solutions/api/v1/health/` | `{"status":"ok","service":"poultryhero-api"}` |
 
 **Launch stance (tax/expenses):** **NO-GO** until VPS deploy + First View owner smoke (Tax loads, Expenses show no demo rows).
+
+---
+
+## Phase 2 — Expenses create, statements, inventory (2026-07-05, local)
+
+### Root causes fixed
+
+| Issue | Root cause | Fix |
+|---|---|---|
+| Expenses not added | `AddExpenseModal` only called `toast.success()` — no POST | Wire `createExpense()` + API categories + refetch |
+| Statements infinite load | Hooks after early return + missing customer/supplier ID + mock rows | Hooks reorder, live report API, ID propagation from statements center |
+| Inventory not updating (UI) | Approve without persisting draft/lines first | `handleApprove` saves header + lines before approve |
+
+### API exercised (local / tests)
+
+- `POST /api/v1/tenant/expenses/`
+- `GET /api/v1/tenant/expense-categories/`
+- `GET /api/v1/tenant/reports/customers/{id}/statement/`
+- `GET /api/v1/tenant/reports/suppliers/{id}/statement/`
+- `POST /api/v1/tenant/purchases/{id}/approve/`
+- `POST /api/v1/tenant/sales/{id}/approve/`
+
+### Checks (local)
+
+| Check | Result |
+|---|---|
+| `corepack pnpm run typecheck` | **Pass** |
+| `corepack pnpm run build` | **Pass** |
+| `python manage.py check` | **Pass** |
+| `pytest tests/test_expenses.py tests/test_reports.py tests/test_purchases.py tests/test_sales.py` | **141 passed** |
+
+### Deployment / production verification
+
+| Step | Status |
+|---|---|
+| Commit to `main` | **Pending** (local changes uncommitted) |
+| VPS `git pull` + `deploy_vps.sh` | **Not run** |
+| First View owner smoke (expense create, statement, purchase/sale inventory) | **Pending deploy** |
+
+**Launch stance (Phase 2):** **NO-GO** until deploy + First View verification passes.
+

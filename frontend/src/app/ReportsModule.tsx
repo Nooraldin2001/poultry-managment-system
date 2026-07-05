@@ -31,11 +31,9 @@ import {
 } from "@/features/reports/reportLiveData";
 import { listCustomerRows } from "@/services/customerService";
 import { listSupplierRows } from "@/services/supplierService";
-import { getReportsExportPayload } from "@/services/reportsService";
+import { getReportsExportPayload, getSalesReport, getPurchasesReport, getInventoryReport, getProfitReport, getTaxSummaryReport } from "@/services/reportsService";
 import { ExportPayloadModal } from "@/features/export/ExportPayloadModal";
-import {
-  getSalesReport, getPurchasesReport, getInventoryReport, getProfitReport, getTaxSummaryReport,
-} from "@/services/reportsService";
+import { getDefaultStatementDateRange } from "@/shared/utils/dateRanges";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -1121,13 +1119,18 @@ export function SupplierReportScreen({ lang, role, onNavigate }: { lang: Lang; r
 }
 
 // ── SCREEN: STATEMENTS CENTER ──────────────────────────────────────────────────
-export function StatementsScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+export function StatementsScreen({ lang, role, onNavigate, onOpenCustomerStatement, onOpenSupplierStatement }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void;
+  onOpenCustomerStatement?: (customerId: string) => void;
+  onOpenSupplierStatement?: (supplierId: string) => void;
+}) {
   const isRTL = lang === "ar";
+  const defaultRange = getDefaultStatementDateRange();
   const [tab, setTab] = useState<"customers" | "suppliers">("customers");
   const [selectedCust, setSelectedCust] = useState("");
   const [selectedSupp, setSelectedSupp] = useState("");
-  const [from, setFrom] = useState("2025-01-01");
-  const [to, setTo] = useState("2025-01-31");
+  const [from, setFrom] = useState(defaultRange.date_from);
+  const [to, setTo] = useState(defaultRange.date_to);
   const [customers, setCustomers] = useState<{ value: string; label: string }[]>([]);
   const [suppliers, setSuppliers] = useState<{ value: string; label: string }[]>([]);
   const [partiesLoading, setPartiesLoading] = useState(!IS_MOCK_MODE);
@@ -1146,8 +1149,8 @@ export function StatementsScreen({ lang, role, onNavigate }: { lang: Lang; role:
     Promise.all([listCustomerRows(), listSupplierRows()])
       .then(([custRows, suppRows]) => {
         if (cancelled) return;
-        const custOpts = custRows.map((c) => ({ value: c.name, label: c.name }));
-        const suppOpts = suppRows.map((s) => ({ value: s.name, label: s.name }));
+        const custOpts = custRows.map((c) => ({ value: c.id, label: c.nameAr ?? c.name ?? c.id }));
+        const suppOpts = suppRows.map((s) => ({ value: s.id, label: s.nameEn ?? s.name ?? s.id }));
         setCustomers(custOpts);
         setSuppliers(suppOpts);
         setSelectedCust(custOpts[0]?.value ?? "");
@@ -1181,14 +1184,26 @@ export function StatementsScreen({ lang, role, onNavigate }: { lang: Lang; role:
             <FSelect label={tab === "customers" ? (isRTL ? "اختر العميل" : "Select Customer") : (isRTL ? "اختر المورد" : "Select Supplier")}
               value={tab === "customers" ? selectedCust : selectedSupp}
               onChange={tab === "customers" ? setSelectedCust : setSelectedSupp}
-              options={tab === "customers" ? customers : suppliers} />
+              options={(tab === "customers" ? customers : suppliers).length
+                ? (tab === "customers" ? customers : suppliers)
+                : [{ value: "", label: isRTL ? "لا يوجد" : "None available" }]} />
             <FInput label={isRTL ? "من تاريخ" : "From Date"} type="date" value={from} onChange={setFrom} />
             <FInput label={isRTL ? "إلى تاريخ" : "To Date"} type="date" value={to} onChange={setTo} />
           </div>
           <div className="flex gap-3">
             {canExport ? (
               <>
-                <Btn variant="primary" onClick={() => onNavigate(tab === "customers" ? "customers-statement" : "supplier-statement")}><Eye size={15} />{isRTL ? "عرض الكشف" : "View Statement"}</Btn>
+                <Btn variant="primary" onClick={() => {
+                  if (tab === "customers") {
+                    if (!selectedCust) { toast.error(isRTL ? "اختر عميلاً" : "Select a customer"); return; }
+                    if (onOpenCustomerStatement) onOpenCustomerStatement(selectedCust);
+                    else onNavigate("customers-statement");
+                  } else {
+                    if (!selectedSupp) { toast.error(isRTL ? "اختر مورداً" : "Select a supplier"); return; }
+                    if (onOpenSupplierStatement) onOpenSupplierStatement(selectedSupp);
+                    else onNavigate("supplier-statement");
+                  }
+                }}><Eye size={15} />{isRTL ? "عرض الكشف" : "View Statement"}</Btn>
                 <Btn variant="secondary" onClick={() => toast.success(isRTL ? "تم تجهيز التقرير بنجاح" : "Statement ready")}><Download size={15} />PDF</Btn>
                 <Btn variant="outline" onClick={() => toast.success(isRTL ? "تم تجهيز التقرير بنجاح" : "Statement ready")}><Download size={15} />Excel</Btn>
               </>

@@ -78,7 +78,7 @@ export async function getSupplierLedger(id: string): Promise<SupplierLedgerEntry
     description: String(r.description ?? r.narration ?? ""),
     debit: parseAmount(r.debit as string),
     credit: parseAmount(r.credit as string),
-    balance: parseAmount(r.balance as string),
+    balance: parseAmount((r.balance_after ?? r.balance) as string),
   }));
 }
 

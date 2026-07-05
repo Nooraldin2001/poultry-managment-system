@@ -11,6 +11,15 @@ export function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Current calendar month for account statements. */
+export function getDefaultStatementDateRange(): { date_from: string; date_to: string } {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const format = (d: Date) => d.toISOString().slice(0, 10);
+  return { date_from: format(start), date_to: format(end) };
+}
+
 /** Last N days including today, for trend charts. */
 export function lastNDaysIso(n: number): string[] {
   const out: string[] = [];

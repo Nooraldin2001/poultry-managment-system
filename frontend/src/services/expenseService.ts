@@ -107,6 +107,22 @@ export async function listExpenseCategories(): Promise<ExpenseCategoryRow[]> {
   }));
 }
 
+export async function createExpenseCategory(payload: {
+  name_ar: string;
+  name_en?: string;
+}): Promise<ExpenseCategoryRow> {
+  const row = await request<ApiExpenseCategory>(ENDPOINTS.tenant.expenseCategories, {
+    method: "POST",
+    body: payload,
+  });
+  return {
+    id: row.id,
+    nameAr: row.name_ar,
+    nameEn: row.name_en,
+    active: row.is_active,
+  };
+}
+
 export async function listRecurringExpenses(): Promise<RecurringExpenseRow[]> {
   if (IS_MOCK_MODE) return [];
   const data = await request<{ results?: unknown[] } | unknown[]>(ENDPOINTS.tenant.recurringExpenses);

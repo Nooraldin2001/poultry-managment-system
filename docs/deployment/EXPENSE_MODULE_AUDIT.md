@@ -26,6 +26,16 @@ Secondary: DB may also contain seeded demo expenses — use scoped purge command
 - `enrichExpense()`: merges mock metadata only when `IS_MOCK_MODE`.
 - `expenseService.listRecurringExpenses()`: maps `title`, `next_due_date`, `recurrence`.
 
+## Fix (expense creation — Phase 2)
+
+**Root cause:** `AddExpenseModal` submit handlers only called `toast.success()` — no `POST /api/v1/tenant/expenses/`, no list refetch, no persistence after refresh.
+
+**Fix:**
+- Load categories from `GET /api/v1/tenant/expense-categories/` (numeric category PK).
+- Submit via `createExpense()` with `title`, `expense_date`, `amount`, `expense_scope`, `payment_method`.
+- Inline category creation when none exist (`POST /api/v1/tenant/expense-categories/`).
+- Loading state on save; DRF field errors via `FormErrors`; refetch list on success.
+
 ## Demo purge command
 
 ```bash

@@ -20,9 +20,11 @@ import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/s
 import { toModuleExpense } from "./moduleMappers";
 import { IS_MOCK_MODE } from "@/services/config";
 import { LivePrintPreviewScreen } from "@/features/print/LivePrintPreviewScreen";
-import { getExpenseVoucherPreview, getExpensesSummary, listRecurringExpenses } from "@/services/expenseService";
-import { getDefaultTaxDateRange, lastNDaysIso, todayIsoDate } from "@/shared/utils/dateRanges";
+import { getExpenseVoucherPreview, getExpensesSummary, listRecurringExpenses, listExpenseCategories, createExpense, createExpenseCategory } from "@/services/expenseService";
+import { getDefaultTaxDateRange, getDefaultStatementDateRange, lastNDaysIso, todayIsoDate } from "@/shared/utils/dateRanges";
 import { LiveExpenseDetailScreen } from "@/features/documents/LiveExpenseDetailScreen";
+import { ApiError } from "@/services/api/errors";
+import { FormErrors } from "@/shared/components/FormErrors";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -458,7 +460,7 @@ export function ExpensesOverviewScreen({ lang, role, onNavigate }: {
         </Card>
       </div>
 
-      {showAddModal && <AddExpenseModal lang={lang} defaultType={showAddModal} onClose={() => setShowAddModal(null)} />}
+      {showAddModal && <AddExpenseModal lang={lang} defaultType={showAddModal} onClose={() => setShowAddModal(null)} onSuccess={() => void reload()} />}
       {showSettings && <ExpenseSettingsPanel lang={lang} role={role} onClose={() => setShowSettings(false)} />}
       {showProfitPanel && <ProfitImpactPanel lang={lang} onClose={() => setShowProfitPanel(false)} />}
     </div>
@@ -588,19 +590,19 @@ export function ExpensesListScreen({ lang, role, onNavigate, setSelectedExpense 
         <EmptyState lang={lang} messageAr="لا توجد مصروفات بعد" messageEn="No expenses yet" />
       )}
 
-      {showAddModal && <AddExpenseModal lang={lang} defaultType={showAddModal} onClose={() => setShowAddModal(null)} />}
+      {showAddModal && <AddExpenseModal lang={lang} defaultType={showAddModal} onClose={() => setShowAddModal(null)} onSuccess={() => void reload()} />}
     </div>
   );
 }
 
 // ── MODAL: ADD EXPENSE ─────────────────────────────────────────────────────────
-export function AddExpenseModal({ lang, defaultType = "daily", onClose }: {
-  lang: Lang; defaultType?: "daily" | "monthly"; onClose: () => void;
+export function AddExpenseModal({ lang, defaultType = "daily", onClose, onSuccess }: {
+  lang: Lang; defaultType?: "daily" | "monthly"; onClose: () => void; onSuccess?: () => void;
 }) {
   const isRTL = lang === "ar";
   const [expType, setExpType] = useState<"daily" | "monthly" | "purchase">(defaultType);
-  const [date, setDate] = useState("2025-01-28");
-  const [month, setMonth] = useState("2025-01");
+  const [date, setDate] = useState(todayIsoDate());
+  const [month, setMonth] = useState(todayIsoDate().slice(0, 7));
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
@@ -611,8 +613,124 @@ export function AddExpenseModal({ lang, defaultType = "daily", onClose }: {
   const [monthlyStatus, setMonthlyStatus] = useState("paid");
   const [purchaseInv, setPurchaseInv] = useState("");
   const [treatment, setTreatment] = useState("expense-only");
+  const [saving, setSaving] = useState(false);
+  const [categoriesLoading, setCategoriesLoading] = useState(!IS_MOCK_MODE);
+  const [apiCategories, setApiCategories] = useState<{ id: number; nameAr: string; nameEn: string }[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  const [saveError, setSaveError] = useState<unknown>(null);
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
 
-  const categories = expType === "daily" ? DAILY_CATS_AR : expType === "monthly" ? MONTHLY_CATS_AR : PURCHASE_CATS_AR;
+  const reloadCategories = () => {
+    if (IS_MOCK_MODE) {
+      setCategoriesLoading(false);
+      return;
+    }
+    setCategoriesLoading(true);
+    listExpenseCategories()
+      .then((rows) => setApiCategories(rows.filter((c) => c.active)))
+      .catch(() => setApiCategories([]))
+      .finally(() => setCategoriesLoading(false));
+  };
+
+  useEffect(() => {
+    reloadCategories();
+  }, []);
+
+  const mockCategories = expType === "daily" ? DAILY_CATS_AR : expType === "monthly" ? MONTHLY_CATS_AR : PURCHASE_CATS_AR;
+  const categoryOptions = IS_MOCK_MODE
+    ? mockCategories.map((c) => ({ value: c, label: c }))
+    : apiCategories.map((c) => ({
+        value: String(c.id),
+        label: isRTL ? c.nameAr : (c.nameEn || c.nameAr),
+      }));
+
+  const mapPaymentMethod = (m: string) => (m === "bank" ? "bank_transfer" : m);
+  const mapPurchaseBehavior = (t: string) => {
+    if (t === "add-cost") return "increase_inventory_cost";
+    if (t === "deduct-supplier") return "reduce_supplier_payable";
+    return "expense_only";
+  };
+  const resolveExpenseDate = () => (expType === "monthly" ? `${month}-01` : date);
+
+  const submitExpense = async (andAddAnother: boolean) => {
+    if (!amount || !category || !description.trim()) {
+      toast.error(isRTL ? "يرجى إكمال الحقول المطلوبة" : "Fill required fields");
+      return;
+    }
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم حفظ المصروف ✓" : "Expense saved ✓");
+      if (!andAddAnother) onClose();
+      return;
+    }
+    if (!apiCategories.length && !category) {
+      toast.error(isRTL ? "أنشئ تصنيف مصروف أولاً" : "Create an expense category first");
+      return;
+    }
+    setSaving(true);
+    setFieldErrors({});
+    setSaveError(null);
+    try {
+      const payload: Record<string, unknown> = {
+        category: Number(category),
+        title: description.trim(),
+        description: notes.trim(),
+        expense_date: resolveExpenseDate(),
+        amount,
+        expense_scope: expType === "purchase" ? "purchase_linked" : expType,
+        payment_method: mapPaymentMethod(method),
+        reference_number: ref.trim(),
+        notes: notes.trim(),
+        vendor_name: paidFrom.trim(),
+      };
+      if (expType === "purchase") {
+        payload.purchase_link_behavior = mapPurchaseBehavior(treatment);
+        if (purchaseInv) payload.linked_purchase_invoice = Number(purchaseInv);
+      }
+      await createExpense(payload);
+      toast.success(
+        expType === "daily"
+          ? (isRTL ? "تم تسجيل المصروف اليومي بنجاح" : "Daily expense recorded")
+          : expType === "monthly"
+            ? (isRTL ? "تم تسجيل المصروف الشهري بنجاح" : "Monthly expense recorded")
+            : (isRTL ? "تم تسجيل المصروف المرتبط بنجاح" : "Purchase-linked expense recorded"),
+      );
+      onSuccess?.();
+      if (andAddAnother) {
+        setDescription("");
+        setAmount("");
+        setCategory("");
+        setNotes("");
+        setRef("");
+      } else {
+        onClose();
+      }
+    } catch (err) {
+      setSaveError(err);
+      if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل حفظ المصروف" : "Failed to save expense"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    setSaving(true);
+    try {
+      const created = await createExpenseCategory({ name_ar: name, name_en: name });
+      setApiCategories((prev) => [...prev, { id: created.id, nameAr: created.nameAr, nameEn: created.nameEn }]);
+      setCategory(String(created.id));
+      setShowNewCategory(false);
+      setNewCategoryName("");
+      toast.success(isRTL ? "تم إنشاء التصنيف" : "Category created");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل إنشاء التصنيف" : "Failed to create category"));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const TREATMENT_INFO = {
     "add-cost":          { color: "blue",    ar: "سيؤثر على تكلفة البضاعة وحساب الربح.",         en: "Affects goods cost and profit calculation." },
@@ -666,8 +784,25 @@ export function AddExpenseModal({ lang, defaultType = "daily", onClose }: {
             </>
           )}
 
+          {!IS_MOCK_MODE && categoriesLoading && (
+            <p className="text-xs text-slate-400">{isRTL ? "جاري تحميل التصنيفات..." : "Loading categories..."}</p>
+          )}
+          {!IS_MOCK_MODE && !categoriesLoading && apiCategories.length === 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+              <p className="text-xs font-bold text-amber-700">{isRTL ? "لا توجد تصنيفات مصروفات. أنشئ تصنيفاً أولاً." : "No expense categories yet. Create one first."}</p>
+              {!showNewCategory ? (
+                <Btn size="sm" variant="primary" onClick={() => setShowNewCategory(true)}>{isRTL ? "إنشاء تصنيف" : "Create category"}</Btn>
+              ) : (
+                <div className="flex gap-2">
+                  <input value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} className="flex-1 rounded-xl border px-3 py-2 text-sm" placeholder={isRTL ? "اسم التصنيف" : "Category name"} />
+                  <Btn size="sm" disabled={saving} onClick={() => void handleCreateCategory()}>{isRTL ? "حفظ" : "Save"}</Btn>
+                </div>
+              )}
+            </div>
+          )}
           <FSelect label={isRTL ? "التصنيف *" : "Category *"} value={category} onChange={setCategory} required
-            options={[{ value: "", label: isRTL ? "اختر التصنيف" : "Select Category" }, ...categories.map(c => ({ value: c, label: c }))]} />
+            options={[{ value: "", label: isRTL ? "اختر التصنيف" : "Select Category" }, ...categoryOptions]} />
+          <FormErrors lang={lang} error={saveError} fieldErrors={fieldErrors} />
           <FInput label={isRTL ? "الوصف *" : "Description *"} value={description} onChange={setDescription} placeholder={isRTL ? "وصف المصروف..." : "Expense description..."} required />
           <FInput label={isRTL ? "المبلغ (AED) *" : "Amount (AED) *"} type="number" value={amount} onChange={setAmount} required />
 
@@ -691,9 +826,9 @@ export function AddExpenseModal({ lang, defaultType = "daily", onClose }: {
           <div className="border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-[#0F2C59]/30 transition-all"><Download size={15} className="text-slate-300 mx-auto mb-1" /><p className="text-[10px] font-bold text-slate-400">{isRTL ? "رفع إيصال / مرفق (اختياري)" : "Upload receipt / attachment (optional)"}</p></div>
         </div>
         <div className="p-6 border-t border-slate-100 flex gap-3 flex-wrap justify-end">
-          <Btn variant="outline" onClick={onClose}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
-          <Btn variant="secondary" onClick={() => { if (!amount || !category) { toast.error(isRTL ? "يرجى إكمال الحقول المطلوبة" : "Fill required fields"); return; } toast.success(isRTL ? "تم حفظ المصروف ✓" : "Expense saved ✓"); setDescription(""); setAmount(""); setCategory(""); }}>{isRTL ? "حفظ وإضافة آخر" : "Save & Add Another"}</Btn>
-          <Btn onClick={() => { if (!amount || !category) { toast.error(isRTL ? "يرجى إكمال الحقول المطلوبة" : "Fill required fields"); return; } toast.success(expType === "daily" ? (isRTL ? "تم تسجيل المصروف اليومي بنجاح" : "Daily expense recorded") : expType === "monthly" ? (isRTL ? "تم تسجيل المصروف الشهري بنجاح" : "Monthly expense recorded") : (isRTL ? "تم تسجيل المصروف المرتبط بنجاح" : "Purchase-linked expense recorded")); onClose(); }}><Check size={15} />{isRTL ? "حفظ المصروف" : "Save Expense"}</Btn>
+          <Btn variant="outline" onClick={onClose} disabled={saving}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
+          <Btn variant="secondary" disabled={saving} onClick={() => void submitExpense(true)}>{isRTL ? "حفظ وإضافة آخر" : "Save & Add Another"}</Btn>
+          <Btn disabled={saving} onClick={() => void submitExpense(false)}><Check size={15} />{saving ? (isRTL ? "جاري الحفظ..." : "Saving...") : (isRTL ? "حفظ المصروف" : "Save Expense")}</Btn>
         </div>
       </div>
     </div>

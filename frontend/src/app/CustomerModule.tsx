@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // POULTRY HERO — CUSTOMER PHASE: CUSTOMERS & ACCOUNTS WORKFLOW
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Plus, Search, Eye, Pencil, X, Check, ChevronRight, ChevronLeft,
@@ -25,6 +25,9 @@ import { useCustomerProfileTabs, type CustomerProfileTabKey } from "@/features/p
 import { ProfileTabBody } from "@/features/profiles/ProfileTabState";
 import { LiveCustomerCollectionModal } from "@/features/payments/LivePaymentModals";
 import { ApiUnavailableState } from "@/shared/components/ApiStates";
+import { getCustomerStatementReport } from "@/services/reportsService";
+import { getDefaultStatementDateRange } from "@/shared/utils/dateRanges";
+import { parseAmount } from "@/services/crud/parse";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -1037,20 +1040,90 @@ export function CustomerCollectModal({ lang, customerId, onClose }: { lang: Lang
 // ── SCREEN: CUSTOMER STATEMENT ─────────────────────────────────────────────────
 export function CustomerStatementScreen({ lang, customerId, onNavigate }: { lang: Lang; customerId: string; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
+  const defaultRange = getDefaultStatementDateRange();
+  const [dateFrom, setDateFrom] = useState(defaultRange.date_from);
+  const [dateTo, setDateTo] = useState(defaultRange.date_to);
+  const [stmtLoading, setStmtLoading] = useState(false);
+  const [stmtError, setStmtError] = useState<unknown>(null);
+  const [stmtForbidden, setStmtForbidden] = useState(false);
+  const [stmtUnavailable, setStmtUnavailable] = useState(false);
+  const [movements, setMovements] = useState<typeof STMT_MOVEMENTS>([]);
+  const [openingBalance, setOpeningBalance] = useState(0);
+  const [closingBalance, setClosingBalance] = useState(0);
+  const [totalDebit, setTotalDebit] = useState(0);
+  const [totalCredit, setTotalCredit] = useState(0);
+
   const { item: row, loading, error, forbidden, reload } = useCustomerDetail(customerId, async (id) => {
     const m = MOCK_CUSTOMERS.find((x) => x.id === id);
     return m ? { id: m.id, name: m.nameAr, nameAr: m.nameAr, nameEn: m.nameEn, phone: m.phone, balance: m.balance, creditLimit: m.creditLimit, overdue: m.creditStatus === "exceeded", customerType: m.type, isActive: m.active, trn: m.trn } : null;
   });
+
+  const loadStatement = useCallback(async () => {
+    if (IS_MOCK_MODE) {
+      setMovements(STMT_MOVEMENTS);
+      setTotalDebit(STMT_MOVEMENTS.reduce((s, m) => s + m.debit, 0));
+      setTotalCredit(STMT_MOVEMENTS.reduce((s, m) => s + m.credit, 0));
+      setClosingBalance(STMT_MOVEMENTS.reduce((s, m) => s + m.debit, 0) - STMT_MOVEMENTS.reduce((s, m) => s + m.credit, 0));
+      return;
+    }
+    if (!customerId) return;
+    setStmtLoading(true);
+    setStmtError(null);
+    setStmtForbidden(false);
+    setStmtUnavailable(false);
+    try {
+      const data = await getCustomerStatementReport(customerId, { date_from: dateFrom, date_to: dateTo });
+      const entries = (data.ledger_entries as Record<string, unknown>[]) ?? [];
+      setOpeningBalance(parseAmount(data.opening_balance as string));
+      setTotalDebit(parseAmount(data.debit_total as string));
+      setTotalCredit(parseAmount(data.credit_total as string));
+      setClosingBalance(parseAmount(data.closing_balance as string));
+      setMovements(
+        entries.map((e, i) => ({
+          id: String(e.id ?? i),
+          date: String(e.entry_date ?? e.date ?? "").slice(0, 10),
+          type: String(e.entry_type ?? "entry"),
+          ref: String(e.reference_number ?? ""),
+          desc: String(e.description ?? ""),
+          debit: parseAmount(e.debit as string),
+          credit: parseAmount(e.credit as string),
+          balance: parseAmount((e.balance_after ?? e.balance) as string),
+        })),
+      );
+    } catch (e) {
+      setMovements([]);
+      if (e instanceof ApiError && e.status === 403) setStmtForbidden(true);
+      else if (e instanceof ApiError && (e.status === 404 || e.status === 501)) setStmtUnavailable(true);
+      else setStmtError(e);
+    } finally {
+      setStmtLoading(false);
+    }
+  }, [customerId, dateFrom, dateTo]);
+
+  useEffect(() => {
+    void loadStatement();
+  }, [loadStatement]);
+
+  if (!customerId) {
+    return (
+      <EmptyState
+        lang={lang}
+        messageAr="اختر عميلاً من قائمة العملاء أو مركز كشوف الحساب لعرض كشف الحساب"
+        messageEn="Select a customer from the customers list or statements center to view a statement"
+      />
+    );
+  }
   if (forbidden) return <PermissionDeniedState lang={lang} />;
   if (loading) return <LoadingState lang={lang} />;
   if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
   const c = row ? toModuleCustomer(row) : null;
   if (!c) return <EmptyState lang={lang} messageAr="لا يوجد عملاء بعد" messageEn="No customers yet" />;
-  const [dateFrom, setDateFrom] = useState("2025-01-01");
-  const [dateTo, setDateTo] = useState("2025-01-31");
-  const totalDebit = STMT_MOVEMENTS.reduce((s, m) => s + m.debit, 0);
-  const totalCredit = STMT_MOVEMENTS.reduce((s, m) => s + m.credit, 0);
-  const closingBalance = totalDebit - totalCredit;
+
+  const displayMovements = IS_MOCK_MODE ? STMT_MOVEMENTS : movements;
+  const displayOpening = IS_MOCK_MODE ? c.openingBalance : openingBalance;
+  const displayDebit = IS_MOCK_MODE ? STMT_MOVEMENTS.reduce((s, m) => s + m.debit, 0) : totalDebit;
+  const displayCredit = IS_MOCK_MODE ? STMT_MOVEMENTS.reduce((s, m) => s + m.credit, 0) : totalCredit;
+  const displayClosing = IS_MOCK_MODE ? displayDebit - displayCredit : closingBalance;
 
   return (
     <div className="p-4 lg:p-8 max-w-screen-lg mx-auto">
@@ -1061,6 +1134,9 @@ export function CustomerStatementScreen({ lang, customerId, onNavigate }: { lang
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-3 py-1.5 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:border-[#0F2C59]" />
           <span className="text-slate-400 font-bold text-sm">—</span>
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-3 py-1.5 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:border-[#0F2C59]" />
+          {!IS_MOCK_MODE && (
+            <Btn variant="outline" size="sm" onClick={() => void loadStatement()}>{isRTL ? "تحديث" : "Refresh"}</Btn>
+          )}
         </div>
         <div className="flex gap-2">
           <Btn variant="primary" onClick={() => window.print()}><Printer size={15} />{isRTL ? "طباعة PDF" : "Print PDF"}</Btn>
@@ -1069,7 +1145,14 @@ export function CustomerStatementScreen({ lang, customerId, onNavigate }: { lang
         </div>
       </div>
 
-      {/* Statement document */}
+      {!IS_MOCK_MODE && stmtLoading && <LoadingState lang={lang} compact />}
+      {!IS_MOCK_MODE && stmtForbidden && <PermissionDeniedState lang={lang} compact />}
+      {!IS_MOCK_MODE && stmtUnavailable && <ApiUnavailableState lang={lang} compact />}
+      {!IS_MOCK_MODE && stmtError && !stmtLoading && (
+        <ErrorState lang={lang} error={stmtError} onRetry={() => void loadStatement()} compact />
+      )}
+
+      {(!stmtLoading || IS_MOCK_MODE) && !stmtForbidden && !stmtUnavailable && !stmtError && (
       <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
         {/* Header */}
         <div className="bg-[#0F2C59] text-white p-6">
@@ -1097,12 +1180,15 @@ export function CustomerStatementScreen({ lang, customerId, onNavigate }: { lang
           <div className={isRTL ? "" : "text-right"}>
             {c.trn && <><div className="text-xs font-black text-slate-400 uppercase mb-1">TRN</div><div className="font-mono text-slate-600">{c.trn}</div></>}
             <div className="text-xs font-black text-slate-400 uppercase mt-2 mb-1">{isRTL ? "الرصيد الافتتاحي" : "Opening Balance"}</div>
-            <div className="font-mono font-black text-[#0F2C59]">AED {c.openingBalance.toLocaleString()}</div>
+            <div className="font-mono font-black text-[#0F2C59]">AED {displayOpening.toLocaleString()}</div>
           </div>
         </div>
 
         {/* Statement table */}
         <div className="px-6 py-4 overflow-x-auto">
+          {displayMovements.length === 0 ? (
+            <EmptyState lang={lang} messageAr="لا توجد حركات في هذه الفترة" messageEn="No movements in this period" compact />
+          ) : (
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-[#0F2C59]/8 border-b border-[#0F2C59]/20">
@@ -1112,7 +1198,7 @@ export function CustomerStatementScreen({ lang, customerId, onNavigate }: { lang
               </tr>
             </thead>
             <tbody>
-              {STMT_MOVEMENTS.map((m, i) => (
+              {displayMovements.map((m, i) => (
                 <tr key={m.id} className={`${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"} border-b border-slate-100`}>
                   <td className="px-3 py-2 font-mono text-xs text-slate-500">{m.date}</td>
                   <td className="px-3 py-2"><StmtTypeBadge type={m.type} lang={lang} /></td>
@@ -1125,20 +1211,22 @@ export function CustomerStatementScreen({ lang, customerId, onNavigate }: { lang
               ))}
             </tbody>
           </table>
+          )}
         </div>
 
         {/* Totals */}
         <div className="px-6 pb-6">
           <div className="flex justify-end">
             <div className="w-72 border-2 border-[#0F2C59]/20 rounded-2xl overflow-hidden">
-              {[[isRTL ? "إجمالي المبيعات / Total Sales" : "Total Sales / إجمالي المبيعات", `AED ${totalDebit.toFixed(2)}`, "text-red-600 bg-red-50/50"], [isRTL ? "إجمالي التحصيلات / Collections" : "Collections / إجمالي التحصيلات", `AED ${totalCredit.toFixed(2)}`, "text-emerald-600 bg-emerald-50/50"]].map(([l, v, c]) => (
+              {[[isRTL ? "إجمالي المبيعات / Total Sales" : "Total Sales / إجمالي المبيعات", `AED ${displayDebit.toFixed(2)}`, "text-red-600 bg-red-50/50"], [isRTL ? "إجمالي التحصيلات / Collections" : "Collections / إجمالي التحصيلات", `AED ${displayCredit.toFixed(2)}`, "text-emerald-600 bg-emerald-50/50"]].map(([l, v, c]) => (
                 <div key={l} className={`flex justify-between px-4 py-2.5 border-b border-slate-200 ${c.split(" ")[1]}`}><span className="font-semibold text-slate-600 text-xs">{l}</span><span className={`font-mono font-black text-sm ${c.split(" ")[0]}`}>{v}</span></div>
               ))}
-              <div className="flex justify-between px-4 py-3 bg-[#0F2C59]"><span className="font-black text-white text-sm">{isRTL ? "الرصيد الختامي / Closing Balance" : "Closing Balance / الرصيد الختامي"}</span><span className="font-mono font-black text-[#22C55E] text-lg">AED {closingBalance.toFixed(2)}</span></div>
+              <div className="flex justify-between px-4 py-3 bg-[#0F2C59]"><span className="font-black text-white text-sm">{isRTL ? "الرصيد الختامي / Closing Balance" : "Closing Balance / الرصيد الختامي"}</span><span className="font-mono font-black text-[#22C55E] text-lg">AED {displayClosing.toFixed(2)}</span></div>
             </div>
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

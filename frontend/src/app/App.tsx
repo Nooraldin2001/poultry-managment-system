@@ -3630,7 +3630,15 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "reports-suppliers"  && <SupplierReportScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "reports-tax"        && <TaxReportScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "reports-profit"     && <ProfitReportScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {tScreen === "reports-statements" && <StatementsScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "reports-statements" && (
+            <StatementsScreen
+              lang={lang}
+              role={role}
+              onNavigate={navTenant}
+              onOpenCustomerStatement={(id) => { setSelectedCustomerId(id); navTenant("customers-statement"); }}
+              onOpenSupplierStatement={(id) => { setSelectedSupplierId(id); navTenant("supplier-statement"); }}
+            />
+          )}
           {tScreen === "reports-builder"    && <ReportBuilderScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "expenses"           && <ExpensesOverviewScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "expenses-list"      && <ExpensesListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedExpense={setSelectedExpenseId} />}
