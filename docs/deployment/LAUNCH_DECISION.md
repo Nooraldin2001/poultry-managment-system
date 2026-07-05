@@ -7,9 +7,9 @@
 
 ## Final status
 
-# **NO-GO** (pending manual ERP smoke on First View)
+# **NO-GO** (pending deploy `88822cd` + manual ERP smoke on First View)
 
-Code fixes for customer, product, supplier, sales/purchase invoices, and reports demo fallback are on `main` (`ded78f1`, `bff86fe`, `c7d747a`). Production bundle on First View is `index-DLgOG8Hc.js` (2026-07-05). **Manual owner login smoke not completed** for product/invoice/report flows.
+Code fixes for purchase Not Found, product list edit, and supplier PATCH edit are on `main` (`88822cd`). Prior Phase 5 fixes (`7a54574`) were deployed earlier. **Deploy `88822cd` on VPS, then run First View owner smoke** for purchase/product/supplier edit flows.
 
 ---
 

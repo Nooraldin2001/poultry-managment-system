@@ -1,8 +1,8 @@
 # Release Blocker Matrix
 
 - **Date (UTC):** 2026-07-05
-- **Commit (origin/main):** pending — auto numbering + payment summary live fix
-- **Commit (production bundle):** `index-DLgOG8Hc.js` on First View (pre-`0998fa0` — **deploy pending**)
+- **Commit (origin/main):** `88822cd` — purchase new route, product list edit, supplier PATCH
+- **Commit (production bundle):** `index--O_NXaJC.js` (pre-`88822cd` — **deploy pending**)
 - **Environment:** Production
 
 | Area | Status | Blocker? | Notes | Required Action |
@@ -37,6 +37,6 @@
 |---|---:|
 | **Code blockers** | **0** |
 | **Pending manual verification** | **8** (product edit, expense, category, carton calc, opening balance, customer create, sales, purchase) |
-| **Pending deploy** | **1** (Phase 5 fixes uncommitted) |
+| **Pending deploy** | **1** (`88822cd` — purchase/supplier/product edit routes) |
 
 See [TENANT_CREATE_WORKFLOW_AUDIT.md](../frontend/TENANT_CREATE_WORKFLOW_AUDIT.md).

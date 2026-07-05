@@ -88,6 +88,23 @@ Additional invoice-specific bugs (fixed):
 ### Purchase invoice (`LivePurchaseInvoiceScreen.tsx`)
 
 - Production route: `PurchNewScreen` → `LivePurchaseInvoiceScreen` when `!IS_MOCK_MODE`
+- **New draft:** `purchases-new` — no `purchaseId`; Save Draft → `POST /api/v1/tenant/purchases/`
+- **Edit draft:** `purchases-edit` — requires `selectedPurchaseId`; detail → `GET /api/v1/tenant/purchases/{id}/`
+- **404:** `NotFoundState` (AR: فاتورة الشراء غير موجودة أو تم حذفها)
+
+### Product edit (`ProductModule.tsx` — `88822cd`)
+
+- List **Edit** → `setSelectedProductId` + `products-edit` (not `products-new`)
+- Save → `PATCH /api/v1/tenant/products/{id}/` via `buildProductUpdatePayload()`
+- Sensitive price/carton changes → `ReasonModal` with `reason` in body
+
+### Supplier edit (`SupplierModule.tsx` — `88822cd`)
+
+- List/profile **Edit** → `suppliers-edit` with `selectedSupplierId`
+- Save → `PATCH /api/v1/tenant/suppliers/{id}/` via `buildSupplierUpdatePayload()`
+- Opening balance / ledger totals not sent in PATCH
+
+---
 - Same draft/approve pattern as sales
 
 ### Reports (`ReportsModule.tsx`, `reportLiveData.ts`, `App.tsx`)
@@ -184,7 +201,10 @@ POST /api/v1/tenant/sales/42/approve/
 - [ ] Add supplier → POST 201
 - [ ] Add product category → POST 201
 - [ ] Add product → POST 201, appears in invoice product dropdown
-- [ ] Purchase: Save draft → POST 201; add line; Approve → stock increases
+- [ ] Purchase: **New** invoice opens without Not Found; Save draft POST 201
+- [ ] Purchase: Edit existing draft; Approve → stock increases
+- [ ] Product: Edit from list → PATCH 200; refresh persists
+- [ ] Supplier: Edit from list/profile → PATCH 200; refresh persists
 - [ ] Sales: Save draft → POST 201; add line; Approve → stock decreases; credit balance updates
 - [ ] Reports: no demo transaction rows; empty/zero states when no data
 
