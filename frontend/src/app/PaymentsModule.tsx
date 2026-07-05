@@ -22,7 +22,7 @@ import { IS_MOCK_MODE } from "@/services/config";
 import { LiveCustomerCollectionModal, LiveSupplierPaymentModal } from "@/features/payments/LivePaymentModals";
 import { LiveCustomerRefundScreen, LiveSupplierRefundScreen, LiveCancelPaymentModal } from "@/features/payments/LiveRefundScreens";
 import { LivePrintPreviewScreen } from "@/features/print/LivePrintPreviewScreen";
-import { getPaymentMovementPrintPreviewRaw } from "@/services/paymentService";
+import { getPaymentMovementPrintPreviewRaw, getPaymentsSummary, listPaymentMovementRows } from "@/services/paymentService";
 import { getPaymentsReport } from "@/services/reportsService";
 import {
   mapPaymentRecordsToTableRows,
@@ -912,21 +912,105 @@ export function ReceiptPreviewScreen({ lang, onNavigate, receiptId }: { lang: La
 }
 
 // ── SCREEN: PAYMENT METHOD SUMMARY ────────────────────────────────────────────
+function paymentMovementDirection(type: string): MovDir {
+  if (type === "customer_collection" || type === "supplier_refund") return "in";
+  if (type === "supplier_payment" || type === "customer_refund") return "out";
+  return "adjustment";
+}
+
+function methodUiKey(method: string): PayMethod | "" {
+  if (method === "cash") return "cash";
+  if (method === "bank_transfer") return "bank";
+  if (method === "cheque") return "cheque";
+  return method ? "other" : "";
+}
+
 export function PaymentMethodSummaryScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
-  const kpis = [
-    { v: "AED 8,000", ar: "إجمالي الكاش الداخل",          en: "Total Cash In",      cls: "text-emerald-600 bg-emerald-50" },
-    { v: "AED 2,500", ar: "إجمالي الكاش الخارج",          en: "Total Cash Out",     cls: "text-red-500 bg-red-50" },
-    { v: "AED 5,500", ar: "صافي الكاش",                   en: "Net Cash",           cls: "text-[#0F2C59] bg-[#0F2C59]/5" },
-    { v: "AED 6,000", ar: "التحويلات البنكية الداخلة",    en: "Bank In",            cls: "text-blue-600 bg-blue-50" },
-    { v: "AED 5,000", ar: "التحويلات البنكية الخارجة",    en: "Bank Out",           cls: "text-red-500 bg-red-50" },
-    { v: "AED 3,000", ar: "الشيكات",                      en: "Cheques",            cls: "text-amber-600 bg-amber-50" },
+  const [summary, setSummary] = useState<{ totals: Record<string, number>; paymentMethodBreakdown: Record<string, number> }>({
+    totals: {},
+    paymentMethodBreakdown: {},
+  });
+  const [movements, setMovements] = useState<PayMovement[]>([]);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([getPaymentsSummary(), listPaymentMovementRows({ status: "posted" })])
+      .then(([summaryData, rows]) => {
+        if (cancelled) return;
+        setSummary(summaryData);
+        setMovements(
+          rows.map((row) => ({
+            id: row.id,
+            date: row.date,
+            type: row.type as MovType,
+            typeAr: "",
+            typeEn: row.type,
+            party: row.party,
+            amount: row.amount,
+            dir: paymentMovementDirection(row.type),
+            method: methodUiKey(row.method),
+            ref: row.reference ?? "",
+            receipt: row.reference ?? "",
+            invoice: "",
+            user: "",
+            status: row.status === "cancelled" ? "cancelled" : "active",
+          })),
+        );
+      })
+      .catch((err) => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!IS_MOCK_MODE && loading) return <LoadingState lang={lang} />;
+  if (!IS_MOCK_MODE && error) return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+
+  const liveTotals = summary.totals;
+  const cashIn = movements.filter((m) => m.method === "cash" && m.dir === "in").reduce((s, m) => s + m.amount, 0);
+  const cashOut = movements.filter((m) => m.method === "cash" && m.dir === "out").reduce((s, m) => s + m.amount, 0);
+  const bankIn = movements.filter((m) => m.method === "bank" && m.dir === "in").reduce((s, m) => s + m.amount, 0);
+  const bankOut = movements.filter((m) => m.method === "bank" && m.dir === "out").reduce((s, m) => s + m.amount, 0);
+  const chequeTotal = movements.filter((m) => m.method === "cheque").reduce((s, m) => s + m.amount, 0);
+
+  const kpis = IS_MOCK_MODE
+    ? [
+        { v: "AED 8,000", ar: "إجمالي الكاش الداخل", en: "Total Cash In", cls: "text-emerald-600 bg-emerald-50" },
+        { v: "AED 2,500", ar: "إجمالي الكاش الخارج", en: "Total Cash Out", cls: "text-red-500 bg-red-50" },
+        { v: "AED 5,500", ar: "صافي الكاش", en: "Net Cash", cls: "text-[#0F2C59] bg-[#0F2C59]/5" },
+        { v: "AED 6,000", ar: "التحويلات البنكية الداخلة", en: "Bank In", cls: "text-blue-600 bg-blue-50" },
+        { v: "AED 5,000", ar: "التحويلات البنكية الخارجة", en: "Bank Out", cls: "text-red-500 bg-red-50" },
+        { v: "AED 3,000", ar: "الشيكات", en: "Cheques", cls: "text-amber-600 bg-amber-50" },
+      ]
+    : [
+        { v: `AED ${cashIn.toLocaleString()}`, ar: "إجمالي الكاش الداخل", en: "Total Cash In", cls: "text-emerald-600 bg-emerald-50" },
+        { v: `AED ${cashOut.toLocaleString()}`, ar: "إجمالي الكاش الخارج", en: "Total Cash Out", cls: "text-red-500 bg-red-50" },
+        { v: `AED ${(cashIn - cashOut).toLocaleString()}`, ar: "صافي الكاش", en: "Net Cash", cls: "text-[#0F2C59] bg-[#0F2C59]/5" },
+        { v: `AED ${bankIn.toLocaleString()}`, ar: "التحويلات البنكية الداخلة", en: "Bank In", cls: "text-blue-600 bg-blue-50" },
+        { v: `AED ${bankOut.toLocaleString()}`, ar: "التحويلات البنكية الخارجة", en: "Bank Out", cls: "text-red-500 bg-red-50" },
+        { v: `AED ${chequeTotal.toLocaleString()}`, ar: "الشيكات", en: "Cheques", cls: "text-amber-600 bg-amber-50" },
+      ];
+
+  const liveSections: [string, string, string, PayMovement[]][] = [
+    ["كاش", "Cash", "bg-emerald-500", movements.filter((m) => m.method === "cash")],
+    ["تحويل بنكي", "Bank Transfer", "bg-blue-500", movements.filter((m) => m.method === "bank")],
+    ["شيك", "Cheque", "bg-amber-500", movements.filter((m) => m.method === "cheque")],
   ];
-  const sections: [string, string, string, PayMovement[]][] = [
-    ["كاش", "Cash", "bg-emerald-500", MOCK_PAY_MOVEMENTS.filter(m => m.method === "cash")],
-    ["تحويل بنكي", "Bank Transfer", "bg-blue-500", MOCK_PAY_MOVEMENTS.filter(m => m.method === "bank")],
-    ["شيك", "Cheque", "bg-amber-500", MOCK_PAY_MOVEMENTS.filter(m => m.method === "cheque")],
-  ];
+  const sections: [string, string, string, PayMovement[]][] = IS_MOCK_MODE
+    ? [
+        ["كاش", "Cash", "bg-emerald-500", MOCK_PAY_MOVEMENTS.filter((m) => m.method === "cash")],
+        ["تحويل بنكي", "Bank Transfer", "bg-blue-500", MOCK_PAY_MOVEMENTS.filter((m) => m.method === "bank")],
+        ["شيك", "Cheque", "bg-amber-500", MOCK_PAY_MOVEMENTS.filter((m) => m.method === "cheque")],
+      ]
+    : liveSections;
+
+  const hasData = IS_MOCK_MODE
+    ? MOCK_PAY_MOVEMENTS.length > 0
+    : movements.length > 0 || Object.values(liveTotals).some((v) => v > 0);
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
@@ -935,28 +1019,34 @@ export function PaymentMethodSummaryScreen({ lang, role, onNavigate }: { lang: L
         <div className="flex-1"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "ملخص طرق الدفع" : "Payment Method Summary"}</h2></div>
         <Btn variant="outline" size="sm"><Download size={13} />{isRTL ? "تصدير" : "Export"}</Btn>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {kpis.map((k, i) => <Card key={i} className={`p-4 text-center ${k.cls.split(" ")[1]}`}><div className={`text-xl font-black font-mono ${k.cls.split(" ")[0]}`}>{k.v}</div><div className="text-[10px] font-bold text-slate-500 mt-0.5">{isRTL ? k.ar : k.en}</div></Card>)}
-      </div>
-      {sections.map(([ar, en, bg, movs]) => (
-        movs.length > 0 && (
-          <Card key={ar}>
-            <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
-              <span className={`w-3 h-3 rounded-full ${bg}`} />
-              <h3 className="font-black text-slate-800 text-sm">{isRTL ? ar : en}</h3>
-              <span className="text-xs text-slate-400">({movs.length} {isRTL ? "حركة" : "movements"})</span>
-            </div>
-            <div className="divide-y divide-slate-50">
-              {movs.map(m => (
-                <div key={m.id} className="px-5 py-3 flex items-center justify-between">
-                  <div><div className="font-bold text-slate-800 text-xs">{m.party}</div><div className="text-[10px] text-slate-400">{m.date} · <MovTypeBadge type={m.type} lang={lang} /></div></div>
-                  <div className="text-end"><div className={`font-mono font-black text-sm ${m.dir === "in" ? "text-emerald-600" : "text-red-500"}`}>{m.dir === "out" ? "−" : "+"}AED {m.amount.toLocaleString()}</div></div>
+      {!hasData && !IS_MOCK_MODE ? (
+        <EmptyState lang={lang} messageAr="لا توجد حركات دفع حقيقية بعد" messageEn="No real payment movements yet" />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {kpis.map((k, i) => <Card key={i} className={`p-4 text-center ${k.cls.split(" ")[1]}`}><div className={`text-xl font-black font-mono ${k.cls.split(" ")[0]}`}>{k.v}</div><div className="text-[10px] font-bold text-slate-500 mt-0.5">{isRTL ? k.ar : k.en}</div></Card>)}
+          </div>
+          {sections.map(([ar, en, bg, movs]) => (
+            movs.length > 0 && (
+              <Card key={ar}>
+                <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+                  <span className={`w-3 h-3 rounded-full ${bg}`} />
+                  <h3 className="font-black text-slate-800 text-sm">{isRTL ? ar : en}</h3>
+                  <span className="text-xs text-slate-400">({movs.length} {isRTL ? "حركة" : "movements"})</span>
                 </div>
-              ))}
-            </div>
-          </Card>
-        )
-      ))}
+                <div className="divide-y divide-slate-50">
+                  {movs.map((m) => (
+                    <div key={m.id} className="px-5 py-3 flex items-center justify-between">
+                      <div><div className="font-bold text-slate-800 text-xs">{m.party}</div><div className="text-[10px] text-slate-400">{m.date} · <MovTypeBadge type={m.type} lang={lang} /></div></div>
+                      <div className="text-end"><div className={`font-mono font-black text-sm ${m.dir === "in" ? "text-emerald-600" : "text-red-500"}`}>{m.dir === "out" ? "−" : "+"}AED {m.amount.toLocaleString()}</div></div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )
+          ))}
+        </>
+      )}
     </div>
   );
 }

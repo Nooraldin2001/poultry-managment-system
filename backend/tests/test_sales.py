@@ -109,7 +109,8 @@ def test_create_draft_has_no_side_effects(company, owner):
     inv = _create(company, customer, owner, [_line(product, quantity_kg="10")])
 
     assert inv.status == SalesStatus.DRAFT
-    assert inv.invoice_number.startswith("INV-")
+    assert inv.invoice_number.startswith("SAL-")
+    assert str(date.today().year) in inv.invoice_number
     assert not CustomerLedgerEntry.objects.filter(customer=customer).exists()
     customer.refresh_from_db()
     assert customer.current_balance == Decimal("0.00")
@@ -424,6 +425,19 @@ def test_print_preview_structure(api, company, owner):
 
 
 # ── API / permissions ───────────────────────────────────────────────────────
+def test_create_rejects_manual_invoice_number(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    api.force_authenticate(owner)
+    resp = api.post(
+        SALES_URL,
+        _payload(customer, product, invoice_number="MANUAL-001"),
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert "invoice_number" in resp.data
+
+
 def test_owner_can_create_approve_cancel(api, company, owner):
     customer = _customer(company)
     product = _product(company)

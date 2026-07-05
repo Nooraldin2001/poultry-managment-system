@@ -77,6 +77,37 @@ def test_purge_tenant_demo_purchases_dry_run(company, owner):
     assert PurchaseInvoice.objects.filter(company=company).count() == 1
 
 
+def test_purge_tenant_demo_payments_dry_run(company, owner):
+    from datetime import date
+
+    from apps.payments.models import PartyType, PaymentMovement, PaymentMovementStatus, PaymentMovementType
+    from apps.customers.models import Customer
+
+    demo_customer = Customer.objects.create(
+        company=company, name_ar="مطعم الخليج", phone="+971500000001"
+    )
+    PaymentMovement.objects.create(
+        company=company,
+        movement_number="MOV-DEMO-1",
+        receipt_number="REC-DEMO-1",
+        movement_type=PaymentMovementType.CUSTOMER_COLLECTION,
+        party_type=PartyType.CUSTOMER,
+        customer=demo_customer,
+        movement_date=date.today(),
+        payment_method="cash",
+        amount="100.00",
+        status=PaymentMovementStatus.POSTED,
+        posted_by=owner,
+    )
+    call_command(
+        "purge_tenant_demo_data",
+        company_subdomain=company.subdomain,
+        module="payments",
+        dry_run=True,
+    )
+    assert PaymentMovement.objects.filter(company=company).count() == 1
+
+
 def test_reset_tenant_operational_data_dry_run(company, owner):
     cat = ProductCategory.objects.create(
         company=company, name_ar="فئة", code="CAT1", sort_order=1

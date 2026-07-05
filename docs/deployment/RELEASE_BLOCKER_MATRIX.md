@@ -1,7 +1,7 @@
 # Release Blocker Matrix
 
 - **Date (UTC):** 2026-07-05
-- **Commit (origin/main):** `0998fa0` — purchase print-preview, print routing, demo purge, invoice `{ reason }`
+- **Commit (origin/main):** pending — auto numbering + payment summary live fix
 - **Commit (production bundle):** `index-DLgOG8Hc.js` on First View (pre-`0998fa0` — **deploy pending**)
 - **Environment:** Production
 
@@ -16,7 +16,8 @@
 | Supplier create (code) | **Fixed** | No | `c7d747a` | Deploy + smoke |
 | Sales invoice create (code) | **Fixed** | No | Live screen + Save draft + approve `{reason}` | Deploy + smoke |
 | Purchase invoice create (code) | **Fixed** | No | Same pattern as sales | Deploy + smoke |
-| Purchase PDF / print (code) | **Fixed** | No | `0998fa0` — print-preview API + live routing | Deploy + smoke |
+| Payment Methods Summary (code) | **Fixed** | No | Live API wired; mock only in dev | Deploy + smoke |
+| Auto invoice numbering (code) | **Fixed** | No | PUR-/SAL- yearly server-side generation | Deploy + smoke |
 | Purchase demo data (DB) | Unknown | **Yes** | WESTLAND / Wataniya may be DB seed | VPS purge dry-run + confirm |
 | Reports demo data (code) | **Fixed** | No | `bff86fe` — `liveOrMockRows` guards | Verify empty states on First View |
 | Reports demo data (DB) | Unknown | Maybe | WESTLAND strings still in bundle (dead code); may be DB seed | Run purge dry-run on VPS |

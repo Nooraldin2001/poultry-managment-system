@@ -355,6 +355,30 @@ def test_owner_can_create_collection(api, company, owner):
     assert resp.data["receipt_number"].startswith("REC-")
 
 
+SUMMARY_URL = "/api/v1/tenant/payments/summary/"
+
+
+def test_payment_summary_empty_tenant(api, owner):
+    api.force_authenticate(owner)
+    resp = api.get(SUMMARY_URL)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_customer_collections_this_month"] in ("0.00", 0, "0")
+    assert data["payment_method_breakdown"] == {}
+
+
+def test_payment_summary_tenant_isolation(api, company, owner, other_owner):
+    customer = _customer(company)
+    payment_services.record_customer_collection(
+        company=company, customer=customer, amount=Decimal("100"),
+        payment_method="cash", user=owner,
+    )
+    api.force_authenticate(other_owner)
+    resp = api.get(SUMMARY_URL)
+    assert resp.status_code == 200
+    assert resp.json()["total_customer_collections_this_month"] in ("0.00", 0, "0")
+
+
 def test_accountant_can_create_but_not_cancel(api, company, owner, accountant):
     customer = _customer(company)
     movement = payment_services.record_customer_collection(

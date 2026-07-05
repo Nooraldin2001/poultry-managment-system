@@ -75,6 +75,21 @@ def _is_demo_product(obj) -> bool:
     )
 
 
+def _is_demo_payment(movement) -> bool:
+    customer = getattr(movement, "customer", None)
+    supplier = getattr(movement, "supplier", None)
+    if customer and _is_demo_customer(customer):
+        return True
+    if supplier and _is_demo_supplier(supplier):
+        return True
+    text = " ".join([
+        str(getattr(movement, "reference_number", "") or ""),
+        str(getattr(movement, "notes", "") or ""),
+        str(getattr(movement, "movement_number", "") or ""),
+    ])
+    return _looks_demo_name(text)
+
+
 def _is_demo_purchase(invoice) -> bool:
     inv_no = getattr(invoice, "invoice_number", "") or ""
     if _DEMO_PURCHASE_INVOICE_PATTERNS.search(inv_no):
@@ -101,8 +116,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--module",
             default="all",
-            choices=("all", "purchases", "masters"),
-            help="Scope: all demo masters + purchases, purchases only, or masters only.",
+            choices=("all", "purchases", "payments", "masters"),
+            help="Scope: all demo masters + purchases/payments, or a single module.",
         )
         parser.add_argument(
             "--dry-run",
@@ -137,6 +152,7 @@ class Command(BaseCommand):
         Supplier = django_apps.get_model("suppliers", "Supplier")
         Product = django_apps.get_model("products", "Product")
         PurchaseInvoice = django_apps.get_model("purchases", "PurchaseInvoice")
+        PaymentMovement = django_apps.get_model("payments", "PaymentMovement")
 
         plan: list[tuple[str, list]] = []
 
@@ -156,6 +172,15 @@ class Command(BaseCommand):
                 if _is_demo_purchase(p)
             ]
             plan.append(("purchases.PurchaseInvoice (demo-like)", demo_purchases))
+
+        if module in ("all", "payments"):
+            demo_payments = [
+                p for p in PaymentMovement.objects.filter(company=company).select_related(
+                    "customer", "supplier"
+                )
+                if _is_demo_payment(p)
+            ]
+            plan.append(("payments.PaymentMovement (demo-like)", demo_payments))
 
         self.stdout.write("Demo-like records:")
         total = 0
@@ -238,8 +263,52 @@ class Command(BaseCommand):
                         deleted_total += 1
                         self.stdout.write(f"Deleted purchases.PurchaseInvoice id={pk} ({inv_no})")
 
+            if module in ("all", "payments"):
+                from apps.payments import services as payment_services
+                from apps.payments.models import PaymentMovementStatus
+                from apps.accounts.models import User
+
+                payment_items = next(
+                    (items for label, items in plan if "PaymentMovement" in label),
+                    [],
+                )
+                if payment_items:
+                    purge_user = (
+                        User.objects.filter(company=company, is_active=True)
+                        .order_by("id")
+                        .first()
+                    )
+                    for movement in payment_items:
+                        pk = movement.pk
+                        mov_no = movement.movement_number
+                        if movement.status == PaymentMovementStatus.POSTED:
+                            if not purge_user:
+                                self.stdout.write(
+                                    self.style.WARNING(
+                                        f"Skip payment id={pk}: no active user to cancel"
+                                    )
+                                )
+                                continue
+                            try:
+                                payment_services.cancel_payment_movement(
+                                    movement=movement,
+                                    user=purge_user,
+                                    reason="Demo data purge",
+                                )
+                                movement.refresh_from_db()
+                            except Exception as exc:
+                                self.stdout.write(
+                                    self.style.WARNING(
+                                        f"Could not cancel payment id={pk} ({mov_no}): {exc}"
+                                    )
+                                )
+                                continue
+                        movement.delete()
+                        deleted_total += 1
+                        self.stdout.write(f"Deleted payments.PaymentMovement id={pk} ({mov_no})")
+
             for label, items in plan:
-                if "PurchaseInvoice" in label:
+                if "PurchaseInvoice" in label or "PaymentMovement" in label:
                     continue
                 for item in items:
                     pk = item.pk

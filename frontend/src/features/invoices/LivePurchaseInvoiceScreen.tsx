@@ -196,7 +196,18 @@ export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, o
         <h2 className="text-xl font-black text-[#0F2C59] flex-1">
           {invoiceId ? (isRTL ? "فاتورة شراء" : "Purchase Invoice") : isRTL ? "فاتورة شراء جديدة" : "New Purchase"}
         </h2>
-        {invoiceNumber && <span className="font-mono text-sm">{invoiceNumber}</span>}
+      </div>
+      <div className="rounded-xl border bg-slate-50 px-3 py-2 text-sm">
+        <div className="text-xs font-bold text-slate-500 mb-1">{isRTL ? "رقم الفاتورة الداخلي" : "Internal invoice number"}</div>
+        {invoiceNumber ? (
+          <span className="font-mono font-bold text-[#0F2C59]">{invoiceNumber}</span>
+        ) : (
+          <span className="text-slate-400 italic">
+            {isRTL ? "سيتم إنشاء الرقم تلقائياً عند الحفظ" : "Number will be generated automatically on save"}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-3 items-center">
         {docId && onOpenPrint && (
           <button
             type="button"
@@ -218,7 +229,14 @@ export function LivePurchaseInvoiceScreen({ lang, role, onNavigate, invoiceId, o
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
-            <input value={supplierInvNo} disabled={!isDraft} onChange={(e) => setSupplierInvNo(e.target.value)} placeholder={isRTL ? "رقم فاتورة المورد" : "Supplier invoice #"} className="w-full rounded-xl border px-3 py-2 text-sm" />
+            <input
+              value={supplierInvNo}
+              disabled={!isDraft}
+              onChange={(e) => setSupplierInvNo(e.target.value)}
+              placeholder={isRTL ? "رقم فاتورة المورد" : "Supplier Invoice No."}
+              aria-label={isRTL ? "رقم فاتورة المورد" : "Supplier Invoice No."}
+              className="w-full rounded-xl border px-3 py-2 text-sm"
+            />
           </div>
           <div className="bg-white rounded-2xl border overflow-x-auto">
             <table className="w-full text-sm min-w-[560px]">

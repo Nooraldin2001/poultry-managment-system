@@ -10,7 +10,13 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import TenantRole, User
-from apps.company_settings.constants import DocumentType, TemplateType
+from apps.company_settings.constants import (
+    DEFAULT_DOCUMENT_PREFIXES,
+    DocumentType,
+    ResetRule,
+    TemplateType,
+    default_numbering_reset_rule,
+)
 from apps.company_settings.models import (
     NumberingSettings,
     PrintTemplateSettings,
@@ -27,20 +33,8 @@ from .models import Company, CompanyStatus
 
 TRIAL_DAYS = 14
 
-# Sensible default numbering prefixes per document type.
-DEFAULT_PREFIXES = {
-    DocumentType.SALES_INVOICE: "INV-",
-    DocumentType.PURCHASE_INVOICE: "PINV-",
-    DocumentType.QUOTATION: "QUO-",
-    DocumentType.CUSTOMER_RECEIPT: "REC-",
-    DocumentType.SUPPLIER_PAYMENT_RECEIPT: "PAY-",
-    DocumentType.EXPENSE_VOUCHER: "EXP-",
-    DocumentType.COLLECTION_ADJUSTMENT: "ADJ-",
-    DocumentType.STOCK_ADJUSTMENT: "STK-",
-    DocumentType.CUSTOMER_REFUND: "REF-C-",
-    DocumentType.SUPPLIER_REFUND: "REF-S-",
-    DocumentType.TAX_ADJUSTMENT: "TAX-",
-}
+# Re-export for tests and management commands.
+DEFAULT_PREFIXES = DEFAULT_DOCUMENT_PREFIXES
 
 
 def _create_default_settings(company: Company):
@@ -52,7 +46,8 @@ def _create_default_settings(company: Company):
             document_type=doc_type,
             prefix=prefix,
             next_number=1,
-            number_length=5,
+            number_length=4,
+            reset_rule=default_numbering_reset_rule(doc_type),
         )
         for doc_type, prefix in DEFAULT_PREFIXES.items()
     ]

@@ -34,6 +34,33 @@ class ResetRule(models.TextChoices):
     YEARLY = "yearly", "Yearly"
 
 
+# Default prefixes for lazy numbering-row creation and new tenant provisioning.
+DEFAULT_DOCUMENT_PREFIXES = {
+    DocumentType.SALES_INVOICE: "SAL-",
+    DocumentType.PURCHASE_INVOICE: "PUR-",
+    DocumentType.QUOTATION: "QUO-",
+    DocumentType.CUSTOMER_RECEIPT: "REC-",
+    DocumentType.SUPPLIER_PAYMENT_RECEIPT: "PAY-",
+    DocumentType.EXPENSE_VOUCHER: "EXP-",
+    DocumentType.COLLECTION_ADJUSTMENT: "ADJ-",
+    DocumentType.STOCK_ADJUSTMENT: "STK-",
+    DocumentType.CUSTOMER_REFUND: "REF-C-",
+    DocumentType.SUPPLIER_REFUND: "REF-S-",
+    DocumentType.TAX_ADJUSTMENT: "TAX-",
+}
+
+_YEARLY_RESET_TYPES = frozenset({
+    DocumentType.SALES_INVOICE,
+    DocumentType.PURCHASE_INVOICE,
+})
+
+
+def default_numbering_reset_rule(document_type: str) -> str:
+    if document_type in _YEARLY_RESET_TYPES:
+        return ResetRule.YEARLY
+    return ResetRule.NONE
+
+
 class PaperSize(models.TextChoices):
     A4 = "a4", "A4"
     A5 = "a5", "A5"

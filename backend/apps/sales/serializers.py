@@ -192,6 +192,14 @@ class SalesInvoiceCreateUpdateSerializer(_NonNegativeMixin, serializers.Serializ
             raise serializers.ValidationError("Customer not found for this company.")
         return customer
 
+    def validate(self, attrs):
+        if "invoice_number" in self.initial_data:
+            raise serializers.ValidationError(
+                {"invoice_number": "Internal invoice number is assigned automatically."}
+            )
+        self._check_non_negative(attrs)
+        return attrs
+
 
 class SalesApproveSerializer(serializers.Serializer):
     reason = serializers.CharField()

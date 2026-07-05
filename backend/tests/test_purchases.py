@@ -34,9 +34,6 @@ from apps.suppliers.models import Supplier, SupplierLedgerEntry, SupplierType
 pytestmark = pytest.mark.django_db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-# ── Helpers ─────────────────────────────────────────────────────────────────
 def _supplier(company, sku="S1", **kwargs):
     defaults = dict(
         company=company, name_ar="مورد", phone="0500000000",
@@ -81,7 +78,8 @@ def test_create_draft_has_no_side_effects(company, owner):
     inv = _create(company, supplier, owner, [_line(product, quantity_kg="100")])
 
     assert inv.status == PurchaseStatus.DRAFT
-    assert inv.invoice_number.startswith("PINV-")
+    assert inv.invoice_number.startswith("PUR-")
+    assert str(date.today().year) in inv.invoice_number
     assert not InventoryBalance.objects.filter(company=company).exists()
     assert not FIFOStockLayer.objects.filter(company=company).exists()
     supplier.refresh_from_db()
@@ -343,6 +341,19 @@ def _payload(supplier, product, **overrides):
     }
     data.update(overrides)
     return data
+
+
+def test_create_rejects_manual_invoice_number(api, company, owner):
+    supplier = _supplier(company)
+    product = _product(company)
+    api.force_authenticate(owner)
+    resp = api.post(
+        PURCHASES_URL,
+        _payload(supplier, product, invoice_number="MANUAL-001"),
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert "invoice_number" in resp.data
 
 
 def test_owner_can_create_and_approve_and_cancel(api, company, owner):

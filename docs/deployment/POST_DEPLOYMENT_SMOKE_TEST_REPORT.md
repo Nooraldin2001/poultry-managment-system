@@ -427,3 +427,42 @@ bash scripts/check_no_production_mock_data.sh
 3. Create purchase → approve → inventory + supplier balance update
 
 **Launch stance:** **NO-GO** — fix committed and pushed; VPS deploy, DB purge, and owner smoke pending.
+
+---
+
+## Part N — Auto numbering + Payment Methods Summary (2026-07-05)
+
+### Root causes
+
+| Issue | Root cause |
+|-------|------------|
+| Manual internal serial | Backend already auto-generates numbers; UI did not explain auto-generation before save |
+| Payment Methods Summary demo data | `PaymentMethodSummaryScreen` always used hardcoded mock KPIs/movements (no live API) |
+
+### Fixes (commit pending deploy)
+
+| Area | Fix |
+|------|-----|
+| Numbering defaults | New tenants: `PUR-YYYY-####` / `SAL-YYYY-####` (yearly reset, length 4) |
+| Backend | Reject client-sent `invoice_number` on create; `backfill_invoice_numbers` command |
+| Frontend | Read-only internal number + “generated on save” message; supplier field labeled **Supplier Invoice No.** |
+| Payment summary | Live API only in production; empty state when no movements |
+| Purge | `--module payments` added to `purge_tenant_demo_data` |
+
+### Local checks
+
+| Check | Result |
+|-------|--------|
+| `pytest` purchases/sales/payments/demo commands | **98 passed** |
+| `corepack pnpm run typecheck` | **Pass** |
+| `corepack pnpm run build` | **Pass** → `index-DuTwgn9y.js` |
+| `check_no_production_mock_data.sh` | **Pass** |
+
+### VPS steps (after deploy)
+
+```bash
+python manage.py purge_tenant_demo_data --company-subdomain firstview --module payments --dry-run
+python manage.py purge_tenant_demo_data --company-subdomain firstview --module purchases --dry-run
+```
+
+**Launch stance:** **NO-GO** until deploy + owner smoke on numbering + payment summary.

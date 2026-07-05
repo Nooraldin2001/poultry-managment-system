@@ -8,7 +8,11 @@ a number like ``PINV-2026-00001``. Safe under concurrency via ``select_for_updat
 from django.db import transaction
 from django.utils import timezone
 
-from .constants import ResetRule
+from .constants import (
+    DEFAULT_DOCUMENT_PREFIXES,
+    ResetRule,
+    default_numbering_reset_rule,
+)
 from .models import NumberingSettings
 
 
@@ -34,7 +38,12 @@ def generate_document_number(company, document_type) -> str:
     numbering = settings_qs.first()
     if numbering is None:
         numbering = NumberingSettings.objects.create(
-            company=company, document_type=document_type, next_number=1
+            company=company,
+            document_type=document_type,
+            prefix=DEFAULT_DOCUMENT_PREFIXES.get(document_type, ""),
+            next_number=1,
+            number_length=4,
+            reset_rule=default_numbering_reset_rule(document_type),
         )
         numbering = (
             NumberingSettings.objects.select_for_update()

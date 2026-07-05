@@ -210,6 +210,10 @@ class PurchaseInvoiceCreateUpdateSerializer(_NonNegativeMixin, serializers.Seria
         return supplier
 
     def validate(self, attrs):
+        if "invoice_number" in self.initial_data:
+            raise serializers.ValidationError(
+                {"invoice_number": "Internal invoice number is assigned automatically."}
+            )
         self._check_non_negative(attrs)
         return attrs
 

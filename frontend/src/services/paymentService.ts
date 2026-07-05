@@ -13,8 +13,11 @@ interface ApiMovement {
   id: number;
   movement_type?: string;
   party_type?: string;
+  party_name?: string;
   party_name_snapshot?: string;
   party_id?: number;
+  movement_number?: string;
+  receipt_number?: string;
   amount: string;
   payment_method?: string;
   movement_date?: string;
@@ -22,16 +25,21 @@ interface ApiMovement {
   status?: string;
 }
 
+export type PaymentsSummaryData = {
+  totals: Record<string, number>;
+  paymentMethodBreakdown: Record<string, number>;
+};
+
 function mapMovement(row: ApiMovement): PaymentMovementRow {
   return {
     id: String(row.id),
     type: row.movement_type ?? "",
-    party: row.party_name_snapshot ?? "",
+    party: row.party_name ?? row.party_name_snapshot ?? "",
     partyId: row.party_id != null ? String(row.party_id) : undefined,
     amount: parseAmount(row.amount),
     method: row.payment_method ?? "",
     date: String(row.movement_date ?? "").slice(0, 10),
-    reference: row.reference_number,
+    reference: row.reference_number ?? row.movement_number ?? row.receipt_number,
     status: row.status,
   };
 }
@@ -44,16 +52,28 @@ export async function listPaymentMovementRows(filters?: ApiListFilters): Promise
   return rows.map(mapMovement);
 }
 
-export async function getPaymentsSummary(filters?: ApiListFilters): Promise<Record<string, number>> {
-  if (IS_MOCK_MODE) return {};
-  const data = await request<Record<string, string | number>>(ENDPOINTS.tenant.paymentsSummary, {
+export async function getPaymentsSummary(filters?: ApiListFilters): Promise<PaymentsSummaryData> {
+  if (IS_MOCK_MODE) return { totals: {}, paymentMethodBreakdown: {} };
+  const data = await request<Record<string, unknown>>(ENDPOINTS.tenant.paymentsSummary, {
     query: filters as Record<string, string | number | boolean>,
   });
-  const out: Record<string, number> = {};
+  const totals: Record<string, number> = {};
+  let paymentMethodBreakdown: Record<string, number> = {};
   for (const [k, v] of Object.entries(data)) {
-    out[k] = parseAmount(v);
+    if (k === "payment_method_breakdown" && v && typeof v === "object") {
+      paymentMethodBreakdown = Object.fromEntries(
+        Object.entries(v as Record<string, string | number>).map(([method, amount]) => [
+          method,
+          parseAmount(amount),
+        ]),
+      );
+      continue;
+    }
+    if (typeof v === "string" || typeof v === "number") {
+      totals[k] = parseAmount(v);
+    }
   }
-  return out;
+  return { totals, paymentMethodBreakdown };
 }
 
 export async function createCustomerCollection(payload: Record<string, unknown>): Promise<PaymentMovementRow> {
