@@ -63,3 +63,14 @@ Not editable via PATCH: `company`, `current_balance`, `opening_balance` (after c
 3. Refresh browser → data persists
 4. Cashier: edit hidden / 403 on direct route
 5. Profile → **تعديل الرصيد الافتتاحي** (no transactions) or **إضافة تسوية رصيد** (with transactions) → reason required → POST opening-balance → statement shows adjustment
+
+---
+
+## Customer TRN on invoices (Phase 14 — 2026-07-06)
+
+- Customer create/edit: **الرقم الضريبي TRN** / **Customer TRN** field (optional, digits-only)
+- Sales invoice stores `customer_trn_snapshot` at create; refreshed on approve
+- Print preview `party.trn` uses snapshot first — later customer TRN edits do not alter approved invoices
+- Toggle `show_customer_trn` in Settings → Invoice Design hides/shows TRN row on print
+
+See [INVOICE_BRANDING_AND_TEMPLATES.md](./INVOICE_BRANDING_AND_TEMPLATES.md).

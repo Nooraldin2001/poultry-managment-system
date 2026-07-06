@@ -108,10 +108,10 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
             qs = qs.filter(customer_id=p["customer"])
         if p.get("status"):
             qs = qs.filter(status=p["status"])
-        elif not _truthy(p.get("include_cancelled")):
+        elif self.action == "list" and not _truthy(p.get("include_cancelled")):
             # Cancelled invoices are audit records: hidden from the default
             # active list unless explicitly requested via ?status= or
-            # ?include_cancelled=1.
+            # ?include_cancelled=1. Detail/retrieve by ID still works.
             qs = qs.exclude(status=SalesStatus.CANCELLED)
         if p.get("payment_status"):
             qs = qs.filter(payment_status=p["payment_status"])

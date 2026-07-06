@@ -213,6 +213,158 @@ def test_purchase_print_preview_includes_company_identity(api, owner, company, f
     assert res.data["company"]["logo_url"]
 
 
+def test_purchase_print_preview_supplier_trn_fallback(company, owner):
+    from apps.purchases.models import PurchaseInvoice
+    from apps.suppliers.models import Supplier
+
+    supplier = Supplier.objects.create(
+        company=company, name_ar="مورد ضريبي", trn="300000000000003", phone="0509998888"
+    )
+    invoice = PurchaseInvoice.objects.create(
+        company=company,
+        supplier=supplier,
+        invoice_number="PUR-TRN-0001",
+        invoice_date=date.today(),
+        created_by=owner,
+        supplier_name_snapshot=supplier.name_ar,
+        supplier_trn_snapshot="",
+    )
+    preview = build_purchase_print_preview(invoice)
+    assert preview["party"]["trn"] == "300000000000003"
+    assert preview["party"]["phone"] == "0509998888"
+
+
+# ── Invoice design settings (template + color theme) ────────────────────────
+
+DESIGN_URL = "/api/v1/tenant/settings/print-template/"
+CATALOG_URL = "/api/v1/tenant/settings/print-template/catalog/"
+
+
+def test_invoice_design_defaults_created_lazily(api, owner):
+    api.force_authenticate(owner)
+    res = api.get(DESIGN_URL)
+    assert res.status_code == 200, res.data
+    assert res.data["invoice_template_key"] == "firstview_style"
+    assert res.data["invoice_color_theme"] == "navy_red"
+    for flag in (
+        "show_logo", "show_stamp", "show_signature", "show_company_trn",
+        "show_company_phone", "show_customer_trn", "show_supplier_trn",
+        "show_bilingual_labels",
+    ):
+        assert res.data[flag] is True
+
+
+def test_invoice_design_patch_persists(api, owner):
+    api.force_authenticate(owner)
+    res = api.patch(
+        DESIGN_URL,
+        {
+            "invoice_template_key": "modern",
+            "invoice_color_theme": "emerald",
+            "show_stamp": False,
+        },
+        format="json",
+    )
+    assert res.status_code == 200, res.data
+    assert res.data["invoice_template_key"] == "modern"
+    assert res.data["invoice_color_theme"] == "emerald"
+    assert res.data["show_stamp"] is False
+
+    # Persists across requests
+    res = api.get(DESIGN_URL)
+    assert res.data["invoice_template_key"] == "modern"
+    assert res.data["invoice_color_theme"] == "emerald"
+
+
+def test_invoice_design_rejects_unknown_keys(api, owner):
+    api.force_authenticate(owner)
+    res = api.patch(DESIGN_URL, {"invoice_template_key": "hacker_style"}, format="json")
+    assert res.status_code == 400
+    res = api.patch(DESIGN_URL, {"invoice_color_theme": "neon_pink"}, format="json")
+    assert res.status_code == 400
+
+
+def test_invoice_design_cashier_cannot_update(api, cashier):
+    api.force_authenticate(cashier)
+    res = api.patch(DESIGN_URL, {"invoice_color_theme": "teal"}, format="json")
+    assert res.status_code == 403
+
+
+def test_invoice_design_catalog(api, owner):
+    api.force_authenticate(owner)
+    res = api.get(CATALOG_URL)
+    assert res.status_code == 200, res.data
+    template_keys = {t["key"] for t in res.data["templates"]}
+    assert template_keys == {"classic", "modern", "bilingual", "firstview_style"}
+    theme_keys = {t["key"] for t in res.data["themes"]}
+    assert theme_keys == {
+        "navy_red", "royal_blue", "emerald", "charcoal_gold",
+        "teal", "crimson", "purple",
+    }
+    for theme in res.data["themes"]:
+        for token in (
+            "primary", "secondary", "accent", "headerBg", "titleBg",
+            "tableHeaderBg", "border", "text", "muted",
+        ):
+            assert theme["tokens"][token].startswith("#")
+
+
+def test_sales_print_preview_includes_branding_block(api, owner, company, fixed_product):
+    customer = Customer.objects.create(
+        company=company, name_ar="عميل", customer_type="cash"
+    )
+    invoice = SalesInvoice.objects.create(
+        company=company,
+        customer=customer,
+        invoice_number="SAL-BRAND-0001",
+        invoice_date=date.today(),
+        created_by=owner,
+        customer_name_snapshot=customer.name_ar,
+    )
+    api.force_authenticate(owner)
+    res = api.get(f"/api/v1/tenant/sales/{invoice.id}/print-preview/")
+    assert res.status_code == 200, res.data
+    branding = res.data["branding"]
+    assert branding["template_key"] == "firstview_style"
+    assert branding["color_theme"] == "navy_red"
+    assert branding["show_customer_trn"] is True
+    assert res.data["invoice"]["title_ar"] == "فاتورة ضريبية"
+
+
+def test_purchase_print_preview_includes_branding_block(api, owner, company):
+    from apps.purchases.models import PurchaseInvoice
+    from apps.suppliers.models import Supplier
+
+    # Tenant-selected design flows into purchase previews too.
+    api.force_authenticate(owner)
+    api.patch(DESIGN_URL, {"invoice_color_theme": "charcoal_gold"}, format="json")
+
+    supplier = Supplier.objects.create(company=company, name_ar="مورد")
+    invoice = PurchaseInvoice.objects.create(
+        company=company,
+        supplier=supplier,
+        invoice_number="PUR-BRAND-0001",
+        invoice_date=date.today(),
+        created_by=owner,
+        supplier_name_snapshot=supplier.name_ar,
+    )
+    res = api.get(f"/api/v1/tenant/purchases/{invoice.id}/print-preview/")
+    assert res.status_code == 200, res.data
+    assert res.data["branding"]["color_theme"] == "charcoal_gold"
+    assert res.data["branding"]["show_supplier_trn"] is True
+
+
+def test_invoice_design_tenant_isolated(api, owner, other_owner):
+    api.force_authenticate(owner)
+    api.patch(DESIGN_URL, {"invoice_color_theme": "purple"}, format="json")
+
+    api.force_authenticate(other_owner)
+    res = api.get(DESIGN_URL)
+    assert res.status_code == 200
+    # Other tenant still has its own defaults.
+    assert res.data["invoice_color_theme"] == "navy_red"
+
+
 def test_approve_refreshes_customer_snapshot(api, owner, company, fixed_product):
     from apps.inventory import services as inventory_services
     from apps.inventory.models import MovementType, StockSourceType

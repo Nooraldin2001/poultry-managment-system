@@ -29,7 +29,7 @@ import type {
   SProduct, SInvLine, SInvStatus, SInvoice,
   CurrentUser,
 } from "@/shared/types";
-import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState, NotFoundState } from "@/shared/components/ApiStates";
 import { useAuth } from "@/state/authStore";
 import { useAdminCompanies } from "@/hooks/useAdminCompanies";
 import { useTenantDashboard, dashboardDateRange } from "@/hooks/useTenantDashboard";
@@ -1521,7 +1521,7 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
   };
   const openEdit = (recordId: string) => {
     setSelectedSalesId?.(recordId);
-    onNavigate("sales-new");
+    onNavigate("sales-edit");
   };
   const openPreview = (recordId: string) => {
     setSelectedSalesId?.(recordId);
@@ -1587,11 +1587,11 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
                     <td className="px-4 py-3"><SInvStatusBadge status={inv.status} lang={lang} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
-                        {inv.status === "draft" && <button onClick={() => openEdit((inv as { recordId?: string }).recordId ?? inv.id)} className="text-xs px-2 py-1 bg-[#0F2C59] text-white rounded-lg font-bold hover:bg-[#162f5f]">{isRTL ? "تعديل" : "Edit"}</button>}
-                        {(isSalesCollectibleStatus(inv.status)) && <button onClick={() => setShowCollect(inv.id)} className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg font-bold hover:bg-emerald-600">{isRTL ? "تحصيل" : "Collect"}</button>}
-                        <button onClick={() => openDetail((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-[#0F2C59] transition-all" title={isRTL ? "عرض" : "View"}><Eye size={13} /></button>
-                        <button onClick={() => openPreview((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all" title={isRTL ? "طباعة" : "Print"}><Printer size={13} /></button>
-                        {isSalesCollectibleStatus(inv.status) && role === "owner" && <button onClick={() => setShowCancel((inv as { recordId?: string }).recordId ?? inv.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all" title={isRTL ? "إلغاء" : "Cancel"}><Ban size={13} /></button>}
+                        {inv.status === "draft" && <button onClick={() => openEdit(inv.recordId)} className="text-xs px-2 py-1 bg-[#0F2C59] text-white rounded-lg font-bold hover:bg-[#162f5f]">{isRTL ? "تعديل" : "Edit"}</button>}
+                        {(isSalesCollectibleStatus(inv.status)) && <button onClick={() => setShowCollect(inv.recordId)} className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg font-bold hover:bg-emerald-600">{isRTL ? "تحصيل" : "Collect"}</button>}
+                        <button onClick={() => openDetail(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-[#0F2C59] transition-all" title={isRTL ? "عرض" : "View"}><Eye size={13} /></button>
+                        <button onClick={() => openPreview(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all" title={isRTL ? "طباعة" : "Print"}><Printer size={13} /></button>
+                        {isSalesCollectibleStatus(inv.status) && role === "owner" && <button onClick={() => setShowCancel(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all" title={isRTL ? "إلغاء" : "Cancel"}><Ban size={13} /></button>}
                       </div>
                     </td>
                   </tr>
@@ -1617,10 +1617,10 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
                 <div className={`rounded-xl p-2 ${inv.remaining > 0 ? "bg-red-50" : "bg-slate-50"}`}><div className={`font-mono font-black text-sm ${inv.remaining > 0 ? "text-red-500" : "text-slate-300"}`}>{inv.remaining > 0 ? inv.remaining.toLocaleString() : "—"}</div><div className="text-[10px] text-slate-400 font-bold">{isRTL ? "المتبقي" : "Remaining"}</div></div>
               </div>
               <div className="flex gap-2">
-                <Btn size="sm" variant="secondary" onClick={() => openDetail((inv as { recordId?: string }).recordId ?? inv.id)}><Eye size={13} />{isRTL ? "عرض" : "View"}</Btn>
-                {inv.status === "draft" && <Btn size="sm" variant="primary" onClick={() => openEdit((inv as { recordId?: string }).recordId ?? inv.id)}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
-                {isSalesCollectibleStatus(inv.status) && <Btn size="sm" variant="green" onClick={() => setShowCollect(inv.id)}><Wallet size={13} />{isRTL ? "تحصيل" : "Collect"}</Btn>}
-                <Btn size="sm" variant="ghost" onClick={() => openPreview((inv as { recordId?: string }).recordId ?? inv.id)}><Printer size={13} /></Btn>
+                <Btn size="sm" variant="secondary" onClick={() => openDetail(inv.recordId)}><Eye size={13} />{isRTL ? "عرض" : "View"}</Btn>
+                {inv.status === "draft" && <Btn size="sm" variant="primary" onClick={() => openEdit(inv.recordId)}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
+                {isSalesCollectibleStatus(inv.status) && <Btn size="sm" variant="green" onClick={() => setShowCollect(inv.recordId)}><Wallet size={13} />{isRTL ? "تحصيل" : "Collect"}</Btn>}
+                <Btn size="sm" variant="ghost" onClick={() => openPreview(inv.recordId)}><Printer size={13} /></Btn>
               </div>
             </Card>
           ))}
@@ -1643,8 +1643,8 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
 }
 
 // ── SCREEN: NEW SALES INVOICE ─────────────────────────────────────────────────
-function SalesNewScreen({ lang, role, permissions, onNavigate, salesId, onSaved }: {
-  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; salesId?: string; onSaved?: (id: string) => void;
+function SalesNewScreen({ lang, role, permissions, onNavigate, onSaved }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; onSaved?: (id: string) => void;
 }) {
   if (!IS_MOCK_MODE) {
     return (
@@ -1653,7 +1653,7 @@ function SalesNewScreen({ lang, role, permissions, onNavigate, salesId, onSaved 
         role={role}
         permissions={permissions}
         onNavigate={onNavigate}
-        invoiceId={salesId ?? null}
+        invoiceId={null}
         onSaved={onSaved}
       />
     );
@@ -1995,19 +1995,100 @@ function SalesNewScreen({ lang, role, permissions, onNavigate, salesId, onSaved 
   );
 }
 
-// ── SCREEN: INVOICE PREVIEW / PRINT ───────────────────────────────────────────
-function SalesDetailLiveRouter({ lang, role, permissions, onNavigate, salesId, canApprove }: {
-  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; salesId: string; canApprove: boolean;
+// ── SCREEN: EDIT SALES INVOICE ────────────────────────────────────────────────
+function SalesEditScreen({ lang, role, permissions, onNavigate, salesId, onSaved }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; salesId: string; onSaved?: (id: string) => void;
+}) {
+  const canApprove = role === "owner" || role === "accountant";
+  if (!IS_MOCK_MODE) {
+    return (
+      <SalesEditLiveRouter
+        lang={lang}
+        role={role}
+        permissions={permissions}
+        onNavigate={onNavigate}
+        salesId={salesId}
+        canApprove={canApprove}
+        onSaved={onSaved}
+      />
+    );
+  }
+  return (
+    <LiveSalesInvoiceScreen
+      lang={lang}
+      role={role}
+      permissions={permissions}
+      onNavigate={onNavigate}
+      invoiceId={salesId}
+      onSaved={onSaved}
+    />
+  );
+}
+
+function salesReadOnlyDetailLoader(salesId: string) {
+  return async () => {
+    const detail = await getSalesDetail(salesId);
+    const inv = detail.invoice;
+    return {
+      id: inv.id,
+      number: inv.number,
+      status: inv.status,
+      date: inv.date,
+      partyName: inv.customer,
+      subtotal: inv.subtotal,
+      vat: inv.vat,
+      total: inv.total,
+      paid: inv.paid,
+      balance: inv.balance,
+      lines: detail.lines.map((l) => ({
+        id: l.id,
+        label: l.productName,
+        qty: l.qty,
+        unit: l.unit,
+        price: l.price,
+        total: l.total,
+      })),
+    };
+  };
+}
+
+function SalesNotFound({ lang, onNavigate }: { lang: Lang; onNavigate: (s: TenantScreen) => void }) {
+  return (
+    <div className="p-3 lg:p-6 max-w-screen-xl mx-auto">
+      <NotFoundState
+        lang={lang}
+        messageAr="فاتورة البيع غير موجودة أو لا تتبع هذه الشركة"
+        messageEn="Sales invoice was not found or does not belong to this company"
+        backLabelAr="رجوع إلى المبيعات"
+        backLabelEn="Back to Sales"
+        onBack={() => onNavigate("sales-list")}
+      />
+    </div>
+  );
+}
+
+function SalesEditLiveRouter({ lang, role, permissions, onNavigate, salesId, canApprove, onSaved }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; salesId: string; canApprove: boolean; onSaved?: (id: string) => void;
 }) {
   const [status, setStatus] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
 
   useEffect(() => {
     let cancelled = false;
     setChecking(true);
+    setNotFound(false);
+    setLoadError(null);
     void getSalesDetail(salesId)
       .then((d) => {
-        if (!cancelled) setStatus(d?.invoice.status ?? "draft");
+        if (!cancelled) setStatus(d.invoice.status);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          if (err instanceof ApiError && err.status === 404) setNotFound(true);
+          else setLoadError(err);
+        }
       })
       .finally(() => {
         if (!cancelled) setChecking(false);
@@ -2016,6 +2097,70 @@ function SalesDetailLiveRouter({ lang, role, permissions, onNavigate, salesId, c
   }, [salesId]);
 
   if (checking) return <LoadingState lang={lang} />;
+  if (notFound) return <SalesNotFound lang={lang} onNavigate={onNavigate} />;
+  if (loadError) return <ErrorState lang={lang} error={loadError} onRetry={() => window.location.reload()} />;
+  if (status === "draft") {
+    return (
+      <LiveSalesInvoiceScreen
+        lang={lang}
+        role={role}
+        permissions={permissions}
+        onNavigate={onNavigate}
+        invoiceId={salesId}
+        onSaved={onSaved}
+      />
+    );
+  }
+
+  return (
+    <LiveDocumentReadOnly
+      lang={lang}
+      onNavigate={onNavigate}
+      backScreen="sales-list"
+      titleAr="فاتورة بيع"
+      titleEn="Sales Invoice"
+      printScreen="sales-preview"
+      canApprove={false}
+      canCancel={canApprove && status !== "cancelled"}
+      loadDetail={salesReadOnlyDetailLoader(salesId)}
+      onCancel={async (reason) => { await cancelSale(salesId, reason); }}
+    />
+  );
+}
+
+// ── SCREEN: INVOICE PREVIEW / PRINT ───────────────────────────────────────────
+function SalesDetailLiveRouter({ lang, role, permissions, onNavigate, salesId, canApprove }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; salesId: string; canApprove: boolean;
+}) {
+  const [status, setStatus] = useState<string | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setChecking(true);
+    setNotFound(false);
+    setLoadError(null);
+    void getSalesDetail(salesId)
+      .then((d) => {
+        if (!cancelled) setStatus(d.invoice.status);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          if (err instanceof ApiError && err.status === 404) setNotFound(true);
+          else setLoadError(err);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false);
+      });
+    return () => { cancelled = true; };
+  }, [salesId]);
+
+  if (checking) return <LoadingState lang={lang} />;
+  if (notFound) return <SalesNotFound lang={lang} onNavigate={onNavigate} />;
+  if (loadError) return <ErrorState lang={lang} error={loadError} onRetry={() => window.location.reload()} />;
   if (status === "draft") {
     return (
       <LiveSalesInvoiceScreen
@@ -2037,32 +2182,8 @@ function SalesDetailLiveRouter({ lang, role, permissions, onNavigate, salesId, c
       titleEn="Sales Invoice"
       printScreen="sales-preview"
       canApprove={canApprove}
-      canCancel={canApprove}
-      loadDetail={async () => {
-        const detail = await getSalesDetail(salesId);
-        if (!detail) return null;
-        const inv = detail.invoice;
-        return {
-          id: inv.id,
-          number: inv.number,
-          status: inv.status,
-          date: inv.date,
-          partyName: inv.customer,
-          subtotal: inv.subtotal,
-          vat: inv.vat,
-          total: inv.total,
-          paid: inv.paid,
-          balance: inv.balance,
-          lines: detail.lines.map((l) => ({
-            id: l.id,
-            label: l.productName,
-            qty: l.qty,
-            unit: l.unit,
-            price: l.price,
-            total: l.total,
-          })),
-        };
-      }}
+      canCancel={canApprove && status !== "cancelled"}
+      loadDetail={salesReadOnlyDetailLoader(salesId)}
       onApprove={async () => { await approveSale(salesId, ""); }}
       onCancel={async (reason) => { await cancelSale(salesId, reason); }}
     />
@@ -2644,7 +2765,7 @@ import { CustomersListScreen, CreateCustomerScreen, CustomerProfileScreen, Custo
 import { SuppliersListScreen, CreateSupplierScreen, SupplierProfileScreen, SupplierStatementScreen } from "./SupplierModule";
 import { ExpensesOverviewScreen, ExpensesListScreen, RecurringExpensesScreen, ExpenseDetailScreen, ExpenseVoucherScreen, ExpensesReportScreen, AddExpenseModal } from "./ExpensesModule";
 import { ReportsHomeScreen, DailySummaryReport, SalesReportScreen, PurchaseReportScreen, InventoryReportScreen, CustomerReportScreen, SupplierReportScreen, TaxReportScreen, ProfitReportScreen, StatementsScreen, ReportBuilderScreen } from "./ReportsModule";
-import { SettingsHomeScreen, CompanyProfileScreen, UsersListScreen, CreateUserScreen, UserPermissionsScreen, RolePermissionsScreen, SensitiveActionsScreen, SettingsAuditScreen, NumberingSettingsScreen, VATSettingsScreen, PrintTemplatesScreen, TransactionSettingsScreen, PlanFeaturesScreen, SecuritySettingsScreen } from "./SettingsModule";
+import { SettingsHomeScreen, CompanyProfileScreen, UsersListScreen, CreateUserScreen, UserPermissionsScreen, RolePermissionsScreen, SensitiveActionsScreen, SettingsAuditScreen, NumberingSettingsScreen, VATSettingsScreen, PrintTemplatesScreen, InvoiceDesignScreen, TransactionSettingsScreen, PlanFeaturesScreen, SecuritySettingsScreen } from "./SettingsModule";
 import { QuotationsListScreen, NewQuotationScreen, QuotationDetailScreen, QuotationPreviewScreen, ConvertQuotationScreen, QuotationAnalyticsScreen } from "./QuotationsModule";
 import { ProductsListScreen, AddProductScreen, ProductDetailScreen, ProductCategoriesScreen, BulkProductSetupScreen, ByProductsSetupScreen, ProductImportExportScreen, ProductSettingsPanel } from "./ProductModule";
 import { PaymentsOverviewScreen, PaymentMovementsScreen, CustomerCollectionModal as PayCollectModal, SupplierPaymentModal as PaySupplierModal, CustomerRefundScreen, SupplierRefundScreen, ReceiptPreviewScreen, PaymentMethodSummaryScreen, CashBankAccountsScreen, PaymentsReportScreen } from "./PaymentsModule";
@@ -3543,6 +3664,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
   // so wrap the typed setter once here instead of casting at every call site.
   const navTenant = (s: string) => {
     if (s === "purchases-new") setSelectedPurchaseId("");
+    if (s === "sales-new") setSelectedSalesId("");
     setTScreen(s as TenantScreen);
   };
 
@@ -3577,8 +3699,16 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           )}
           {tScreen === "sales-new" && (
             <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المبيعات" messageEn="Something went wrong while loading Sales" onBack={() => navTenant("dashboard")}>
-              <SalesNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} salesId={selectedSalesId || undefined} onSaved={setSelectedSalesId} />
+              <SalesNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} onSaved={setSelectedSalesId} />
             </ModuleErrorBoundary>
+          )}
+          {tScreen === "sales-edit" && selectedSalesId && (
+            <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المبيعات" messageEn="Something went wrong while loading Sales" onBack={() => navTenant("dashboard")}>
+              <SalesEditScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} salesId={selectedSalesId} onSaved={setSelectedSalesId} />
+            </ModuleErrorBoundary>
+          )}
+          {tScreen === "sales-edit" && !selectedSalesId && (
+            <EmptyState lang={lang} messageAr="اختر فاتورة بيع من القائمة" messageEn="Select a sales invoice from the list" />
           )}
           {tScreen === "sales-preview" && (
             <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المبيعات" messageEn="Something went wrong while loading Sales" onBack={() => navTenant("dashboard")}>
@@ -3675,6 +3805,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "settings-numbering"          && <NumberingSettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "settings-vat"                && <VATSettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "settings-print-templates"    && <PrintTemplatesScreen lang={lang} role={role} onNavigate={navTenant} />}
+          {tScreen === "settings-invoice-design"     && <InvoiceDesignScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "settings-transactions"       && <TransactionSettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "settings-plan"               && <PlanFeaturesScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "settings-security"           && <SecuritySettingsScreen lang={lang} role={role} onNavigate={navTenant} />}
@@ -3715,7 +3846,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "inventory-alerts"     && <LowStockScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "inventory-movement"   && <MovementScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "inventory-valuation"  && <ValuationScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {!["dashboard","sales","sales-list","sales-new","sales-preview","sales-detail","purchases","purchases-list","purchases-new","purchases-edit","purchases-preview","purchases-detail","inventory","inventory-product","inventory-stocktaking","inventory-alerts","inventory-movement","inventory-valuation","customers","customers-create","customers-edit","customers-profile","customers-statement","suppliers","suppliers-new","suppliers-edit","supplier-profile","supplier-statement","expenses","expenses-list","expenses-recurring","expenses-report","expense-detail","expense-voucher","payments","payments-movements","payments-customer-collection","payments-supplier-payment","payments-customer-refund","payment-receipt-detail","payment-receipt-preview","payments-method-summary","payments-cash-bank","payments-report","tax","tax-sales","tax-purchases","tax-net","tax-warnings","tax-audit","tax-credit-notes","tax-non-taxable","tax-settings","tax-export-preview","accounts","qa-summary","products","products-new","products-edit","product-detail","product-categories","products-bulk-setup","products-byproducts","products-import-export","quotations","quotations-new","quotation-detail","quotation-preview","quotation-convert","quotation-analytics","reports","reports-daily","reports-sales","reports-purchases","reports-inventory","reports-customers","reports-suppliers","reports-tax","reports-profit","reports-statements","reports-builder","settings","settings-company","settings-users","settings-user-new","settings-user-permissions","settings-roles","settings-sensitive-actions","settings-audit","settings-numbering","settings-vat","settings-print-templates","settings-transactions","settings-plan","settings-security","users"].includes(tScreen) && (
+          {!["dashboard","sales","sales-list","sales-new","sales-edit","sales-preview","sales-detail","purchases","purchases-list","purchases-new","purchases-edit","purchases-preview","purchases-detail","inventory","inventory-product","inventory-stocktaking","inventory-alerts","inventory-movement","inventory-valuation","customers","customers-create","customers-edit","customers-profile","customers-statement","suppliers","suppliers-new","suppliers-edit","supplier-profile","supplier-statement","expenses","expenses-list","expenses-recurring","expenses-report","expense-detail","expense-voucher","payments","payments-movements","payments-customer-collection","payments-supplier-payment","payments-customer-refund","payment-receipt-detail","payment-receipt-preview","payments-method-summary","payments-cash-bank","payments-report","tax","tax-sales","tax-purchases","tax-net","tax-warnings","tax-audit","tax-credit-notes","tax-non-taxable","tax-settings","tax-export-preview","accounts","qa-summary","products","products-new","products-edit","product-detail","product-categories","products-bulk-setup","products-byproducts","products-import-export","quotations","quotations-new","quotation-detail","quotation-preview","quotation-convert","quotation-analytics","reports","reports-daily","reports-sales","reports-purchases","reports-inventory","reports-customers","reports-suppliers","reports-tax","reports-profit","reports-statements","reports-builder","settings","settings-company","settings-users","settings-user-new","settings-user-permissions","settings-roles","settings-sensitive-actions","settings-audit","settings-numbering","settings-vat","settings-print-templates","settings-invoice-design","settings-transactions","settings-plan","settings-security","users"].includes(tScreen) && (
             <ComingSoonPlaceholder screen={tScreen} isRTL={isRTL} onBackToDashboard={() => setTScreen("dashboard")} />
           )}
           </>

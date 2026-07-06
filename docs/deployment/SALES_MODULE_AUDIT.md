@@ -79,3 +79,71 @@ Triggered when any sales invoice has `status: "partially_paid"`.
 Tests: `tests/test_invoice_branding.py` — snapshot storage, print preview company + customer TRN, approve refresh.
 
 See [INVOICE_BRANDING_AND_TAX_IDENTITY.md](./INVOICE_BRANDING_AND_TAX_IDENTITY.md).
+
+---
+
+## Sales edit Not Found (Phase 13 — 2026-07-06)
+
+**Issue (AR):** `تعديل فاتورة بيع` → `No Sale Invoice matches the given query.`
+
+| Layer | Problem |
+| --- | --- |
+| **Routing** | Edit used `sales-new` with stale `selectedSalesId` (purchase Not Found pattern) |
+| **ID mapping** | Row actions fell back to `inv.id` = `invoice_number`, not database `id` |
+| **Load guard** | `docId` pre-set from bad `invoiceId` → 404 still rendered half-built edit form |
+| **Detail router** | Missing invoice defaulted to `draft` status |
+| **Backend** | Cancelled invoices 404 on detail because list filter applied to retrieve |
+
+## Fix
+
+| Area | Change |
+| --- | --- |
+| `App.tsx` | `sales-edit` route; `sales-new` clears ID; `SalesEditLiveRouter` + `SalesDetailLiveRouter` NotFound |
+| `LiveSalesInvoiceScreen.tsx` | `notFound` state; `docId` empty until load; `NotFoundState` |
+| `salesService.ts` | `getSalesDetail` throws on 404 |
+| `sales/views.py` | Cancelled exclusion only on `list` action |
+| List actions | Always pass `recordId` (database PK) to API |
+
+## Status-based UX
+
+| Status | Edit button | Screen |
+| --- | --- | --- |
+| `draft` | Yes → `sales-edit` | Editable `LiveSalesInvoiceScreen` |
+| `approved` / `partial` / `paid` | No | `LiveDocumentReadOnly` on detail |
+| `cancelled` | No | Read-only detail (retrieve by ID works) |
+| Missing / wrong ID | — | `NotFoundState` (not raw DRF error) |
+
+## API
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/api/v1/tenant/sales/` | List includes `id` + `invoice_number` |
+| GET | `/api/v1/tenant/sales/{id}/` | Detail by database ID; tenant-scoped 404 |
+| PATCH | `/api/v1/tenant/sales/{id}/` | Draft only |
+
+## Tests / checks
+
+- `pytest tests/test_sales.py` — **49 passed** (list/detail/404/tenant/patch rules)
+- `pnpm run typecheck` / `build` — Pass
+
+## Production verification
+
+1. First View owner → Sales → Edit draft → loads without DRF error
+2. Save draft → approve → open approved → read-only detail
+3. Invalid/stale ID in edit route → `NotFoundState` AR/EN
+4. Hard refresh on sales detail → still loads
+
+---
+
+## Invoice print templates (Phase 14 — 2026-07-06)
+
+Sales print preview (`GET /api/v1/tenant/sales/{id}/print-preview/`) now returns:
+
+- `branding` — tenant `InvoiceDesignSettings` (template key, color theme, visibility toggles)
+- `company` — logo/stamp/signature URLs, TRN, bilingual names
+- `party` / `customer` — `customer_trn_snapshot` first, fallback to live customer TRN
+- `invoice.title_ar` / `title_en` — فاتورة ضريبية / Tax Invoice
+
+Frontend: `LivePrintPreviewScreen` → `InvoiceTemplateRenderer` when `branding` present. Default template `firstview_style` matches official tax invoice layout (dark header, red title strip, dense table, stamp/signature footer).
+
+See [INVOICE_BRANDING_AND_TEMPLATES.md](./INVOICE_BRANDING_AND_TEMPLATES.md).

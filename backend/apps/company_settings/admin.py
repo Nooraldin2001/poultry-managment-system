@@ -1,6 +1,11 @@
 from django.contrib import admin
 
-from .models import NumberingSettings, PrintTemplateSettings, VATSettings
+from .models import (
+    InvoiceDesignSettings,
+    NumberingSettings,
+    PrintTemplateSettings,
+    VATSettings,
+)
 
 
 @admin.register(VATSettings)
@@ -20,4 +25,11 @@ class NumberingSettingsAdmin(admin.ModelAdmin):
 class PrintTemplateSettingsAdmin(admin.ModelAdmin):
     list_display = ["company", "template_type", "paper_size"]
     list_filter = ["template_type", "paper_size"]
+    search_fields = ["company__subdomain"]
+
+
+@admin.register(InvoiceDesignSettings)
+class InvoiceDesignSettingsAdmin(admin.ModelAdmin):
+    list_display = ["company", "invoice_template_key", "invoice_color_theme"]
+    list_filter = ["invoice_template_key", "invoice_color_theme"]
     search_fields = ["company__subdomain"]

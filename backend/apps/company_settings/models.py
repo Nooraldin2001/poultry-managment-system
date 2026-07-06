@@ -10,6 +10,12 @@ from .constants import (
     ResetRule,
     TemplateType,
 )
+from .invoice_design import (
+    DEFAULT_COLOR_THEME,
+    DEFAULT_TEMPLATE_KEY,
+    InvoiceColorTheme,
+    InvoiceTemplateKey,
+)
 
 
 class VATSettings(TimeStampedModel):
@@ -62,6 +68,43 @@ class NumberingSettings(TimeStampedModel):
 
     def __str__(self):
         return f"{self.company.subdomain} · {self.document_type}"
+
+
+class InvoiceDesignSettings(TimeStampedModel):
+    """Company-level invoice template + color theme selection (1—1 with company).
+
+    Applies to sales/purchase invoice print previews. Created lazily with
+    defaults, so existing tenants keep working without a data migration.
+    """
+
+    company = models.OneToOneField(
+        "tenants.Company", on_delete=models.CASCADE, related_name="invoice_design"
+    )
+    invoice_template_key = models.CharField(
+        max_length=32,
+        choices=InvoiceTemplateKey.choices,
+        default=DEFAULT_TEMPLATE_KEY,
+    )
+    invoice_color_theme = models.CharField(
+        max_length=32,
+        choices=InvoiceColorTheme.choices,
+        default=DEFAULT_COLOR_THEME,
+    )
+    show_logo = models.BooleanField(default=True)
+    show_stamp = models.BooleanField(default=True)
+    show_signature = models.BooleanField(default=True)
+    show_company_trn = models.BooleanField(default=True)
+    show_company_phone = models.BooleanField(default=True)
+    show_customer_trn = models.BooleanField(default=True)
+    show_supplier_trn = models.BooleanField(default=True)
+    show_bilingual_labels = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Invoice design settings"
+        verbose_name_plural = "Invoice design settings"
+
+    def __str__(self):
+        return f"Invoice design · {self.company.subdomain}"
 
 
 class PrintTemplateSettings(TimeStampedModel):

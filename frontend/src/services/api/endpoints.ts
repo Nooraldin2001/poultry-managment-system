@@ -92,6 +92,8 @@ export const ENDPOINTS = {
     settingsNumberingItem: (id: number | string) => `/tenant/settings/numbering/${id}/`,
     settingsPrintTemplates: "/tenant/settings/print-templates/",
     settingsPrintTemplate: (id: number | string) => `/tenant/settings/print-templates/${id}/`,
+    settingsInvoiceDesign: "/tenant/settings/print-template/",
+    settingsInvoiceDesignCatalog: "/tenant/settings/print-template/catalog/",
     users: "/tenant/users/",
     user: (id: number | string) => `/tenant/users/${id}/`,
     userPermissions: (id: number | string) => `/tenant/users/${id}/permissions/`,

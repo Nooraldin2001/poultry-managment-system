@@ -4,6 +4,10 @@
 @import 'tw-animate-css';
 
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
   body * {
     visibility: hidden;
   }
@@ -16,6 +20,9 @@
     left: 0;
     top: 0;
     width: 100%;
+    /* Keep themed headers/strips/table colors in print & Save PDF */
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
   .print-preview-logo,
   .print-preview-stamp,
@@ -23,5 +30,12 @@
   .print-preview-asset {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+  }
+  .print-line-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .print-line-table thead {
+    display: table-header-group;
   }
 }

@@ -8,7 +8,7 @@ export type SuperAdminScreen =
 
 /** All tenant workspace screens (sidebar targets + sub-screens + modals routed via state). */
 export type TenantScreen =
-  | "dashboard" | "sales" | "sales-list" | "sales-new" | "sales-preview" | "sales-detail"
+  | "dashboard" | "sales" | "sales-list" | "sales-new" | "sales-edit" | "sales-preview" | "sales-detail"
   | "purchases" | "purchases-list" | "purchases-new" | "purchases-edit" | "purchases-preview" | "purchases-detail"
   | "quotations" | "inventory" | "inventory-product" | "inventory-stocktaking" | "inventory-alerts" | "inventory-movement" | "inventory-valuation"
   | "customers" | "customers-create" | "customers-edit" | "customers-profile" | "customers-statement"
@@ -20,7 +20,7 @@ export type TenantScreen =
   | "quotations-new" | "quotation-detail" | "quotation-preview" | "quotation-convert" | "quotation-analytics"
   | "settings" | "settings-company" | "settings-users" | "settings-user-new" | "settings-user-permissions"
   | "settings-roles" | "settings-sensitive-actions" | "settings-audit" | "settings-numbering"
-  | "settings-vat" | "settings-print-templates" | "settings-transactions" | "settings-plan" | "settings-security"
+  | "settings-vat" | "settings-print-templates" | "settings-invoice-design" | "settings-transactions" | "settings-plan" | "settings-security"
   | "reports" | "reports-daily" | "reports-sales" | "reports-purchases" | "reports-inventory"
   | "reports-customers" | "reports-suppliers" | "reports-tax" | "reports-profit" | "reports-statements" | "reports-builder";
 

@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Lang } from "@/shared/types";
 import type { TenantScreen } from "@/shared/types/navigation";
 import { LoadingState, ErrorState, EmptyState } from "@/shared/components/ApiStates";
 import { PrintPreviewLayout, type PrintLineRow } from "./PrintPreviewLayout";
+import { InvoiceTemplateRenderer } from "./InvoiceTemplateRenderer";
+import { resolveTheme } from "./theme";
+import { parseBranding, parseCompanyIdentity, parsePartyIdentity } from "./types";
 
 function mapPrintLines(data: Record<string, unknown>): PrintLineRow[] {
   const raw = (data.lines ?? data.items ?? data.line_items ?? []) as Record<string, unknown>[];
@@ -109,6 +112,40 @@ export function LivePrintPreviewScreen({ lang, onNavigate, backScreen, titleAr, 
   ].filter(Boolean) as { label: string; value: string }[];
 
   const partyKind = data.supplier || (party as { type?: string }).type === "supplier" ? "supplier" : "customer";
+
+  // Invoice previews (sales/purchase) carry a `branding` block — render them
+  // with the tenant-selected template + color theme. Other documents
+  // (receipts, vouchers, statements) keep the shared layout below.
+  if (data.branding && typeof data.branding === "object") {
+    const branding = parseBranding(data.branding);
+    const supplierInvNo = String((party as { supplier_invoice_number?: unknown }).supplier_invoice_number ?? "").trim();
+    const templateMeta = [...meta];
+    if (supplierInvNo) {
+      templateMeta.push({
+        label: lang === "ar" ? "رقم فاتورة المورد" : "Supplier Inv #",
+        value: supplierInvNo,
+      });
+    }
+    return (
+      <InvoiceTemplateRenderer
+        onBack={() => onNavigate(backScreen)}
+        data={{
+          lang,
+          titleAr: resolvedTitleAr,
+          titleEn: resolvedTitleEn,
+          company: parseCompanyIdentity(company),
+          party: parsePartyIdentity(party),
+          partyKind: partyKind as "customer" | "supplier",
+          meta: templateMeta,
+          lines,
+          totals,
+          notes: data.notes ? String(data.notes) : undefined,
+          branding,
+          theme: resolveTheme(branding.color_theme),
+        }}
+      />
+    );
+  }
 
   return (
     <PrintPreviewLayout

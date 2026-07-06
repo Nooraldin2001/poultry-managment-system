@@ -134,3 +134,12 @@ See [INVOICE_BRANDING_AND_TAX_IDENTITY.md](./INVOICE_BRANDING_AND_TAX_IDENTITY.m
 
 See [PRICING_OVERRIDE_AND_HISTORY.md](./PRICING_OVERRIDE_AND_HISTORY.md).
 
+---
+
+## Invoice print templates (Phase 14 — 2026-07-06)
+
+Purchase print preview (`GET /api/v1/tenant/purchases/{id}/print-preview/`) includes `branding` block and supplier TRN with snapshot-first + live fallback. Supplier invoice number shown in party meta when present.
+
+Frontend uses same template registry as sales (`InvoiceTemplateRenderer`).
+
+See [INVOICE_BRANDING_AND_TEMPLATES.md](./INVOICE_BRANDING_AND_TEMPLATES.md).

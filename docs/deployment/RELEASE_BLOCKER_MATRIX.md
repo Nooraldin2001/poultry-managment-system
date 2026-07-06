@@ -18,6 +18,7 @@
 | Product list edit (code) | **Fixed** | No | `products-edit` route + ID | Deploy + smoke |
 | Supplier edit (code) | **Fixed** | No | `suppliers-edit` + PATCH | Deploy + smoke |
 | Sales white screen (code) | **Fixed** | No | `partially_paid` status crash + error boundary | Deploy + smoke |
+| Sales edit Not Found (code) | **Fixed** | No | `sales-edit` route + DB id + NotFoundState | Deploy + smoke |
 | Reports demo KPIs (code) | **Fixed** | No | Reports home wired to dashboard API | Deploy + smoke |
 | Customer opening balance (code) | **Fixed** | No | Profile modal + opening-balance POST | Deploy + smoke |
 | Customer create (verified) | **Pending** | **Yes** | No owner login in agent session | Manual POST 201 smoke |
@@ -29,6 +30,7 @@
 | Inventory UI field mapping (code) | **Fixed** | No | `available_*` API fields mapped correctly | Deploy + smoke |
 | Poultry cuts on purchase (code) | **Fixed** | No | `chicken_part` KG-primary lines; no cartons required | Deploy + smoke |
 | Invoice branding & tax identity (code) | **Fixed** | No | Company assets + customer TRN on print preview | Deploy + smoke |
+| Invoice template & color themes (code) | **Fixed** | No | `InvoiceDesignSettings` + 4 templates + 7 themes + Settings UI | Deploy + smoke |
 | Super Admin company edit (code) | **Fixed** | No | `AdminCompanyEditScreen` + PATCH company profile | Deploy + smoke |
 | Repair command for approved purchases | **Fixed** | No | `repair_purchase_inventory_side_effects` dry-run/confirm | Deploy + run on firstview |
 | Payment Methods Summary (code) | **Fixed** | No | Live API wired; mock only in dev | Deploy + smoke |

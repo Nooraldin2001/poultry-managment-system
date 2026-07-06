@@ -35,9 +35,13 @@ Company logo, stamp, authorized signature, and TRN are stored on the **`Company`
 
 Send empty string for an image field to remove it.
 
-## Print preview integration
+## Invoice design settings (Phase 14)
 
-Print-preview JSON includes company identity via `apps.tenants.print_identity.build_company_print_identity` and absolute asset URLs when served through DRF request context.
+`InvoiceDesignSettings` (1—1 with Company) controls **which template and color theme** appear on sales/purchase invoice print previews. Asset files remain on `Company`; design settings only control visibility toggles (`show_logo`, `show_stamp`, etc.).
+
+Tenant UI: **Settings → تصميم الفواتير / Invoice Design** (`settings-invoice-design`).
+
+See [INVOICE_BRANDING_AND_TEMPLATES.md](./INVOICE_BRANDING_AND_TEMPLATES.md).
 
 See also: [INVOICE_BRANDING_AND_TAX_IDENTITY.md](./INVOICE_BRANDING_AND_TAX_IDENTITY.md)
 

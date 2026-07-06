@@ -2,6 +2,7 @@ import { IS_MOCK_MODE } from "@/services/config";
 import { createCrudService } from "@/services/crud/createCrudService";
 import { parseAmount } from "@/services/crud/parse";
 import type { ApiListFilters } from "@/services/crud/types";
+import { ApiError } from "./api/errors";
 import { request } from "./api/client";
 import { ENDPOINTS } from "./api/endpoints";
 import type { SalesInvoiceLineRow, SalesInvoiceRow } from "@/shared/types/entities";
@@ -125,17 +126,15 @@ export async function getSalesRow(id: string): Promise<SalesInvoiceRow | null> {
   }
 }
 
-export async function getSalesDetail(id: string): Promise<{ invoice: SalesInvoiceRow; lines: SalesInvoiceLineRow[] } | null> {
-  if (IS_MOCK_MODE) return null;
-  try {
-    const row = (await crud.retrieve(id)) as ApiSalesDetail;
-    return {
-      invoice: mapApiSalesToRow(row),
-      lines: (row.lines ?? []).map(mapSalesLine),
-    };
-  } catch {
-    return null;
+export async function getSalesDetail(id: string): Promise<{ invoice: SalesInvoiceRow; lines: SalesInvoiceLineRow[] }> {
+  if (IS_MOCK_MODE) {
+    throw new ApiError("Not found", { status: 404 });
   }
+  const row = (await crud.retrieve(id)) as ApiSalesDetail;
+  return {
+    invoice: mapApiSalesToRow(row),
+    lines: (row.lines ?? []).map(mapSalesLine),
+  };
 }
 
 export async function createSale(payload: Record<string, unknown>): Promise<SalesInvoiceRow> {

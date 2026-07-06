@@ -7,7 +7,7 @@ import type { TenantScreen } from "@/shared/types";
 import { IS_MOCK_MODE } from "@/services/config";
 import { useCustomers, useProducts } from "@/hooks/api/useTenantResources";
 import { getSalesDetail, salesPricePreview, salesStockCheck, approveSale, cancelSale } from "@/services/salesService";
-import { LoadingState, ErrorState, EmptyState, PermissionDeniedState } from "@/shared/components/ApiStates";
+import { LoadingState, ErrorState, EmptyState, PermissionDeniedState, NotFoundState } from "@/shared/components/ApiStates";
 import { FormErrors } from "@/shared/components/FormErrors";
 import { ApiError } from "@/services/api/errors";
 import type { InvoiceLineDraft } from "./types";
@@ -55,7 +55,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
   const isRTL = lang === "ar";
   const canApprove = role === "owner" || role === "accountant";
   const canEditPrice = canOverrideSalesPrice(role, permissions);
-  const [docId, setDocId] = useState(invoiceId ?? "");
+  const [docId, setDocId] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [lines, setLines] = useState<InvoiceLineDraft[]>([]);
   const [status, setStatus] = useState("draft");
@@ -72,25 +72,39 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
   const [showApprove, setShowApprove] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
   const [needsCreditOverride, setNeedsCreditOverride] = useState(false);
+  const [notFound, setNotFound] = useState(false);
 
   const { items: customers, loading: loadingCustomers } = useCustomers();
   const { items: products, loading: loadingProducts } = useProducts();
 
+  const resetDraft = useCallback(() => {
+    setDocId("");
+    setCustomerId("");
+    setLines([]);
+    setStatus("draft");
+    setInvoiceNumber("");
+    setPaymentMethod("cash");
+    setAmountPaid("0");
+    setNotes("");
+    setVatEnabled(true);
+    setError(null);
+    setFieldErrors({});
+    setNotFound(false);
+  }, []);
+
   const loadDoc = useCallback(async () => {
     if (!invoiceId || IS_MOCK_MODE) return;
     setLoadingDoc(true);
+    setNotFound(false);
     setError(null);
     try {
       const detail = await getSalesDetail(invoiceId);
-      if (!detail) {
-        setError(new ApiError("Not found", { status: 404 }));
-        return;
-      }
       setDocId(detail.invoice.id);
       setCustomerId(detail.invoice.customerId);
       setInvoiceNumber(detail.invoice.number);
       setStatus(detail.invoice.status);
       setAmountPaid(String(detail.invoice.paid));
+      setVatEnabled(detail.invoice.vat > 0);
       setLines(
         detail.lines.map((l) => ({
           id: l.id,
@@ -108,15 +122,25 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
         })),
       );
     } catch (err) {
-      setError(err);
+      if (err instanceof ApiError && err.status === 404) {
+        setNotFound(true);
+        resetDraft();
+      } else {
+        setError(err);
+      }
     } finally {
       setLoadingDoc(false);
     }
-  }, [invoiceId]);
+  }, [invoiceId, resetDraft]);
 
   useEffect(() => {
+    if (!invoiceId) {
+      resetDraft();
+      setLoadingDoc(false);
+      return;
+    }
     void loadDoc();
-  }, [loadDoc]);
+  }, [invoiceId, loadDoc, resetDraft]);
 
   const totals = useMemo(() => {
     const subtotal = lines.reduce((s, l) => s + l.lineSubtotal, 0);
@@ -334,6 +358,20 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
 
   if (!IS_MOCK_MODE && ApiError.isForbidden(error)) return <PermissionDeniedState lang={lang} />;
   if (loadingDoc || loadingCustomers || loadingProducts) return <LoadingState lang={lang} />;
+  if (notFound) {
+    return (
+      <div className="p-3 lg:p-6 max-w-screen-xl mx-auto">
+        <NotFoundState
+          lang={lang}
+          messageAr="فاتورة البيع غير موجودة أو لا تتبع هذه الشركة"
+          messageEn="Sales invoice was not found or does not belong to this company"
+          backLabelAr="رجوع إلى المبيعات"
+          backLabelEn="Back to Sales"
+          onBack={() => onNavigate("sales-list")}
+        />
+      </div>
+    );
+  }
   if (error && !docId && invoiceId) return <ErrorState lang={lang} error={error} onRetry={() => void loadDoc()} />;
 
   const isDraft = status === "draft";

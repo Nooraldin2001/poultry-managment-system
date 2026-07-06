@@ -829,3 +829,68 @@ See [INVOICE_BRANDING_AND_TAX_IDENTITY.md](./INVOICE_BRANDING_AND_TAX_IDENTITY.m
 
 **Launch stance (Phase 12):** **NO-GO** until deploy + First View invoice branding smoke passes.
 
+---
+
+## Phase 13 — Sales edit Not Found (2026-07-06)
+
+**Client report (AR):** `تعديل فاتورة بيع` shows `No Sale Invoice matches the given query.` — edit form partially renders without invoice data.
+
+| Root cause | Detail |
+|---|---|
+| Wrong route | Edit navigated to `sales-new` with stale/wrong `selectedSalesId` (same pattern as purchase Not Found) |
+| Wrong ID fallback | List row actions used `recordId ?? inv.id` — `inv.id` is **invoice_number** (e.g. `SAL-2026-00002`), not database PK |
+| Pre-filled `docId` | `LiveSalesInvoiceScreen` initialized `docId` from `invoiceId` before load — 404 guard `!docId` failed, form rendered with raw DRF error in `FormErrors` |
+| Missing invoice default | `SalesDetailLiveRouter` treated `getSalesDetail` failure as `status ?? "draft"` → opened empty edit form |
+| Backend (cancelled detail) | `get_queryset` excluded cancelled invoices on **retrieve** — detail 404 for cancelled IDs |
+
+| Fix | Files |
+|---|---|
+| Split routes | `sales-new` = new only (clears `selectedSalesId`); `sales-edit` = draft edit |
+| Database ID only | List view/edit/collect/cancel/print pass `recordId` (API `id`) |
+| NotFoundState | `LiveSalesInvoiceScreen`, `SalesDetailLiveRouter`, `SalesEditLiveRouter` — AR/EN + Back to Sales |
+| Status routing | Draft → editable builder; approved/partial/paid/cancelled → `LiveDocumentReadOnly` |
+| `getSalesDetail` | Throws `ApiError` 404 (no silent null) |
+| Backend queryset | Cancelled filter applies to **list** only; retrieve by ID works |
+
+| API tested | Result |
+|---|---|
+| `GET /api/v1/tenant/sales/` | Returns `id` + `invoice_number` per row |
+| `GET /api/v1/tenant/sales/{id}/` | 200 draft/approved/cancelled; 404 invalid/other tenant |
+| `PATCH /api/v1/tenant/sales/{id}/` | 200 draft; rejected when approved |
+
+| Check | Result |
+|---|---|
+| `pytest tests/test_sales.py` | **49 passed** |
+| `python manage.py check` | **Pass** |
+| `pnpm run typecheck` / `build` | **Pass** |
+| Production smoke (First View) | **Pending** — deploy + owner edit draft / view approved / invalid ID NotFoundState |
+
+See [SALES_MODULE_AUDIT.md](./SALES_MODULE_AUDIT.md).
+
+**Launch stance (Phase 13):** **NO-GO** until deploy + First View sales edit/detail smoke passes.
+
+---
+
+## Phase 14 — Invoice template & color theme system
+
+| Area | Status |
+|---|---|
+| `InvoiceDesignSettings` model + migration | **Done** |
+| API `GET/PATCH /tenant/settings/print-template/` | **Done** |
+| API `GET /tenant/settings/print-template/catalog/` | **Done** |
+| Sales/purchase print preview `branding` block | **Done** |
+| Frontend template registry (4 templates, 7 themes) | **Done** |
+| Settings → Invoice Design screen | **Done** |
+| `firstview_style` template (official tax invoice layout) | **Done** |
+| A4 print CSS + row break avoidance | **Done** |
+
+| Check | Result |
+|---|---|
+| `pytest` (188 tests, branding/settings/sales/purchases) | **Pass** |
+| `pnpm typecheck` / `build` | **Pass** |
+| Production smoke (First View invoice design + print) | **Pending** |
+
+See [INVOICE_BRANDING_AND_TEMPLATES.md](./INVOICE_BRANDING_AND_TEMPLATES.md).
+
+**Launch stance (Phase 14):** **NO-GO** until deploy + First View invoice design + print preview smoke passes.
+

@@ -821,21 +821,27 @@ def get_customer_sales_history(company, customer):
 
 # ── Print preview ───────────────────────────────────────────────────────────
 def build_print_preview(invoice, request=None) -> dict:
+    from apps.company_settings.services import build_invoice_branding
+
     company = invoice.company
     lines = list(invoice.lines.all().order_by("sort_order", "id"))
     customer_party = build_sales_customer_party(invoice)
     return {
         "title_en": "TAX INVOICE",
         "title_ar": "فاتورة ضريبية",
+        "branding": build_invoice_branding(company),
         "company": build_company_print_identity(company, request),
         "customer": customer_party,
         "party": customer_party,
         "invoice": {
             "number": invoice.invoice_number,
+            "invoice_number": invoice.invoice_number,
             "date": str(invoice.invoice_date),
             "due_date": str(invoice.due_date) if invoice.due_date else None,
             "status": invoice.status,
             "notes": invoice.notes,
+            "title_ar": "فاتورة ضريبية",
+            "title_en": "Tax Invoice",
         },
         "lines": [
             {

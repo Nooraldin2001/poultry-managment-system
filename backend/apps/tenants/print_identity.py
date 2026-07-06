@@ -45,6 +45,8 @@ def build_sales_customer_party(invoice) -> dict:
 
     return {
         "name": name,
+        "name_ar": name,
+        "name_en": name,
         "trn": trn,
         "phone": phone,
         "address": address,

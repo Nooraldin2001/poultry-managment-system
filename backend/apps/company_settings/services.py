@@ -13,7 +13,30 @@ from .constants import (
     ResetRule,
     default_numbering_reset_rule,
 )
-from .models import NumberingSettings
+from .models import InvoiceDesignSettings, NumberingSettings
+
+
+def get_invoice_design(company) -> InvoiceDesignSettings:
+    """Return the company invoice design settings, creating defaults lazily."""
+    obj, _ = InvoiceDesignSettings.objects.get_or_create(company=company)
+    return obj
+
+
+def build_invoice_branding(company) -> dict:
+    """`branding` block for invoice print-preview JSON payloads."""
+    design = get_invoice_design(company)
+    return {
+        "template_key": design.invoice_template_key,
+        "color_theme": design.invoice_color_theme,
+        "show_logo": design.show_logo,
+        "show_stamp": design.show_stamp,
+        "show_signature": design.show_signature,
+        "show_company_trn": design.show_company_trn,
+        "show_company_phone": design.show_company_phone,
+        "show_customer_trn": design.show_customer_trn,
+        "show_supplier_trn": design.show_supplier_trn,
+        "show_bilingual_labels": design.show_bilingual_labels,
+    }
 
 
 def _format_number(prefix: str, year: int, seq: int, length: int, reset_rule: str) -> str:

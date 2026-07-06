@@ -121,3 +121,54 @@ export async function updatePrintTemplateSettings(
     body: payload,
   });
 }
+
+// ── Invoice design (company-level template + color theme) ───────────────────
+
+export interface InvoiceDesignSettings {
+  id: number;
+  invoice_template_key: string;
+  invoice_color_theme: string;
+  show_logo: boolean;
+  show_stamp: boolean;
+  show_signature: boolean;
+  show_company_trn: boolean;
+  show_company_phone: boolean;
+  show_customer_trn: boolean;
+  show_supplier_trn: boolean;
+  show_bilingual_labels: boolean;
+}
+
+export interface InvoiceDesignCatalog {
+  templates: {
+    key: string;
+    name_ar: string;
+    name_en: string;
+    description_ar: string;
+    description_en: string;
+  }[];
+  themes: {
+    key: string;
+    name_ar: string;
+    name_en: string;
+    tokens: Record<string, string>;
+  }[];
+}
+
+export async function getInvoiceDesign(): Promise<InvoiceDesignSettings> {
+  if (IS_MOCK_MODE) throw new Error("Mock mode");
+  return request<InvoiceDesignSettings>(ENDPOINTS.tenant.settingsInvoiceDesign);
+}
+
+export async function updateInvoiceDesign(
+  payload: Partial<InvoiceDesignSettings>,
+): Promise<InvoiceDesignSettings> {
+  return request<InvoiceDesignSettings>(ENDPOINTS.tenant.settingsInvoiceDesign, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function getInvoiceDesignCatalog(): Promise<InvoiceDesignCatalog> {
+  if (IS_MOCK_MODE) return { templates: [], themes: [] };
+  return request<InvoiceDesignCatalog>(ENDPOINTS.tenant.settingsInvoiceDesignCatalog);
+}

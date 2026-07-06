@@ -899,28 +899,40 @@ def get_purchase_price_history(*, company, supplier, product, limit=10):
 
 def build_purchase_print_preview(invoice, request=None) -> dict:
     """JSON payload for tenant purchase print preview (browser print / save as PDF)."""
+    from apps.company_settings.services import build_invoice_branding
+
     company = invoice.company
     lines = list(invoice.lines.all().order_by("sort_order", "id"))
+    supplier = getattr(invoice, "supplier", None)
+    supplier_trn = (invoice.supplier_trn_snapshot or "").strip()
+    if not supplier_trn and supplier is not None:
+        supplier_trn = (supplier.trn or "").strip()
     supplier_party = {
         "name": invoice.supplier_name_snapshot,
         "name_ar": invoice.supplier_name_snapshot,
-        "trn": invoice.supplier_trn_snapshot or "",
-        "phone": "",
-        "address": "",
+        "name_en": invoice.supplier_name_snapshot,
+        "trn": supplier_trn,
+        "phone": (supplier.phone or "").strip() if supplier is not None else "",
+        "address": (supplier.address or "").strip() if supplier is not None else "",
         "supplier_invoice_number": invoice.supplier_invoice_number,
     }
     return {
         "title_en": "PURCHASE INVOICE",
         "title_ar": "فاتورة شراء",
+        "branding": build_invoice_branding(company),
         "company": build_company_print_identity(company, request),
         "supplier": supplier_party,
         "party": supplier_party,
         "invoice": {
             "number": invoice.invoice_number,
+            "invoice_number": invoice.invoice_number,
+            "supplier_invoice_number": invoice.supplier_invoice_number,
             "date": str(invoice.invoice_date),
             "due_date": str(invoice.due_date) if invoice.due_date else None,
             "status": invoice.status,
             "notes": invoice.notes,
+            "title_ar": "فاتورة شراء",
+            "title_en": "Purchase Invoice",
         },
         "lines": [
             {

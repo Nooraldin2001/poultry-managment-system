@@ -15,7 +15,12 @@ import { IS_MOCK_MODE } from "@/services/config";
 import {
   getTenantSettings, updateCompanySettings, updateCompanyAsset, getVatSettings, updateVatSettings,
   listNumberingSettings, updateNumberingSettings, listPrintTemplateSettings, updatePrintTemplateSettings,
+  getInvoiceDesign, updateInvoiceDesign, getInvoiceDesignCatalog,
 } from "@/services/settingsService";
+import type { InvoiceDesignSettings, InvoiceDesignCatalog } from "@/services/settingsService";
+import { resolveTemplate, TEMPLATE_LABELS, DEFAULT_TEMPLATE_KEY } from "@/features/print/templateRegistry";
+import { resolveTheme, COLOR_THEMES, THEME_LABELS, DEFAULT_COLOR_THEME } from "@/features/print/theme";
+import { parseBranding, parseCompanyIdentity } from "@/features/print/types";
 import { CompanyAssetUploadField } from "@/features/company/CompanyAssetUploadField";
 import { listTenantUsers, suspendTenantUser, reactivateTenantUser, createTenantUser } from "@/services/userService";
 import { LoadingState, ErrorState, PermissionDeniedState, ApiUnavailableState, EmptyState } from "@/shared/components/ApiStates";
@@ -32,6 +37,7 @@ type TenantScreen =
   | "settings" | "settings-company" | "settings-users" | "settings-user-new"
   | "settings-user-permissions" | "settings-roles" | "settings-sensitive-actions"
   | "settings-audit" | "settings-numbering" | "settings-vat" | "settings-print-templates"
+  | "settings-invoice-design"
   | "settings-transactions" | "settings-plan" | "settings-security" | string;
 type UserRole = "owner" | "accountant" | "cashier";
 type RiskLevel = "high" | "medium" | "low";
@@ -274,6 +280,7 @@ export function SettingsHomeScreen({ lang, role, onNavigate, permissions = [] }:
     { icon: Tag,        ar: "ترقيم المستندات",          en: "Document Numbering",    desc_ar: "رقم الفاتورة، إيصال التحصيل، سند المصروف",       nav: "settings-numbering"        as TenantScreen, warn: false },
     { icon: Shield,     ar: "الضريبة VAT",              en: "VAT Settings",          desc_ar: "ضريبة القيمة المضافة، معدل الضريبة، TRN الشركة", nav: "settings-vat"              as TenantScreen, warn: true  },
     { icon: Printer,    ar: "قوالب الطباعة",            en: "Print Templates",       desc_ar: "قوالب الفواتير، الإيصالات، كشوف الحسابات",       nav: "settings-print-templates"  as TenantScreen, warn: false },
+    { icon: FileText,   ar: "تصميم الفواتير",           en: "Invoice Design",        desc_ar: "قالب الفاتورة، الألوان، الشعار، الختم، التوقيع",  nav: "settings-invoice-design"   as TenantScreen, warn: false },
     { icon: FileText,   ar: "إعدادات الفواتير",         en: "Invoice & Transaction", desc_ar: "قواعد المبيعات، المشتريات، المخزون، العملاء",     nav: "settings-transactions"     as TenantScreen, warn: false },
     { icon: BarChart2,  ar: "إعدادات التقارير",         en: "Reports Settings",      desc_ar: "صلاحيات التقارير، التصدير، تقرير الأرباح",        nav: "reports"                   as TenantScreen, warn: false },
     { icon: AlertTriangle,ar: "الإجراءات الحساسة",      en: "Sensitive Actions",     desc_ar: "قواعد الإجراءات التي تتطلب سبباً وتسجيلاً",      nav: "settings-sensitive-actions"as TenantScreen, warn: false },
@@ -1491,6 +1498,239 @@ export function SecuritySettingsScreen({ lang, role, onNavigate }: { lang: Lang;
           </div>
         ))}
       </Card>
+    </div>
+  );
+}
+
+// ── SCREEN: INVOICE DESIGN (template + color theme) ────────────────────────────
+const DESIGN_PREVIEW_LINES = [
+  { label: "1100 GRAM / 1100 جرام", qty: "22", unit: "kg", price: "14.75", total: "324.50" },
+  { label: "1200 GRAM / 1200 جرام", qty: "24", unit: "kg", price: "14.75", total: "354.00" },
+];
+const DESIGN_PREVIEW_TOTALS = [
+  { label: "Subtotal", value: "AED 678.50" },
+  { label: "VAT 5%", value: "AED 33.93" },
+  { label: "Total", value: "AED 712.43" },
+];
+
+export function InvoiceDesignScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+  const isRTL = lang === "ar";
+  const canManage = role === "owner" || role === "accountant";
+  const [settings, setSettings] = useState<InvoiceDesignSettings | null>(null);
+  const [catalog, setCatalog] = useState<InvoiceDesignCatalog>({ templates: [], themes: [] });
+  const [identity, setIdentity] = useState<{ trn?: string; logo_url?: string | null; stamp_url?: string | null; signature_url?: string | null; name_ar?: string; name_en?: string; phone?: string; email?: string; address?: string }>({});
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [showPreview, setShowPreview] = useState(true);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    setLoading(true);
+    Promise.all([
+      getInvoiceDesign(),
+      getInvoiceDesignCatalog().catch(() => ({ templates: [], themes: [] }) as InvoiceDesignCatalog),
+      getTenantSettings().catch(() => ({})),
+    ])
+      .then(([design, cat, ident]) => {
+        setSettings(design);
+        setCatalog(cat);
+        setIdentity(ident as typeof identity);
+      })
+      .catch((e) => setError(e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const patch = (field: keyof InvoiceDesignSettings, value: string | boolean) => {
+    setSettings((prev) => (prev ? { ...prev, [field]: value } : prev));
+  };
+
+  const save = async () => {
+    if (!settings || IS_MOCK_MODE) return;
+    setSaving(true);
+    try {
+      const saved = await updateInvoiceDesign({
+        invoice_template_key: settings.invoice_template_key,
+        invoice_color_theme: settings.invoice_color_theme,
+        show_logo: settings.show_logo,
+        show_stamp: settings.show_stamp,
+        show_signature: settings.show_signature,
+        show_company_trn: settings.show_company_trn,
+        show_company_phone: settings.show_company_phone,
+        show_customer_trn: settings.show_customer_trn,
+        show_supplier_trn: settings.show_supplier_trn,
+        show_bilingual_labels: settings.show_bilingual_labels,
+      });
+      setSettings(saved);
+      toast.success(isRTL ? "تم حفظ تصميم الفواتير" : "Invoice design saved");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : (isRTL ? "فشل الحفظ" : "Save failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!IS_MOCK_MODE && !canManage) return <PermissionDeniedState lang={lang} />;
+  if (loading) return <LoadingState lang={lang} />;
+  if (!IS_MOCK_MODE && (error || !settings)) {
+    return <ErrorState lang={lang} error={error} onRetry={() => window.location.reload()} />;
+  }
+
+  const current = settings ?? {
+    id: 0,
+    invoice_template_key: DEFAULT_TEMPLATE_KEY,
+    invoice_color_theme: DEFAULT_COLOR_THEME,
+    show_logo: true, show_stamp: true, show_signature: true,
+    show_company_trn: true, show_company_phone: true,
+    show_customer_trn: true, show_supplier_trn: true, show_bilingual_labels: true,
+  };
+
+  const templateKeys = catalog.templates.length > 0
+    ? catalog.templates.map((t) => t.key)
+    : Object.keys(TEMPLATE_LABELS);
+  const themeKeys = catalog.themes.length > 0
+    ? catalog.themes.map((t) => t.key)
+    : Object.keys(COLOR_THEMES);
+
+  const assetWarnings = [
+    !identity.logo_url && (isRTL ? "لا يوجد شعار للشركة — لن يظهر الشعار على الفاتورة" : "No company logo — logo will not appear on invoices"),
+    !identity.stamp_url && (isRTL ? "لا يوجد ختم — لن يظهر الختم على الفاتورة" : "No stamp uploaded — stamp will not appear on invoices"),
+    !identity.signature_url && (isRTL ? "لا يوجد توقيع — لن يظهر التوقيع على الفاتورة" : "No signature uploaded — signature will not appear on invoices"),
+    !identity.trn?.trim() && (isRTL ? "لم يتم إدخال الرقم الضريبي TRN للشركة" : "Company TRN is missing"),
+  ].filter(Boolean) as string[];
+
+  const Template = resolveTemplate(current.invoice_template_key);
+  const previewTheme = resolveTheme(current.invoice_color_theme);
+  const previewCompany = parseCompanyIdentity(identity);
+
+  return (
+    <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
+      <SettingsHeader title="تصميم الفواتير" titleEn="Invoice Design" onBack={() => onNavigate("settings")} lang={lang}>
+        <Btn variant="outline" onClick={() => setShowPreview((v) => !v)}><Eye size={15} />{isRTL ? "معاينة" : "Preview"}</Btn>
+        <Btn variant="primary" disabled={saving} onClick={() => void save()}><Check size={15} />{isRTL ? "حفظ" : "Save"}</Btn>
+      </SettingsHeader>
+
+      {assetWarnings.length > 0 && (
+        <Card className="p-4 border-amber-200 bg-amber-50/60">
+          <div className="flex gap-2">
+            <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              {assetWarnings.map((w) => (
+                <p key={w} className="text-xs font-bold text-amber-700">{w}</p>
+              ))}
+              <button type="button" onClick={() => onNavigate("settings-company")} className="text-xs font-black text-[#0F2C59] hover:underline">
+                {isRTL ? "→ استكمال بيانات الشركة" : "→ Complete company profile"}
+              </button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <div className="grid lg:grid-cols-2 gap-5 items-start">
+        <div className="space-y-5">
+          {/* Template selector */}
+          <Card className="p-5">
+            <h3 className="font-black text-[#0F2C59] mb-3 text-sm">{isRTL ? "قالب الفاتورة" : "Invoice Template"}</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {templateKeys.map((key) => {
+                const cat = catalog.templates.find((t) => t.key === key);
+                const [ar, en] = TEMPLATE_LABELS[key] ?? [key, key];
+                const active = current.invoice_template_key === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => patch("invoice_template_key", key)}
+                    className={`rounded-xl border-2 p-3 text-start transition-all ${active ? "border-[#0F2C59] bg-[#0F2C59]/5" : "border-slate-200 hover:border-slate-300"}`}
+                  >
+                    <div className="font-black text-sm text-slate-800">{isRTL ? (cat?.name_ar ?? ar) : (cat?.name_en ?? en)}</div>
+                    <div className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                      {isRTL ? (cat?.description_ar ?? "") : (cat?.description_en ?? "")}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* Theme swatches */}
+          <Card className="p-5">
+            <h3 className="font-black text-[#0F2C59] mb-3 text-sm">{isRTL ? "ألوان الفاتورة" : "Color Theme"}</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {themeKeys.map((key) => {
+                const tokens = resolveTheme(key);
+                const [ar, en] = THEME_LABELS[key] ?? [key, key];
+                const active = current.invoice_color_theme === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => patch("invoice_color_theme", key)}
+                    className={`rounded-xl border-2 p-3 transition-all ${active ? "border-[#0F2C59] bg-[#0F2C59]/5" : "border-slate-200 hover:border-slate-300"}`}
+                  >
+                    <div className="flex gap-1 mb-2">
+                      <span className="w-6 h-6 rounded-md" style={{ background: tokens.headerBg }} />
+                      <span className="w-6 h-6 rounded-md" style={{ background: tokens.titleBg }} />
+                      <span className="w-6 h-6 rounded-md" style={{ background: tokens.accent }} />
+                    </div>
+                    <div className="font-bold text-xs text-slate-700">{isRTL ? ar : en}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* Toggles */}
+          <Card className="p-5 space-y-1">
+            <h3 className="font-black text-[#0F2C59] mb-2 text-sm">{isRTL ? "عناصر الفاتورة" : "Invoice Elements"}</h3>
+            {([
+              ["show_logo", isRTL ? "إظهار الشعار" : "Show logo"],
+              ["show_stamp", isRTL ? "إظهار الختم" : "Show stamp"],
+              ["show_signature", isRTL ? "إظهار التوقيع" : "Show signature"],
+              ["show_company_trn", isRTL ? "إظهار الرقم الضريبي للشركة" : "Show company TRN"],
+              ["show_company_phone", isRTL ? "إظهار هاتف الشركة" : "Show company phone"],
+              ["show_customer_trn", isRTL ? "إظهار الرقم الضريبي للعميل" : "Show customer TRN"],
+              ["show_supplier_trn", isRTL ? "إظهار الرقم الضريبي للمورد" : "Show supplier TRN"],
+              ["show_bilingual_labels", isRTL ? "تسميات ثنائية اللغة (عربي/إنجليزي)" : "Bilingual labels (AR/EN)"],
+            ] as [keyof InvoiceDesignSettings, string][]).map(([field, label]) => (
+              <div key={field} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                <span className="text-sm font-bold text-slate-700">{label}</span>
+                <Toggle on={Boolean(current[field])} onChange={(v) => patch(field, v)} />
+              </div>
+            ))}
+          </Card>
+        </div>
+
+        {/* Live design preview */}
+        {showPreview && (
+          <Card className="p-4 overflow-hidden">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">
+              {isRTL ? "معاينة التصميم" : "Design Preview"}
+            </p>
+            <div dir={isRTL ? "rtl" : "ltr"} className="border rounded-xl p-3 bg-white text-[13px]" style={{ borderColor: previewTheme.border }}>
+              <Template
+                lang={lang}
+                titleAr="فاتورة ضريبية"
+                titleEn="Tax Invoice"
+                company={previewCompany}
+                party={{ name: isRTL ? "اسم العميل" : "Customer Name", trn: "100000000000003", phone: "", address: "" }}
+                partyKind="customer"
+                meta={[
+                  { label: isRTL ? "الرقم" : "Number", value: "SAL-0001" },
+                  { label: isRTL ? "التاريخ" : "Date", value: new Date().toISOString().slice(0, 10) },
+                ]}
+                lines={DESIGN_PREVIEW_LINES}
+                totals={DESIGN_PREVIEW_TOTALS}
+                branding={parseBranding(current)}
+                theme={previewTheme}
+              />
+            </div>
+            <p className="text-[10px] text-slate-400 font-semibold mt-2">
+              {isRTL ? "معاينة تصميم فقط — لا تمثل فاتورة حقيقية" : "Design preview only — not a real invoice"}
+            </p>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }

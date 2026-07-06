@@ -4,6 +4,7 @@ import type { TenantScreen } from "@/shared/types/navigation";
 export const TENANT_TITLES: Record<TenantScreen, [string, string]> = {
   dashboard: ["الرئيسية", "Dashboard"], sales: ["فواتير البيع", "Sales Invoices"],
   "sales-list": ["فواتير البيع", "Sales Invoices"], "sales-new": ["فاتورة بيع جديدة", "New Sales Invoice"],
+  "sales-edit": ["تعديل فاتورة بيع", "Edit Sales Invoice"],
   "sales-preview": ["طباعة الفاتورة", "Print Invoice"], "sales-detail": ["تفاصيل الفاتورة", "Invoice Detail"],
   purchases: ["فواتير الشراء", "Purchase Invoices"], "purchases-list": ["فواتير الشراء", "Purchase Invoices"],
   "purchases-new": ["فاتورة شراء جديدة", "New Purchase Invoice"],
@@ -40,6 +41,7 @@ export const TENANT_TITLES: Record<TenantScreen, [string, string]> = {
   "settings-sensitive-actions": ["الإجراءات الحساسة", "Sensitive Actions"], "settings-audit": ["سجل العمليات", "Audit Log"],
   "settings-numbering": ["ترقيم المستندات", "Document Numbering"], "settings-vat": ["إعدادات الضريبة", "VAT Settings"],
   "settings-print-templates": ["قوالب الطباعة", "Print Templates"], "settings-transactions": ["إعدادات الفواتير", "Transaction Settings"],
+  "settings-invoice-design": ["تصميم الفواتير", "Invoice Design"],
   "settings-plan": ["الباقة والميزات", "Plan & Features"], "settings-security": ["إعدادات الأمان", "Security Settings"],
   expenses: ["المصروفات", "Expenses"], "expenses-list": ["قائمة المصروفات", "Expenses List"],
   "expenses-recurring": ["المصروفات المتكررة", "Recurring Expenses"], "expenses-report": ["تقرير المصروفات", "Expense Report"],

@@ -659,6 +659,86 @@ def test_sales_price_history_respects_tenant(api, company, owner, other_owner):
     assert resp.status_code == 404
 
 
+def test_sales_list_returns_id_and_invoice_number(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    inv = _create(company, customer, owner, [_line(product, quantity_kg="5")])
+
+    api.force_authenticate(owner)
+    resp = api.get(SALES_URL)
+    assert resp.status_code == 200
+    row = next(r for r in resp.data["results"] if r["id"] == inv.id)
+    assert row["invoice_number"].startswith("SAL-")
+    assert row["id"] == inv.id
+
+
+def test_sales_detail_returns_200_with_valid_id(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    inv = _create(company, customer, owner, [_line(product, quantity_kg="5")])
+
+    api.force_authenticate(owner)
+    resp = api.get(f"{SALES_URL}{inv.id}/")
+    assert resp.status_code == 200
+    assert resp.data["id"] == inv.id
+    assert resp.data["invoice_number"] == inv.invoice_number
+    assert resp.data["status"] == SalesStatus.DRAFT
+
+
+def test_sales_detail_invalid_id_returns_404(api, company, owner):
+    api.force_authenticate(owner)
+    resp = api.get(f"{SALES_URL}99999999/")
+    assert resp.status_code == 404
+
+
+def test_sales_detail_approved_returns_data(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    _seed_stock(company, owner, product)
+    inv = _create(company, customer, owner, [_line(product, quantity_kg="10")])
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="ok")
+
+    api.force_authenticate(owner)
+    resp = api.get(f"{SALES_URL}{inv.id}/")
+    assert resp.status_code == 200
+    assert resp.data["status"] == SalesStatus.APPROVED
+
+
+def test_sales_detail_cancelled_returns_data(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    inv = _create(company, customer, owner, [_line(product, quantity_kg="5")])
+    services.cancel_sales_invoice(invoice=inv, user=owner, reason="mistake")
+
+    api.force_authenticate(owner)
+    resp = api.get(f"{SALES_URL}{inv.id}/")
+    assert resp.status_code == 200
+    assert resp.data["status"] == SalesStatus.CANCELLED
+
+
+def test_sales_patch_draft_allowed(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    inv = _create(company, customer, owner, [_line(product, quantity_kg="5")])
+
+    api.force_authenticate(owner)
+    resp = api.patch(f"{SALES_URL}{inv.id}/", {"notes": "updated"}, format="json")
+    assert resp.status_code == 200
+    assert resp.data["notes"] == "updated"
+
+
+def test_sales_patch_approved_rejected(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    _seed_stock(company, owner, product)
+    inv = _create(company, customer, owner, [_line(product, quantity_kg="10")])
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="ok")
+
+    api.force_authenticate(owner)
+    resp = api.patch(f"{SALES_URL}{inv.id}/", {"notes": "should fail"}, format="json")
+    assert resp.status_code in (400, 403, 405)
+
+
 def test_sales_chicken_part_deducts_kg_and_blocks_oversell(company, owner):
     customer = _customer(company)
     cat = ProductCategory.objects.create(company=company, name_ar="مقطعات", code="PARTS-S")

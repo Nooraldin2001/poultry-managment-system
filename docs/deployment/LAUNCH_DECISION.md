@@ -9,7 +9,7 @@
 
 # **NO-GO** (pending deploy `88822cd` + manual ERP smoke on First View)
 
-Code fixes for purchase Not Found, product/supplier edit, and **Sales white screen** are on `main`. **Deploy on VPS, then run First View owner smoke** for sales list, purchase, product, and supplier flows.
+Code fixes for purchase Not Found, product/supplier edit, **Sales white screen**, **Sales edit Not Found**, and **Invoice template & color theme system** are on `main`. **Deploy on VPS, then run First View owner smoke** for sales list/edit/detail, purchase, product, supplier, and invoice design/print flows.
 
 ---
 

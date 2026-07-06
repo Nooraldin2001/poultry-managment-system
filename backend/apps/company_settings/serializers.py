@@ -1,6 +1,11 @@
 from rest_framework import serializers
 
-from .models import NumberingSettings, PrintTemplateSettings, VATSettings
+from .models import (
+    InvoiceDesignSettings,
+    NumberingSettings,
+    PrintTemplateSettings,
+    VATSettings,
+)
 
 
 class VATSettingsSerializer(serializers.ModelSerializer):
@@ -38,6 +43,19 @@ class NumberingSettingsSerializer(serializers.ModelSerializer):
         if value < 1:
             raise serializers.ValidationError("Next number must be positive.")
         return value
+
+
+class InvoiceDesignSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InvoiceDesignSettings
+        fields = [
+            "id", "invoice_template_key", "invoice_color_theme",
+            "show_logo", "show_stamp", "show_signature",
+            "show_company_trn", "show_company_phone",
+            "show_customer_trn", "show_supplier_trn",
+            "show_bilingual_labels",
+        ]
+        read_only_fields = ["id"]
 
 
 class PrintTemplateSettingsSerializer(serializers.ModelSerializer):
