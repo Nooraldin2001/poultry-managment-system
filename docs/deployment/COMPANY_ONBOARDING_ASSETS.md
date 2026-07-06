@@ -37,7 +37,9 @@ Send empty string for an image field to remove it.
 
 ## Print preview integration
 
-Print-preview JSON includes:
+Print-preview JSON includes company identity via `apps.tenants.print_identity.build_company_print_identity` and absolute asset URLs when served through DRF request context.
+
+See also: [INVOICE_BRANDING_AND_TAX_IDENTITY.md](./INVOICE_BRANDING_AND_TAX_IDENTITY.md)
 
 ```json
 {

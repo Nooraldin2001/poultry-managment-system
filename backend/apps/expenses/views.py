@@ -188,7 +188,7 @@ class ExpenseViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["get"], url_path="voucher-preview")
     def voucher_preview(self, request, pk=None):
         expense = self.get_object()
-        data = services.build_expense_voucher_preview(expense)
+        data = services.build_expense_voucher_preview(expense, request=request)
         return Response(ExpenseVoucherPreviewSerializer(data).data)
 
     @action(detail=True, methods=["get", "post"], url_path="attachments")

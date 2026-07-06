@@ -62,3 +62,20 @@ Triggered when any sales invoice has `status: "partially_paid"`.
 3. Mobile Safari → scroll list, tap New Invoice
 4. Hard refresh / incognito → no blank screen
 5. DevTools → no JS chunk 404 on `/assets/index-*.js`
+
+---
+
+## Invoice branding & customer TRN (Phase 12)
+
+| Item | Detail |
+| --- | --- |
+| Snapshots | `customer_name_snapshot`, `customer_trn_snapshot`, `customer_phone_snapshot`, `customer_address_snapshot` |
+| Create | Copies current customer data |
+| Draft PATCH | Re-select customer → snapshots update |
+| Approve | Snapshots refreshed once, then frozen |
+| Print preview | `GET .../print-preview/` → `customer.trn` from snapshot; legacy fallback if empty |
+| UI | `PrintPreviewLayout` shows Customer TRN / الرقم الضريبي للعميل |
+
+Tests: `tests/test_invoice_branding.py` — snapshot storage, print preview company + customer TRN, approve refresh.
+
+See [INVOICE_BRANDING_AND_TAX_IDENTITY.md](./INVOICE_BRANDING_AND_TAX_IDENTITY.md).

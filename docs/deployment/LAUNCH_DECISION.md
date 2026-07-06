@@ -30,6 +30,8 @@ Code fixes for purchase Not Found, product/supplier edit, and **Sales white scre
 | Users & Permissions (tenant admin) | **Code fixed** — smoke **pending** |
 | Cancelled invoice list behavior | **Code fixed** — smoke **pending** |
 | Price override + history | **Code fixed** — smoke **pending** |
+| Invoice branding + customer TRN on print | **Code fixed** (Phase 12) — smoke **pending** |
+| Super Admin company edit + assets | **Code fixed** (Phase 12) — smoke **pending** |
 | DB purge dry-run | **Not run** |
 
 ---

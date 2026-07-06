@@ -45,6 +45,8 @@ from apps.products.poultry_cuts import is_kg_primary_product, validate_purchase_
 from apps.suppliers.models import Supplier, SupplierLedgerEntry, SupplierSpecialPrice
 from apps.suppliers import services as supplier_services
 
+from apps.tenants.print_identity import build_company_print_identity
+
 from . import calculations as calc
 from .models import (
     PurchaseAdjustment,
@@ -895,29 +897,24 @@ def get_purchase_price_history(*, company, supplier, product, limit=10):
     return items
 
 
-def build_purchase_print_preview(invoice) -> dict:
+def build_purchase_print_preview(invoice, request=None) -> dict:
     """JSON payload for tenant purchase print preview (browser print / save as PDF)."""
     company = invoice.company
     lines = list(invoice.lines.all().order_by("sort_order", "id"))
+    supplier_party = {
+        "name": invoice.supplier_name_snapshot,
+        "name_ar": invoice.supplier_name_snapshot,
+        "trn": invoice.supplier_trn_snapshot or "",
+        "phone": "",
+        "address": "",
+        "supplier_invoice_number": invoice.supplier_invoice_number,
+    }
     return {
         "title_en": "PURCHASE INVOICE",
         "title_ar": "فاتورة شراء",
-        "company": {
-            "name_ar": company.name_ar,
-            "name_en": company.name_en,
-            "trn": company.trn,
-            "address": company.address,
-            "phone": company.phone,
-            "logo_url": company.logo.url if company.logo else None,
-            "stamp_url": company.stamp.url if company.stamp else None,
-            "signature_url": company.signature.url if company.signature else None,
-        },
-        "supplier": {
-            "name": invoice.supplier_name_snapshot,
-            "name_ar": invoice.supplier_name_snapshot,
-            "trn": invoice.supplier_trn_snapshot,
-            "supplier_invoice_number": invoice.supplier_invoice_number,
-        },
+        "company": build_company_print_identity(company, request),
+        "supplier": supplier_party,
+        "party": supplier_party,
         "invoice": {
             "number": invoice.invoice_number,
             "date": str(invoice.invoice_date),

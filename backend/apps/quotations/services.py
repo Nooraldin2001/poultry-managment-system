@@ -28,6 +28,7 @@ from apps.permissions.services import has_permission
 from apps.products.models import Product
 from apps.sales import services as sales_services
 from apps.sales.models import SalesLineType, SalesPriceSource, SalesStatus
+from apps.tenants.print_identity import build_company_print_identity
 
 from . import calculations as calc
 from .models import (
@@ -483,30 +484,33 @@ def convert_quotation_to_sales_draft(*, quotation, user, reason=""):
     return quotation, invoice
 
 
-def build_quotation_print_preview(quotation) -> dict:
+def build_quotation_print_preview(quotation, request=None) -> dict:
     company = quotation.company
     lines = list(quotation.lines.all().order_by("sort_order", "id"))
+    customer_party = {
+        "name": quotation.customer_name_snapshot or "",
+        "trn": (quotation.customer_trn_snapshot or "").strip(),
+        "phone": (quotation.customer_phone_snapshot or "").strip(),
+        "address": (quotation.customer_address_snapshot or "").strip(),
+    }
+    if quotation.customer_id:
+        c = quotation.customer
+        if not customer_party["name"]:
+            customer_party["name"] = c.name_ar or ""
+        if not customer_party["trn"]:
+            customer_party["trn"] = (c.trn or "").strip()
+        if not customer_party["phone"]:
+            customer_party["phone"] = (c.phone or "").strip()
+        if not customer_party["address"]:
+            customer_party["address"] = (c.address or "").strip()
     return {
         "title_en": "QUOTATION",
         "title_ar": "عرض سعر",
         "not_tax_invoice_en": "This quotation is not a tax invoice.",
         "not_tax_invoice_ar": "عرض سعر وليس فاتورة ضريبية",
-        "company": {
-            "name_ar": company.name_ar,
-            "name_en": company.name_en,
-            "trn": company.trn,
-            "address": company.address,
-            "phone": company.phone,
-            "logo_url": company.logo.url if company.logo else None,
-            "stamp_url": company.stamp.url if company.stamp else None,
-            "signature_url": company.signature.url if company.signature else None,
-        },
-        "customer": {
-            "name": quotation.customer_name_snapshot,
-            "trn": quotation.customer_trn_snapshot,
-            "phone": quotation.customer_phone_snapshot,
-            "address": quotation.customer_address_snapshot,
-        },
+        "company": build_company_print_identity(company, request),
+        "customer": customer_party,
+        "party": customer_party,
         "quotation": {
             "number": quotation.quotation_number,
             "date": str(quotation.quotation_date),

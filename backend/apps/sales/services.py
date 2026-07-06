@@ -37,6 +37,10 @@ from apps.inventory import services as inventory_services
 from apps.inventory.models import InventoryBalance, MovementType, StockSourceType
 from apps.permissions.services import has_permission
 from apps.products.models import Product
+from apps.tenants.print_identity import (
+    build_company_print_identity,
+    build_sales_customer_party,
+)
 
 from . import calculations as calc
 from .models import (
@@ -592,6 +596,11 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None) -> Sal
         revenue=invoice.total_amount, fifo_cost=invoice.fifo_cost_total
     )
 
+    invoice.customer_name_snapshot = customer.name_ar
+    invoice.customer_trn_snapshot = customer.trn or ""
+    invoice.customer_phone_snapshot = customer.phone or ""
+    invoice.customer_address_snapshot = customer.address or ""
+
     receivable = _d(invoice.balance_due)
     invoice.posted_receivable = receivable
     invoice.credit_limit_snapshot = customer.credit_limit
@@ -626,6 +635,8 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None) -> Sal
     _apply_payment_state(invoice)
     invoice.save(update_fields=[
         "status", "approval_reason", "approved_by", "approved_at",
+        "customer_name_snapshot", "customer_trn_snapshot",
+        "customer_phone_snapshot", "customer_address_snapshot",
         "fifo_cost_total", "gross_profit", "posted_receivable",
         "credit_limit_snapshot", "credit_limit_override_used",
         "credit_limit_override_reason", "payment_status", "balance_due",
@@ -809,28 +820,16 @@ def get_customer_sales_history(company, customer):
 
 
 # ── Print preview ───────────────────────────────────────────────────────────
-def build_print_preview(invoice) -> dict:
+def build_print_preview(invoice, request=None) -> dict:
     company = invoice.company
     lines = list(invoice.lines.all().order_by("sort_order", "id"))
+    customer_party = build_sales_customer_party(invoice)
     return {
         "title_en": "TAX INVOICE",
         "title_ar": "فاتورة ضريبية",
-        "company": {
-            "name_ar": company.name_ar,
-            "name_en": company.name_en,
-            "trn": company.trn,
-            "address": company.address,
-            "phone": company.phone,
-            "logo_url": company.logo.url if company.logo else None,
-            "stamp_url": company.stamp.url if company.stamp else None,
-            "signature_url": company.signature.url if company.signature else None,
-        },
-        "customer": {
-            "name": invoice.customer_name_snapshot,
-            "trn": invoice.customer_trn_snapshot,
-            "phone": invoice.customer_phone_snapshot,
-            "address": invoice.customer_address_snapshot,
-        },
+        "company": build_company_print_identity(company, request),
+        "customer": customer_party,
+        "party": customer_party,
         "invoice": {
             "number": invoice.invoice_number,
             "date": str(invoice.invoice_date),

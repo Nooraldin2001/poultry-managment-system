@@ -31,6 +31,7 @@ from apps.purchases.services import (
     recalculate_purchase_invoice,
 )
 from apps.sales.models import SalesInvoice, SalesStatus
+from apps.tenants.print_identity import build_company_print_identity
 
 from . import calculations as calc
 from .models import (
@@ -561,22 +562,13 @@ def get_profit_impact_foundation(company, *, date_from, date_to) -> dict:
     }
 
 
-def build_expense_voucher_preview(expense) -> dict:
+def build_expense_voucher_preview(expense, request=None) -> dict:
     company = expense.company
     category = expense.category
     return {
         "title_en": "EXPENSE VOUCHER",
         "title_ar": "سند مصروف",
-        "company": {
-            "name_ar": company.name_ar,
-            "name_en": company.name_en,
-            "trn": company.trn,
-            "address": company.address,
-            "phone": company.phone,
-            "logo_url": company.logo.url if company.logo else None,
-            "stamp_url": company.stamp.url if company.stamp else None,
-            "signature_url": company.signature.url if company.signature else None,
-        },
+        "company": build_company_print_identity(company, request),
         "voucher": {
             "number": expense.expense_number,
             "date": str(expense.expense_date),

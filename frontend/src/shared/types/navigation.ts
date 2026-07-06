@@ -3,7 +3,7 @@
 
 /** Super Admin (SaaS operator) screens. */
 export type SuperAdminScreen =
-  | "login" | "dashboard" | "companies" | "company-detail"
+  | "login" | "dashboard" | "companies" | "company-detail" | "company-edit"
   | "create-company" | "payments" | "outstanding" | "plans" | "audit-log" | "settings";
 
 /** All tenant workspace screens (sidebar targets + sub-screens + modals routed via state). */

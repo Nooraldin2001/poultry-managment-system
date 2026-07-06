@@ -585,7 +585,7 @@ export function CreateCustomerScreen({ lang, role, permissions = [], onNavigate,
           <FInput label={isRTL ? "رقم الهاتف *" : "Phone *"} type="tel" value={phone} onChange={setPhone} placeholder="+971 50 XXX XXXX" required />
           <FInput label={isRTL ? "رقم الواتساب" : "WhatsApp"} type="tel" value={whatsapp} onChange={setWhatsapp} placeholder="+971 50 XXX XXXX" />
           <FInput label={isRTL ? "البريد الإلكتروني" : "Email"} type="email" value={email} onChange={setEmail} />
-          <FInput label={isRTL ? "رقم الضريبة TRN" : "TRN"} value={trn} onChange={setTrn} placeholder="100XXXXXXXXXXX" />
+          <FInput label={isRTL ? "الرقم الضريبي TRN" : "Customer TRN"} value={trn} onChange={setTrn} placeholder="100XXXXXXXXXXX" />
           <FSelect label={isRTL ? "الإمارة" : "Emirate"} value={emirate} onChange={setEmirate} options={[{ value: "", label: isRTL ? "اختر الإمارة" : "Select Emirate" }, ...EMIRATES]} />
           <div className="sm:col-span-2"><FInput label={isRTL ? "العنوان" : "Address"} value={address} onChange={setAddress} /></div>
           <div className="sm:col-span-2"><FInput label={isRTL ? "ملاحظات" : "Notes"} value={notes} onChange={setNotes} /></div>

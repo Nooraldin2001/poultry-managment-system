@@ -10,6 +10,9 @@ export type CompanyPlan = "basic" | "pro" | "enterprise";
 export interface Company {
   id: string; nameAr: string; nameEn: string; subdomain: string;
   adminName: string; adminPhone: string; adminEmail: string;
+  managerName?: string; managerPhone?: string; managerEmail?: string;
+  phone?: string; email?: string; address?: string;
+  licenseExpiryDate?: string; notes?: string;
   plan: CompanyPlan; status: CompanyStatus;
   monthlyPrice: number; yearlyPrice: number;
   renewalDate: string; outstandingAmount: number;

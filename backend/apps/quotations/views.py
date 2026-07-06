@@ -249,7 +249,7 @@ class QuotationViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["get"], url_path="print-preview")
     def print_preview(self, request, pk=None):
         quotation = self.get_object()
-        return Response(services.build_quotation_print_preview(quotation))
+        return Response(services.build_quotation_print_preview(quotation, request=request))
 
     @action(detail=True, methods=["get"], url_path="stock-warning")
     def stock_warning(self, request, pk=None):

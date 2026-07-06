@@ -2,6 +2,8 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
+from apps.tenants.validators import validate_trn_value
+
 from .models import (
     Customer,
     CustomerCategory,
@@ -65,6 +67,9 @@ class CustomerCreateUpdateSerializer(serializers.ModelSerializer):
             "notes",
         ]
         read_only_fields = ["id"]
+
+    def validate_trn(self, value):
+        return validate_trn_value(value)
 
     def validate_category(self, category):
         request = self.context.get("request")

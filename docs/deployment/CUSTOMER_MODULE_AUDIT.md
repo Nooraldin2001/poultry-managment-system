@@ -33,7 +33,9 @@ Backend `PATCH /api/v1/tenant/customers/{id}/` was already implemented with `cus
 | PATCH | `/api/v1/tenant/customers/{id}/` | `customers.edit` |
 | POST | `/api/v1/tenant/customers/{id}/opening-balance/` | `customers.edit_opening_balance` |
 
-PATCH editable fields: name, phone, email, address, emirate, TRN, type, category, credit limit, payment terms, credit flags, notes.
+PATCH editable fields: name, phone, email, address, emirate, **TRN** (`trn`), type, category, credit limit, payment terms, credit flags, notes.
+
+**TRN (Phase 12):** Optional; digits-only when provided (`validate_trn_value`). UI label: **الرقم الضريبي TRN** / **Customer TRN**. Persisted via POST/PATCH; copied to sales invoice `customer_trn_snapshot` at create/approval.
 
 Not editable via PATCH: `company`, `current_balance`, `opening_balance` (after create).
 

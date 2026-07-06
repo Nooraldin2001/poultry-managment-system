@@ -12,11 +12,16 @@ export interface ApiCompany {
   name_en: string;
   subdomain: string;
   trade_license?: string;
+  license_expiry_date?: string | null;
   trn?: string;
   emirate?: string;
   address?: string;
   phone?: string;
   email?: string;
+  manager_name?: string;
+  manager_phone?: string;
+  manager_email?: string;
+  notes?: string;
   status: string;
   is_active?: boolean;
   subscription?: {
@@ -115,9 +120,17 @@ export function mapApiCompanyToUi(row: ApiCompany): Company {
     nameAr: row.name_ar,
     nameEn: row.name_en,
     subdomain: row.subdomain,
-    adminName: row.email || "—",
-    adminPhone: row.phone || "—",
-    adminEmail: row.email || "—",
+    adminName: row.manager_name || row.email || "—",
+    adminPhone: row.manager_phone || row.phone || "—",
+    adminEmail: row.manager_email || row.email || "—",
+    managerName: row.manager_name || "",
+    managerPhone: row.manager_phone || "",
+    managerEmail: row.manager_email || "",
+    phone: row.phone || "",
+    email: row.email || "",
+    address: row.address || "",
+    licenseExpiryDate: row.license_expiry_date ? String(row.license_expiry_date).slice(0, 10) : "",
+    notes: row.notes || "",
     plan: mapPlanCode(planCode),
     status: mapStatus(row.status),
     monthlyPrice: monthly,
@@ -177,8 +190,17 @@ export async function listCompaniesLive(params?: {
 
 export async function getCompanyByIdLive(id: string): Promise<Company | null> {
   try {
-    const row = await request<ApiCompany>(ENDPOINTS.admin.company(id));
-    return mapApiCompanyToUi(row);
+    const row = await fetchAdminCompanyLive(id);
+    return row ? mapApiCompanyToUi(row) : null;
+  } catch (err) {
+    if ((err as { status?: number }).status === 404) return null;
+    throw err;
+  }
+}
+
+export async function fetchAdminCompanyLive(id: string): Promise<ApiCompany | null> {
+  try {
+    return await request<ApiCompany>(ENDPOINTS.admin.company(id));
   } catch (err) {
     if ((err as { status?: number }).status === 404) return null;
     throw err;
@@ -197,6 +219,24 @@ export async function listSubscriptionPaymentsLive(): Promise<ApiSubscriptionPay
   );
   if (Array.isArray(data)) return data;
   return data.results ?? [];
+}
+
+export interface AdminCompanyUpdatePayload {
+  name_ar?: string;
+  name_en?: string;
+  subdomain?: string;
+  status?: string;
+  trade_license?: string;
+  license_expiry_date?: string | null;
+  trn?: string;
+  emirate?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  manager_name?: string;
+  manager_phone?: string;
+  manager_email?: string;
+  notes?: string;
 }
 
 export interface CreateCompanyPayload {

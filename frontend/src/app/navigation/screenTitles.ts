@@ -64,7 +64,9 @@ export const TENANT_TITLES: Record<TenantScreen, [string, string]> = {
 
 export const SUPER_ADMIN_TITLES: Record<string, [string, string]> = {
   dashboard: ["الرئيسية", "Dashboard"], companies: ["الشركات", "Companies"],
-  "company-detail": ["تفاصيل الشركة", "Company Details"], "create-company": ["إضافة شركة جديدة", "New Company"],
+  "company-detail": ["تفاصيل الشركة", "Company Details"],
+  "company-edit": ["تعديل بيانات الشركة", "Edit Company Details"],
+  "create-company": ["إضافة شركة جديدة", "New Company"],
   payments: ["المدفوعات", "Payments"], outstanding: ["المبالغ المستحقة", "Outstanding"],
   plans: ["الخطط والأسعار", "Plans & Pricing"], "audit-log": ["سجل العمليات", "Audit Log"], settings: ["الإعدادات", "Settings"],
 };

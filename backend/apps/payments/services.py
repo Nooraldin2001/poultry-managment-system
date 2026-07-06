@@ -23,6 +23,7 @@ from apps.company_settings.services import generate_document_number
 from apps.customers import services as customer_services
 from apps.customers.models import Customer
 from apps.permissions.services import has_permission
+from apps.tenants.print_identity import build_company_print_identity
 from apps.purchases.models import PurchaseInvoice, PurchaseStatus
 from apps.purchases.services import _apply_payment_state as _apply_purchase_payment_state
 from apps.sales.models import SalesInvoice, SalesStatus
@@ -550,7 +551,7 @@ def cancel_payment_movement(*, movement, user, reason) -> PaymentMovement:
 
 
 # ── Print preview ───────────────────────────────────────────────────────────
-def build_receipt_preview(movement) -> dict:
+def build_receipt_preview(movement, request=None) -> dict:
     company = movement.company
     titles = _RECEIPT_TITLES.get(
         movement.movement_type, ("PAYMENT RECEIPT", "إيصال")
@@ -596,16 +597,8 @@ def build_receipt_preview(movement) -> dict:
     return {
         "title_en": titles[0],
         "title_ar": titles[1],
-        "company": {
-            "name_ar": company.name_ar,
-            "name_en": company.name_en,
-            "trn": company.trn,
-            "address": company.address,
-            "phone": company.phone,
-            "logo_url": company.logo.url if company.logo else None,
-            "stamp_url": company.stamp.url if company.stamp else None,
-            "signature_url": company.signature.url if company.signature else None,
-        },
+        "company": build_company_print_identity(company, request),
+        "party": party,
         "receipt_number": movement.receipt_number or movement.movement_number,
         "movement_number": movement.movement_number,
         "movement_date": str(movement.movement_date),

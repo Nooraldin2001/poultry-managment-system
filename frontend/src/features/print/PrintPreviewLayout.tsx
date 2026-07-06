@@ -37,6 +37,7 @@ export function PrintPreviewLayout({
   titleEn,
   company,
   party,
+  partyKind = "customer",
   meta,
   lines,
   totals,
@@ -49,6 +50,7 @@ export function PrintPreviewLayout({
   titleEn: string;
   company?: Record<string, unknown>;
   party?: Record<string, unknown>;
+  partyKind?: "customer" | "supplier";
   meta?: { label: string; value: string }[];
   lines: PrintLineRow[];
   totals: { label: string; value: string }[];
@@ -59,15 +61,25 @@ export function PrintPreviewLayout({
   const isRTL = lang === "ar";
   const companyNameAr = String(company?.name_ar ?? "");
   const companyNameEn = String(company?.name_en ?? "");
-  const trn = String(company?.trn ?? "").trim();
+  const companyTrn = String(company?.trn ?? "").trim();
   const phone = String(company?.phone ?? "").trim();
   const address = String(company?.address ?? "").trim();
+  const email = String(company?.email ?? "").trim();
   const logoUrl = company?.logo_url ? String(company.logo_url) : null;
   const stampUrl = company?.stamp_url ? String(company.stamp_url) : null;
   const signatureUrl = company?.signature_url ? String(company.signature_url) : null;
   const partyName = String(
     party?.name_ar ?? party?.name ?? party?.customer_name ?? party?.supplier_name ?? "",
-  );
+  ).trim();
+  const partyTrn = String(party?.trn ?? "").trim();
+  const partyPhone = String(party?.phone ?? "").trim();
+  const partyAddress = String(party?.address ?? "").trim();
+  const partyLabel = partyKind === "supplier"
+    ? (isRTL ? "المورد" : "Supplier")
+    : (isRTL ? "العميل" : "Customer");
+  const partyTrnLabel = partyKind === "supplier"
+    ? (isRTL ? "الرقم الضريبي للمورد" : "Supplier TRN")
+    : (isRTL ? "الرقم الضريبي للعميل" : "Customer TRN");
 
   return (
     <div className="p-4 lg:p-8 max-w-3xl mx-auto print:p-0">
@@ -115,14 +127,15 @@ export function PrintPreviewLayout({
             {companyNameEn && companyNameEn !== companyNameAr && (
               <p className="text-xs font-semibold text-slate-500 mt-0.5">{companyNameEn}</p>
             )}
-            {trn && (
+            {companyTrn && (
               <p className="text-xs font-mono text-slate-600 mt-1">
-                {isRTL ? `الرقم الضريبي TRN: ${trn}` : `TRN: ${trn}`}
+                {isRTL ? `الرقم الضريبي للشركة: ${companyTrn}` : `Company TRN: ${companyTrn}`}
               </p>
             )}
-            {(phone || address) && (
+            {(phone || address || email) && (
               <div className="text-[11px] text-slate-500 mt-1 space-y-0.5">
                 {phone && <p>{phone}</p>}
+                {email && <p>{email}</p>}
                 {address && <p>{address}</p>}
               </div>
             )}
@@ -131,8 +144,19 @@ export function PrintPreviewLayout({
 
         {partyName && (
           <div className={`mb-4 text-sm ${isRTL ? "text-right" : "text-left"}`}>
-            <p className="font-bold text-slate-500">{isRTL ? "الطرف" : "Party"}</p>
+            <p className="font-bold text-slate-500">{partyLabel}</p>
             <p className="font-black text-slate-800">{partyName}</p>
+            {partyPhone && (
+              <p className="text-xs text-slate-600 mt-0.5">{partyPhone}</p>
+            )}
+            {partyAddress && (
+              <p className="text-xs text-slate-600 mt-0.5">{partyAddress}</p>
+            )}
+            {partyTrn && (
+              <p className="text-xs font-mono text-slate-600 mt-1">
+                {partyTrnLabel}: {partyTrn}
+              </p>
+            )}
           </div>
         )}
 
@@ -213,7 +237,7 @@ export function PrintPreviewLayout({
             <PrintAssetImage
               src={stampUrl}
               alt=""
-              className="max-w-[150px] max-h-20 object-contain shrink-0 print-preview-stamp"
+              className="max-w-[160px] max-h-20 object-contain shrink-0 print-preview-stamp"
             />
           )}
         </div>
@@ -235,10 +259,10 @@ export function PrintPreviewLayout({
                 <PrintAssetImage
                   src={signatureUrl}
                   alt=""
-                  className="max-w-[170px] max-h-16 object-contain mb-1 print-preview-signature"
+                  className="max-w-[180px] max-h-16 object-contain mb-1 print-preview-signature"
                 />
                 <p className="text-[10px] font-bold text-slate-400 border-t border-slate-200 pt-1">
-                  {isRTL ? "التوقيع المعتمد" : "Authorized Signature"}
+                  {isRTL ? "توقيع المفوض" : "Authorized Signature"}
                 </p>
               </div>
             )}

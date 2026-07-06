@@ -13,7 +13,34 @@ subdomain_validator = RegexValidator(
     ),
 )
 
-RESERVED_SUBDOMAINS = {"admin", "www", "api", "app", "mail", "static", "media", "demo"}
+RESERVED_SUBDOMAINS = {
+    "admin",
+    "www",
+    "api",
+    "app",
+    "mail",
+    "static",
+    "media",
+    "demo",
+    "root",
+    "poultryhero",
+}
+
+
+def validate_subdomain_available(value: str, *, exclude_company_id=None) -> str:
+    """Normalize and ensure subdomain is syntactically valid, not reserved, and unique."""
+    value = (value or "").strip().lower()
+    subdomain_validator(value)
+    if value in RESERVED_SUBDOMAINS:
+        raise ValidationError("This subdomain is reserved.")
+    from .models import Company
+
+    qs = Company.objects.filter(subdomain=value)
+    if exclude_company_id is not None:
+        qs = qs.exclude(pk=exclude_company_id)
+    if qs.exists():
+        raise ValidationError("This subdomain is already taken.")
+    return value
 
 # --- Company identity asset (logo / stamp / signature) validation -----------
 

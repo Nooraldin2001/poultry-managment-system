@@ -227,7 +227,7 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["get"], url_path="print-preview")
     def print_preview(self, request, pk=None):
         invoice = self.get_object()
-        return Response(services.build_purchase_print_preview(invoice))
+        return Response(services.build_purchase_print_preview(invoice, request=request))
 
     @action(detail=False, methods=["get"], url_path="price-history")
     def price_history(self, request):

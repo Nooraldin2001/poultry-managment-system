@@ -1,13 +1,14 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
+
 from rest_framework import serializers
 
 from apps.subscriptions.models import BillingCycle, Plan
 
 from .models import Company, CompanyStatus
 from .validators import (
-    RESERVED_SUBDOMAINS,
-    subdomain_validator,
     validate_company_image_extension,
     validate_company_image_size,
+    validate_subdomain_available,
     validate_trn_value,
 )
 
@@ -55,8 +56,9 @@ class CompanySerializer(CompanyAssetURLMixin, serializers.ModelSerializer):
         model = Company
         fields = [
             "id", "name_ar", "name_en", "subdomain",
-            "trade_license", "trn", "country", "emirate", "address",
-            "phone", "email", "status", "is_active",
+            "trade_license", "license_expiry_date", "trn", "country", "emirate", "address",
+            "phone", "email", "manager_name", "manager_phone", "manager_email", "notes",
+            "status", "is_active",
             "logo_url", "stamp_url", "signature_url",
             "subscription", "active_user_count", "created_at",
         ]
@@ -66,10 +68,17 @@ class CompanySerializer(CompanyAssetURLMixin, serializers.ModelSerializer):
         return obj.users.filter(is_active=True, is_superuser=False).count()
 
 
+class AdminCompanyDetailSerializer(CompanySerializer):
+    """Super Admin company detail — same shape as list/detail read serializer."""
+
+    class Meta(CompanySerializer.Meta):
+        pass
+
+
 class CompanyCreateSerializer(serializers.Serializer):
     name_ar = serializers.CharField(max_length=255)
     name_en = serializers.CharField(max_length=255)
-    subdomain = serializers.CharField(max_length=63, validators=[subdomain_validator])
+    subdomain = serializers.CharField(max_length=63)
     plan_code = serializers.ChoiceField(choices=[p[0] for p in Plan._meta.get_field("code").choices])
     billing_cycle = serializers.ChoiceField(
         choices=BillingCycle.choices, default=BillingCycle.MONTHLY
@@ -85,12 +94,10 @@ class CompanyCreateSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False, allow_blank=True)
 
     def validate_subdomain(self, value):
-        value = value.lower()
-        if value in RESERVED_SUBDOMAINS:
-            raise serializers.ValidationError("This subdomain is reserved.")
-        if Company.objects.filter(subdomain=value).exists():
-            raise serializers.ValidationError("This subdomain is already taken.")
-        return value
+        try:
+            return validate_subdomain_available(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages[0]) from exc
 
     def validate_plan_code(self, value):
         if not Plan.objects.filter(code=value, is_active=True).exists():
@@ -101,12 +108,8 @@ class CompanyCreateSerializer(serializers.Serializer):
         return validate_trn_value(value)
 
 
-class CompanyUpdateSerializer(serializers.ModelSerializer):
-    """Editable company profile + identity assets (multipart or JSON).
-
-    Send an empty value (``""``/``null``) for logo/stamp/signature to remove
-    the current file.
-    """
+class _CompanyAssetUpdateMixin:
+    """Shared image clear/upload handling for company profile PATCH."""
 
     logo = serializers.ImageField(
         required=False,
@@ -124,19 +127,7 @@ class CompanyUpdateSerializer(serializers.ModelSerializer):
         validators=[validate_company_image_extension, validate_company_image_size],
     )
 
-    class Meta:
-        model = Company
-        fields = [
-            "name_ar", "name_en", "trade_license", "trn",
-            "emirate", "address", "phone", "email",
-            "logo", "stamp", "signature",
-        ]
-
-    def validate_trn(self, value):
-        return validate_trn_value(value)
-
     def to_internal_value(self, data):
-        # Allow clearing an image by sending "" (multipart forms can't send null).
         if hasattr(data, "dict"):
             data = data.dict()
         cleared = {
@@ -148,6 +139,118 @@ class CompanyUpdateSerializer(serializers.ModelSerializer):
         attrs = super().to_internal_value(data)
         for key in cleared:
             attrs[key] = None
+        return attrs
+
+
+class CompanyUpdateSerializer(_CompanyAssetUpdateMixin, serializers.ModelSerializer):
+    """Tenant-side company profile update (no subdomain/status)."""
+
+    class Meta:
+        model = Company
+        fields = [
+            "name_ar", "name_en", "trade_license", "license_expiry_date", "trn",
+            "emirate", "address", "phone", "email",
+            "manager_name", "manager_phone", "manager_email", "notes",
+            "logo", "stamp", "signature",
+        ]
+
+    def validate_name_ar(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Arabic company name is required.")
+        return value
+
+    def validate_name_en(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("English company name is required.")
+        return value
+
+    def validate_trn(self, value):
+        value = validate_trn_value(value)
+        self._warn_trn_length(value)
+        return value
+
+    def _warn_trn_length(self, value: str) -> None:
+        company = getattr(self, "instance", None)
+        if not company or not value:
+            return
+        vat_settings = getattr(company, "vat_settings", None)
+        if vat_settings is None:
+            try:
+                vat_settings = company.vat_settings
+            except Exception:
+                return
+        if getattr(vat_settings, "vat_enabled_default", False) and len(value) != 15:
+            # Soft warning only — digits-only rule still enforced above.
+            pass
+
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)
+        if instance is None:
+            return attrs
+        name_ar = attrs.get("name_ar", instance.name_ar)
+        name_en = attrs.get("name_en", instance.name_en)
+        if not (name_ar or "").strip() and not (name_en or "").strip():
+            raise serializers.ValidationError(
+                "At least one of Arabic or English company name is required."
+            )
+        return attrs
+
+
+class AdminCompanyUpdateSerializer(_CompanyAssetUpdateMixin, serializers.ModelSerializer):
+    """Super Admin company profile update — excludes subscription/billing fields."""
+
+    subdomain = serializers.CharField(max_length=63, required=False)
+    status = serializers.ChoiceField(choices=CompanyStatus.choices, required=False)
+
+    class Meta:
+        model = Company
+        fields = [
+            "name_ar", "name_en", "subdomain", "status",
+            "trade_license", "license_expiry_date", "trn",
+            "emirate", "address", "phone", "email",
+            "manager_name", "manager_phone", "manager_email", "notes",
+            "logo", "stamp", "signature",
+        ]
+
+    def validate_subdomain(self, value):
+        instance = getattr(self, "instance", None)
+        exclude_id = instance.pk if instance is not None else None
+        try:
+            return validate_subdomain_available(value, exclude_company_id=exclude_id)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages[0]) from exc
+
+    def validate_name_ar(self, value):
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Arabic company name is required.")
+        return value
+
+    def validate_name_en(self, value):
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("English company name is required.")
+        return value
+
+    def validate_trn(self, value):
+        return validate_trn_value(value)
+
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)
+        if instance is None:
+            return attrs
+        name_ar = attrs.get("name_ar", instance.name_ar)
+        name_en = attrs.get("name_en", instance.name_en)
+        if not (name_ar or "").strip() and not (name_en or "").strip():
+            raise serializers.ValidationError(
+                "At least one of Arabic or English company name is required."
+            )
         return attrs
 
 

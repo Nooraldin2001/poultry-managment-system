@@ -76,6 +76,17 @@ Approved demo purchases are **cancelled first** (reverses inventory/supplier led
 | Inventory UI shows zeros | Frontend mapped wrong API fields | **Fixed** Phase 10 — `available_cartons/kg` |
 | Repair approved purchases | `repair_purchase_inventory_side_effects` | **Fixed** Phase 10 |
 | Poultry cuts (KG purchase) | `chicken_part` type + KG-primary UI | **Fixed** Phase 11 |
+| Print preview company identity | Logo/TRN/stamp/signature via `build_company_print_identity` | **Fixed** Phase 12 |
+
+## Print preview — company identity (Phase 12)
+
+| Item | Detail |
+|------|--------|
+| API | `GET /api/v1/tenant/purchases/{id}/print-preview/` |
+| Company block | `name_ar`, `name_en`, `trn`, `phone`, `address`, `email`, `logo_url`, `stamp_url`, `signature_url` |
+| UI | `PrintPreviewLayout` — logo 80px, stamp 160px, signature 180px; missing images hidden |
+
+See [INVOICE_BRANDING_AND_TAX_IDENTITY.md](./INVOICE_BRANDING_AND_TAX_IDENTITY.md).
 
 ## Product type mapping (no migration)
 

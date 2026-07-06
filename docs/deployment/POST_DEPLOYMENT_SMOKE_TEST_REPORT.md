@@ -801,3 +801,31 @@ python manage.py repair_purchase_inventory_side_effects --company-subdomain firs
 | Seed cuts (optional) | `seed_poultry_cut_products --company-subdomain firstview --confirm` |
 | Production smoke | **Pending** — purchase كبده 25 KG no VAT → approve → inventory +25 KG |
 
+---
+
+## Phase 12 — Invoice branding & tax identity (2026-07-06)
+
+**Goal:** Official invoices show company identity (name AR/EN, TRN, logo, stamp, signature) and customer TRN on sales print preview.
+
+| Area | Implementation |
+|---|---|
+| Company model | `name_ar`, `name_en`, `trn`, `logo`, `stamp`, `signature`, `phone`, `address`, `email` — paths `company_assets/{company_id}/{kind}/` |
+| Shared print helper | `apps/tenants/print_identity.py` — `build_company_print_identity`, `build_sales_customer_party` |
+| Print previews | Sales, purchase, quotation, payment receipt, expense voucher — absolute asset URLs via request |
+| Sales snapshots | `customer_*_snapshot` on create; refresh on draft customer change; **frozen at approval** |
+| Customer TRN | `Customer.trn` on POST/PATCH; digits-only validation |
+| Super Admin UI | `AdminCompanyEditScreen` — Company Identity & Invoice Branding section |
+| Print UI | `PrintPreviewLayout` — company/customer TRN labels, logo 80px, stamp 160px, signature 180px |
+
+| Check | Result |
+|---|---|
+| `pytest tests/test_invoice_branding.py` | **9 passed** |
+| `pytest tests/test_admin_companies.py tests/test_company_identity.py` | **Pass** |
+| `python manage.py check` | **Pass** |
+| `pnpm run typecheck` / `build` | **Pass** |
+| Production smoke | **Pending** — Super Admin upload assets + First View sales print preview + PDF |
+
+See [INVOICE_BRANDING_AND_TAX_IDENTITY.md](./INVOICE_BRANDING_AND_TAX_IDENTITY.md).
+
+**Launch stance (Phase 12):** **NO-GO** until deploy + First View invoice branding smoke passes.
+

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Lang } from "@/shared/types";
-import type { TenantScreen } from "@/shared/types";
+import type { TenantScreen } from "@/shared/types/navigation";
 import { LoadingState, ErrorState, EmptyState } from "@/shared/components/ApiStates";
 import { PrintPreviewLayout, type PrintLineRow } from "./PrintPreviewLayout";
 
@@ -17,12 +17,18 @@ function mapPrintLines(data: Record<string, unknown>): PrintLineRow[] {
 }
 
 function mapTotals(data: Record<string, unknown>): { label: string; value: string }[] {
+  const totals = (data.totals ?? {}) as Record<string, unknown>;
   const pairs: [string, string][] = [];
-  if (data.subtotal != null) pairs.push(["Subtotal", String(data.subtotal)]);
-  if (data.vat_amount != null || data.vat != null) pairs.push(["VAT", String(data.vat_amount ?? data.vat)]);
-  if (data.total_amount != null || data.total != null) pairs.push(["Total", String(data.total_amount ?? data.total)]);
-  if (data.amount_paid != null) pairs.push(["Paid", String(data.amount_paid)]);
-  if (data.balance != null) pairs.push(["Balance", String(data.balance)]);
+  const subtotal = data.subtotal ?? totals.subtotal;
+  const vat = data.vat_amount ?? data.vat ?? totals.vat_amount;
+  const total = data.total_amount ?? data.total ?? totals.total_amount;
+  const paid = data.amount_paid ?? totals.amount_paid;
+  const balance = data.balance ?? totals.balance_due;
+  if (subtotal != null) pairs.push(["Subtotal", String(subtotal)]);
+  if (vat != null) pairs.push(["VAT", String(vat)]);
+  if (total != null) pairs.push(["Total", String(total)]);
+  if (paid != null) pairs.push(["Paid", String(paid)]);
+  if (balance != null) pairs.push(["Balance", String(balance)]);
   return pairs.map(([label, value]) => ({ label, value: `AED ${value}` }));
 }
 
@@ -36,15 +42,18 @@ type Props = {
 };
 
 function normalizePrintPreviewData(raw: Record<string, unknown>): Record<string, unknown> {
-  const invoice = (raw.invoice ?? {}) as Record<string, unknown>;
+  const invoice = (raw.invoice ?? raw.quotation ?? raw.voucher ?? {}) as Record<string, unknown>;
   const totals = (raw.totals ?? {}) as Record<string, unknown>;
   const party = (raw.customer ?? raw.supplier ?? raw.party ?? {}) as Record<string, unknown>;
   return {
     ...raw,
+    title_ar: raw.title_ar,
+    title_en: raw.title_en,
     customer: party,
     supplier: party,
-    invoice_number: raw.invoice_number ?? invoice.number,
-    invoice_date: raw.invoice_date ?? invoice.date,
+    party,
+    invoice_number: raw.invoice_number ?? invoice.number ?? raw.quotation_number ?? raw.receipt_number,
+    invoice_date: raw.invoice_date ?? invoice.date ?? raw.date,
     notes: raw.notes ?? invoice.notes,
     subtotal: raw.subtotal ?? totals.subtotal,
     vat_amount: raw.vat_amount ?? totals.vat_amount,
@@ -88,6 +97,8 @@ export function LivePrintPreviewScreen({ lang, onNavigate, backScreen, titleAr, 
 
   const company = (data.company ?? data.tenant ?? {}) as Record<string, unknown>;
   const party = (data.customer ?? data.supplier ?? data.party ?? {}) as Record<string, unknown>;
+  const resolvedTitleAr = String(data.title_ar ?? titleAr);
+  const resolvedTitleEn = String(data.title_en ?? titleEn);
   const meta = [
     data.invoice_number || data.quotation_number || data.receipt_number
       ? { label: lang === "ar" ? "الرقم" : "Number", value: String(data.invoice_number ?? data.quotation_number ?? data.receipt_number) }
@@ -97,13 +108,16 @@ export function LivePrintPreviewScreen({ lang, onNavigate, backScreen, titleAr, 
       : null,
   ].filter(Boolean) as { label: string; value: string }[];
 
+  const partyKind = data.supplier || (party as { type?: string }).type === "supplier" ? "supplier" : "customer";
+
   return (
     <PrintPreviewLayout
       lang={lang}
-      titleAr={titleAr}
-      titleEn={titleEn}
+      titleAr={resolvedTitleAr}
+      titleEn={resolvedTitleEn}
       company={company}
       party={party}
+      partyKind={partyKind as "customer" | "supplier"}
       meta={meta}
       lines={lines}
       totals={totals}

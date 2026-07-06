@@ -39,7 +39,7 @@ def test_duplicate_subdomain_blocked(api, super_admin, company):
     assert "subdomain" in resp.json()
 
 
-@pytest.mark.parametrize("bad", ["Prime Fresh", "UPPER", "has_underscore", "bad!", "-lead"])
+@pytest.mark.parametrize("bad", ["Prime Fresh", "has_underscore", "bad!", "-lead"])
 def test_invalid_subdomain_rejected(api, super_admin, bad):
     api.force_authenticate(user=super_admin)
     resp = api.post(

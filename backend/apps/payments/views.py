@@ -100,7 +100,7 @@ class PaymentMovementViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["get"], url_path="print-preview")
     def print_preview(self, request, pk=None):
         movement = self.get_object()
-        return Response(services.build_receipt_preview(movement))
+        return Response(services.build_receipt_preview(movement, request=request))
 
 
 class PaymentSummaryView(APIView):
@@ -317,4 +317,4 @@ class ReceiptPrintPreviewView(APIView):
         movement = get_object_or_404(
             PaymentMovement, pk=pk, company_id=request.user.company_id
         )
-        return Response(services.build_receipt_preview(movement))
+        return Response(services.build_receipt_preview(movement, request=request))

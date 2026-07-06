@@ -37,6 +37,7 @@ import { useSales, useSaleDetail } from "@/hooks/api/useTenantResources";
 import { parseAmount } from "@/services/reportsService";
 import { resolveTenantCompany, mapBackendRole } from "@/services/tenantService";
 import { buildAdminDashboardSummary, createCompany, createCompanyAdminUser, getCompanyById, listPlans, updateCompanyAssetsLive } from "@/services/adminService";
+import { AdminCompanyEditScreen } from "@/features/admin/AdminCompanyEditScreen";
 import { CompanyAssetUploadField, InvoiceBrandingPreview } from "@/features/company/CompanyAssetUploadField";
 import { getAppHostKind, getTenantSubdomainFromHost, getTenantUrl } from "@/services/tenantUrl";
 import { ApiError } from "@/services/api/errors";
@@ -194,7 +195,7 @@ function Sidebar({ screen, onNavigate, lang, isOpen, onClose, onSwitchToTenant, 
   userName?: string; onLogout?: () => void;
 }) {
   const isRTL = lang === "ar";
-  const isCompanyRelated = screen === "company-detail" || screen === "create-company";
+  const isCompanyRelated = screen === "company-detail" || screen === "company-edit" || screen === "create-company";
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={onClose} />}
@@ -644,7 +645,7 @@ function CompaniesScreen({ lang, onNavigate, onSelectCompany }: {
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-1.5">
                         <button onClick={() => { onSelectCompany(c.id); onNavigate("company-detail"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#0F2C59] hover:text-white transition-all" title={isRTL ? "عرض" : "View"}><Eye size={14} /></button>
-                        <button className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all" title={isRTL ? "تعديل" : "Edit"}><Pencil size={14} /></button>
+                        <button onClick={() => { onSelectCompany(c.id); onNavigate("company-edit"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all" title={isRTL ? "تعديل" : "Edit"}><Pencil size={14} /></button>
                         <button onClick={() => onNavigate("payments")} className="p-1.5 rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all" title={isRTL ? "دفعة" : "Payment"}><DollarSign size={14} /></button>
                         {c.status !== "suspended" ? <button onClick={() => setConfirmId(c.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all" title={isRTL ? "تعليق" : "Suspend"}><Ban size={14} /></button> : <button className="p-1.5 rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all"><RefreshCw size={14} /></button>}
                         <button onClick={() => openTenantWorkspace(c.subdomain)} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#22C55E] hover:text-white transition-all" title={isRTL ? "فتح مساحة العمل" : "Open workspace"}><ExternalLink size={14} /></button>
@@ -762,7 +763,7 @@ function CompanyDetailScreen({ companyId, lang, onNavigate }: {
         <div className="flex items-center gap-2 flex-wrap"><StatusBadge status={c.status} lang={lang} /><PlanBadge plan={c.plan} lang={lang} /></div>
       </div>
       <Card className="p-4 flex flex-wrap gap-2.5">
-        <Btn size="sm"><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>
+        <Btn size="sm" onClick={() => onNavigate("company-edit")}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>
         <Btn size="sm" variant="secondary" onClick={() => onNavigate("payments")}><DollarSign size={13} />{isRTL ? "تسجيل دفعة" : "Record Payment"}</Btn>
         <Btn size="sm" variant="green" onClick={() => openTenantWorkspace(c.subdomain)}><ExternalLink size={13} />{isRTL ? "فتح مساحة العمل" : "Open Workspace"}</Btn>
         <Btn size="sm" variant="secondary" onClick={() => { void navigator.clipboard?.writeText(getTenantUrl(c.subdomain)); toast.success(isRTL ? "تم نسخ الرابط" : "URL copied"); }}><Globe size={13} />{isRTL ? "نسخ الرابط" : "Copy URL"}</Btn>
@@ -782,7 +783,7 @@ function CompanyDetailScreen({ companyId, lang, onNavigate }: {
         <div className="p-5">
           {tab === "overview" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[{ ar: "اسم الشركة (عربي)", en: "Arabic Name", v: c.nameAr }, { ar: "اسم الشركة (إنجليزي)", en: "English Name", v: c.nameEn }, { ar: "النطاق الفرعي", en: "Subdomain", v: formatTenantHost(c.subdomain) }, { ar: "رابط مساحة العمل", en: "Workspace URL", v: getTenantUrl(c.subdomain) }, { ar: "TRN", en: "TRN", v: trn || "—" }, { ar: "الإمارة", en: "Emirate", v: c.emirate }, { ar: "رقم الرخصة", en: "Trade License", v: c.tradeLicense }, { ar: "اسم المدير", en: "Admin Name", v: c.adminName }, { ar: "هاتف المدير", en: "Admin Phone", v: c.adminPhone }, { ar: "بريد المدير", en: "Admin Email", v: c.adminEmail }].map(f => (
+              {[{ ar: "اسم الشركة (عربي)", en: "Arabic Name", v: c.nameAr }, { ar: "اسم الشركة (إنجليزي)", en: "English Name", v: c.nameEn }, { ar: "النطاق الفرعي", en: "Subdomain", v: formatTenantHost(c.subdomain) }, { ar: "رابط مساحة العمل", en: "Workspace URL", v: getTenantUrl(c.subdomain) }, { ar: "TRN", en: "TRN", v: trn || "—" }, { ar: "الإمارة", en: "Emirate", v: c.emirate }, { ar: "رقم الرخصة", en: "Trade License", v: c.tradeLicense }, { ar: "انتهاء الرخصة", en: "License Expiry", v: c.licenseExpiryDate || "—" }, { ar: "العنوان", en: "Address", v: c.address || "—" }, { ar: "اسم المدير", en: "Manager Name", v: c.managerName || c.adminName }, { ar: "هاتف المدير", en: "Manager Phone", v: c.managerPhone || c.adminPhone }, { ar: "بريد المدير", en: "Manager Email", v: c.managerEmail || c.adminEmail }, { ar: "ملاحظات", en: "Notes", v: c.notes || "—" }].map(f => (
                 <div key={f.ar} className="bg-slate-50 rounded-xl p-3.5"><div className="text-xs font-bold text-slate-400 mb-1">{isRTL ? f.ar : f.en}</div><div className="font-bold text-slate-800 text-sm">{f.v}</div></div>
               ))}
             </div>
@@ -3743,6 +3744,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
 // ── MAIN APP ───────────────────────────────────────────────────────────────────
 export default function App() {
   const { user, loading, isSuperAdmin, logout } = useAuth();
+  const { reload: reloadAdminCompanies } = useAdminCompanies();
   const [mode, setMode] = useState<AppMode>("superadmin");
   const [screen, setScreen] = useState<Screen>("login");
   const [lang, setLang] = useState<Lang>("ar");
@@ -3893,6 +3895,14 @@ export default function App() {
             {screen === "dashboard"      && <DashboardScreen lang={lang} onNavigate={navigate} />}
             {screen === "companies"      && <CompaniesScreen lang={lang} onNavigate={navigate} onSelectCompany={setSelectedCompany} />}
             {screen === "company-detail" && <CompanyDetailScreen companyId={selectedCompany} lang={lang} onNavigate={navigate} />}
+            {screen === "company-edit" && (
+              <AdminCompanyEditScreen
+                companyId={selectedCompany}
+                lang={lang}
+                onNavigate={navigate}
+                onSaved={() => void reloadAdminCompanies()}
+              />
+            )}
             {screen === "create-company" && <CreateCompanyWizard lang={lang} onNavigate={navigate} />}
             {screen === "payments"       && <PaymentsScreen lang={lang} />}
             {screen === "outstanding"    && <OutstandingScreen lang={lang} onNavigate={navigate} />}
