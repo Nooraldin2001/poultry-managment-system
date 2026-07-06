@@ -69,4 +69,6 @@ python manage.py repair_purchase_inventory_side_effects --company-subdomain firs
 - `test_fixed_weight_50_cartons_equals_250_kg_on_approve`
 - `test_repair_dry_run_does_not_add_stock`
 - `test_repair_confirm_adds_missing_stock`
+- `test_purchase_chicken_part_by_kg_without_cartons`
+- `test_sales_chicken_part_deducts_kg_and_blocks_oversell`
 - `test_cross_tenant_purchase_approval_inventory_isolated`

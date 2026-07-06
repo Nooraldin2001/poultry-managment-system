@@ -41,6 +41,7 @@ from apps.inventory.models import (
 from apps.inventory.services import StockConsumedError
 from apps.permissions.services import has_permission
 from apps.products.models import ProductType
+from apps.products.poultry_cuts import is_kg_primary_product, validate_purchase_line_quantities
 from apps.suppliers.models import Supplier, SupplierLedgerEntry, SupplierSpecialPrice
 from apps.suppliers import services as supplier_services
 
@@ -394,14 +395,22 @@ def _validate_lines_for_approval(lines) -> None:
                     )
                 }
             )
+        qty_errors = validate_purchase_line_quantities(
+            product=line.product,
+            quantity_cartons=line.quantity_cartons,
+            quantity_pieces=line.quantity_pieces,
+            quantity_kg=line.quantity_kg,
+        )
+        if qty_errors:
+            raise ValidationError(qty_errors)
         if (
-            line.product.product_type == ProductType.MOVING_WEIGHT
+            is_kg_primary_product(line.product)
             and _d(line.quantity_kg) <= 0
         ):
             raise ValidationError(
                 {
                     "quantity_kg": (
-                        f"Moving-weight product '{line.product_name_snapshot}' "
+                        f"Poultry cut '{line.product_name_snapshot}' "
                         "requires KG greater than zero."
                     )
                 }

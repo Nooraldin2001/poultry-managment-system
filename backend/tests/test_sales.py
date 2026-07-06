@@ -657,3 +657,25 @@ def test_sales_price_history_respects_tenant(api, company, owner, other_owner):
     api.force_authenticate(other_owner)
     resp = api.get(f"{SALES_URL}price-history/?customer={customer.id}&product={product.id}")
     assert resp.status_code == 404
+
+
+def test_sales_chicken_part_deducts_kg_and_blocks_oversell(company, owner):
+    customer = _customer(company)
+    cat = ProductCategory.objects.create(company=company, name_ar="مقطعات", code="PARTS-S")
+    liver = Product.objects.create(
+        company=company, category=cat, name_ar="كبده", sku="S-LIVER",
+        product_type=ProductType.CHICKEN_PART,
+        sales_price=Decimal("5.00"), sales_price_type="kg",
+        track_inventory=True, can_sell=True,
+    )
+    _seed_stock(company, owner, liver, kg="30", cost="4")
+    inv = _create(company, customer, owner, [_line(liver, quantity_kg="10", unit_price="5")])
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="sold")
+    balance = InventoryBalance.objects.get(company=company, product=liver)
+    assert balance.available_kg == Decimal("20.000")
+    with pytest.raises(ValidationError):
+        oversell = _create(
+            company, customer, owner, [_line(liver, quantity_kg="25", unit_price="5")],
+        )
+        services.approve_sales_invoice(invoice=oversell, user=owner, reason="too much")
+

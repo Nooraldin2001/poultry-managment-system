@@ -43,6 +43,15 @@ export function deriveQuantitiesFromCartons(input: CartonCalculationInput): {
     return { cartons, pieces: calc.totalPieces, kg: calc.totalKg };
   }
 
+  // Poultry cuts / moving weight / loose by-products — KG is entered manually.
+  if (
+    productType === "part" ||
+    productType === "moving" ||
+    (productType === "byproduct" && !(grams > 0 && ppc > 0))
+  ) {
+    return { cartons: 0, pieces: loosePieces, kg: input.manualKg ?? 0 };
+  }
+
   if (ppc > 0) {
     const pieces = cartons * ppc + loosePieces;
     return { cartons, pieces, kg: input.manualKg ?? 0 };

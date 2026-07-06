@@ -75,6 +75,16 @@ Approved demo purchases are **cancelled first** (reverses inventory/supplier led
 | VAT toggle UI | `بدون ضريبة` / `No VAT` | **Fixed** Phase 9 |
 | Inventory UI shows zeros | Frontend mapped wrong API fields | **Fixed** Phase 10 — `available_cartons/kg` |
 | Repair approved purchases | `repair_purchase_inventory_side_effects` | **Fixed** Phase 10 |
+| Poultry cuts (KG purchase) | `chicken_part` type + KG-primary UI | **Fixed** Phase 11 |
+
+## Product type mapping (no migration)
+
+| Business term | Backend `product_type` | Purchase UI |
+|---|---|---|
+| Fixed-weight carton | `fixed_weight` | Cartons + auto KG |
+| Variable weight | `moving_weight` | KG required |
+| Poultry cuts | `chicken_part` | KG required, cartons hidden |
+| Loose by-products | `by_product` (no carton spec) | KG required |
 | Cancel | `POST .../cancel/` body `{ "reason" }` | OK |
 | Print/PDF | `GET .../print-preview/` + browser print | **Fixed** |
 | Detail (live) | `LivePurchaseInvoiceScreen` | OK (simplified vs mock tabs) |

@@ -3,6 +3,10 @@ from decimal import Decimal
 import pytest
 
 from apps.products.models import Product, ProductCategory, ProductType
+from apps.products.poultry_cuts import (
+    is_kg_primary_product,
+    validate_purchase_line_quantities,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -144,3 +148,27 @@ def test_price_change_requires_reason(api, owner, fixed_product):
     assert ok.status_code == 200
     fixed_product.refresh_from_db()
     assert fixed_product.sales_price == Decimal("120.00")
+
+
+def test_chicken_part_is_kg_primary(company):
+    cat = ProductCategory.objects.create(company=company, name_ar="مقطعات", code="P")
+    product = Product.objects.create(
+        company=company, category=cat, name_ar="كبده", sku="CUT1",
+        product_type=ProductType.CHICKEN_PART, track_inventory=True,
+    )
+    assert is_kg_primary_product(product) is True
+
+
+def test_validate_cut_requires_kg(company):
+    cat = ProductCategory.objects.create(company=company, name_ar="مقطعات", code="P2")
+    product = Product.objects.create(
+        company=company, category=cat, name_ar="كبده", sku="CUT2",
+        product_type=ProductType.CHICKEN_PART, track_inventory=True,
+    )
+    errors = validate_purchase_line_quantities(
+        product=product,
+        quantity_cartons=Decimal("0"),
+        quantity_pieces=Decimal("0"),
+        quantity_kg=Decimal("0"),
+    )
+    assert "quantity_kg" in errors

@@ -11,6 +11,8 @@ from rest_framework import serializers
 
 from apps.products.models import Product
 
+from apps.products.poultry_cuts import validate_purchase_line_quantities
+
 from .models import (
     PurchaseAdjustment,
     PurchaseAttachment,
@@ -150,20 +152,23 @@ class PurchaseInvoiceLineInputSerializer(_NonNegativeMixin, serializers.Serializ
                 raise serializers.ValidationError(
                     {"product": "This product is not purchasable."}
                 )
-            # Stock-tracked product lines must carry a quantity.
+            # Stock-tracked product lines must carry a valid quantity for product type.
             if (
                 product.track_inventory
                 and line_type in (PurchaseLineType.PRODUCT, PurchaseLineType.BY_PRODUCT)
             ):
-                qty = (
-                    attrs.get("quantity_cartons", ZERO)
-                    + attrs.get("quantity_pieces", ZERO)
-                    + attrs.get("quantity_kg", ZERO)
-                )
-                if qty <= 0:
-                    raise serializers.ValidationError(
-                        {"quantity": "Stock-tracked product lines require a quantity."}
+                from apps.products.poultry_cuts import is_kg_primary_product
+
+                # KG-primary cuts may be saved on draft with KG=0; approval enforces KG>0.
+                if not is_kg_primary_product(product):
+                    qty_errors = validate_purchase_line_quantities(
+                        product=product,
+                        quantity_cartons=attrs.get("quantity_cartons", ZERO),
+                        quantity_pieces=attrs.get("quantity_pieces", ZERO),
+                        quantity_kg=attrs.get("quantity_kg", ZERO),
                     )
+                    if qty_errors:
+                        raise serializers.ValidationError(qty_errors)
         return attrs
 
 

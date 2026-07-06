@@ -783,3 +783,21 @@ python manage.py repair_purchase_inventory_side_effects --company-subdomain firs
 | VPS dry-run / confirm repair | **Pending owner SSH** |
 | First View inventory after repair | **Pending** |
 
+---
+
+## Phase 11 — Poultry cuts on purchase invoices (2026-07-06)
+
+**Client requirement (AR):** `فاتورة المشتريات دي مش كراتين بس، بشتري فيها مقطعات دجاج، والمقطعات دي المفروض تظهر في المخزون`
+
+| Cut products | Backend type | Purchase line |
+|---|---|---|
+| كبده، قوانص، قلوب، صدور، افخاذ، اجنحة، عظم | `chicken_part` | KG required; cartons optional/0 |
+
+| Check | Result |
+|---|---|
+| `pytest tests/test_products.py tests/test_purchases.py tests/test_inventory.py tests/test_sales.py` | **142 passed** |
+| `python manage.py check` | **Pass** |
+| `pnpm run typecheck` | **Pass** |
+| Seed cuts (optional) | `seed_poultry_cut_products --company-subdomain firstview --confirm` |
+| Production smoke | **Pending** — purchase كبده 25 KG no VAT → approve → inventory +25 KG |
+

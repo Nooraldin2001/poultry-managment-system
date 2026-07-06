@@ -14,6 +14,7 @@ import type { InvoiceLineDraft } from "./types";
 import type { LinePayloadOptions } from "./invoiceApi";
 import { applyLineTotals } from "./lineTotals";
 import { deriveQuantitiesFromCartons } from "./lineQuantities";
+import { isCartonBasedProduct, isKgPrimaryProduct } from "./productLineMode";
 import { SalesLinePriceCell } from "./SalesLinePriceCell";
 import { canOverrideSalesPrice } from "@/shared/utils/permissions";
 import type { ProductRow } from "@/shared/types/entities";
@@ -399,20 +400,27 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.map((line) => (
+                  {lines.map((line) => {
+                    const prod = products.find((p) => p.id === line.productId);
+                    const kgPrimary = isKgPrimaryProduct(prod);
+                    return (
                     <tr key={line.id} className="border-b">
                       <td className="p-2 font-semibold">{line.productName}</td>
                       <td className="p-2">
-                        <input
-                          type="number"
-                          disabled={!isDraft}
-                          className="w-16 rounded border px-1 py-0.5 text-xs"
-                          value={line.cartons}
-                          onChange={(e) => {
-                            const cartons = Number(e.target.value);
-                            updateLine({ ...line, cartons });
-                          }}
-                        />
+                        {kgPrimary ? (
+                          <span className="text-slate-300">—</span>
+                        ) : (
+                          <input
+                            type="number"
+                            disabled={!isDraft}
+                            className="w-16 rounded border px-1 py-0.5 text-xs"
+                            value={line.cartons}
+                            onChange={(e) => {
+                              const cartons = Number(e.target.value);
+                              updateLine({ ...line, cartons });
+                            }}
+                          />
+                        )}
                       </td>
                       <td className="p-2">
                         <input
@@ -424,9 +432,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
                             const kg = Number(e.target.value);
                             updateLine({ ...line, kg }, { kgOverride: true });
                           }}
-                          readOnly={
-                            !!products.find((p) => p.id === line.productId && p.type === "fixed" && (p.g ?? 0) > 0)
-                          }
+                          readOnly={isCartonBasedProduct(prod) && !line.kgOverride}
                         />
                       </td>
                       <td className="p-2">
@@ -448,7 +454,8 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
                         )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

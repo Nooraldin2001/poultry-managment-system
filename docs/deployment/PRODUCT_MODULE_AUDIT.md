@@ -38,6 +38,19 @@ Sensitive PATCH fields require `reason` in body: default sale/purchase prices, w
 
 ## Production smoke (First View admin)
 
+---
+
+## Phase 11 — Poultry cut products (2026-07-06)
+
+| Item | Detail |
+|---|---|
+| Type | `chicken_part` (maps to UI `part`) — KG-primary, no cartons required |
+| Reference SKUs | `CUT-LIVER`, `CUT-GIZZARD`, `CUT-HEART`, `CUT-BREAST`, `CUT-THIGH`, `CUT-WING`, `CUT-BONE` |
+| Seed command | `python manage.py seed_poultry_cut_products --company-subdomain firstview --dry-run` then `--confirm` |
+| Rules | `track_inventory=true`, `purchase_price_type=kg`, optional `weight_grams` / `ppc` |
+
+Does not auto-create products or stock; tenant admin may create cuts manually or run seed with `--confirm`.
+
 1. Products → edit row → change price/weight/PPC → save → **PATCH 200**
 2. If price/carton changed → reason modal required
 3. Refresh → values persist

@@ -54,6 +54,20 @@ def _product(company, sku="PUR1", **kwargs):
     return Product.objects.create(**defaults)
 
 
+def _cut_product(company, sku="CUT-LIVER", name_ar="كبده", **kwargs):
+    cat = ProductCategory.objects.create(
+        company=company, name_ar="مقطعات", code=f"PARTS{sku}",
+    )
+    defaults = dict(
+        company=company, category=cat, name_ar=name_ar, sku=sku,
+        product_type=ProductType.CHICKEN_PART,
+        purchase_price=Decimal("4.00"), purchase_price_type="kg",
+        track_inventory=True, can_purchase=True, can_sell=True,
+    )
+    defaults.update(kwargs)
+    return Product.objects.create(**defaults)
+
+
 def _line(product, **kwargs):
     data = dict(
         product=product, line_type=PurchaseLineType.PRODUCT,
@@ -695,6 +709,76 @@ def test_repair_confirm_adds_missing_stock(company, owner):
     assert report2["repaired_count"] == 0
     balance.refresh_from_db()
     assert balance.available_kg == Decimal("100.000")
+
+
+# ── Poultry cuts (KG-primary) ───────────────────────────────────────────────
+def test_purchase_chicken_part_by_kg_without_cartons(company, owner):
+    supplier = _supplier(company)
+    liver = _cut_product(company, name_ar="كبده")
+    inv = _create(
+        company, supplier, owner,
+        [_line(liver, quantity_kg="25", unit_price="4", vat_rate=Decimal("0"))],
+        vat_rate=Decimal("0"),
+    )
+    assert inv.vat_amount == Decimal("0.00")
+    assert inv.total_amount == Decimal("100.00")
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="received")
+    balance = InventoryBalance.objects.get(company=company, product=liver)
+    assert balance.available_kg == Decimal("25.000")
+    assert balance.available_cartons == Decimal("0.00")
+    layer = FIFOStockLayer.objects.get(
+        company=company, source_type=StockSourceType.PURCHASE_INVOICE, source_id=inv.id,
+    )
+    assert layer.remaining_kg == Decimal("25.000")
+    assert layer.unit_cost_per_kg == Decimal("4.0000")
+    supplier.refresh_from_db()
+    assert supplier.current_balance == Decimal("100.00")
+
+
+def test_purchase_cut_requires_kg_on_approve(company, owner):
+    supplier = _supplier(company)
+    liver = _cut_product(company)
+    inv = _create(
+        company, supplier, owner,
+        [_line(liver, quantity_kg="0", unit_price="4")],
+    )
+    with pytest.raises(ValidationError):
+        services.approve_purchase_invoice(invoice=inv, user=owner, reason="ok")
+
+
+def test_api_purchase_cut_without_cartons(api, company, owner):
+    supplier = _supplier(company)
+    liver = _cut_product(company, sku="API-LIVER")
+    api.force_authenticate(owner)
+    resp = api.post(
+        PURCHASES_URL,
+        {
+            "supplier": supplier.id,
+            "invoice_date": str(date.today()),
+            "vat_rate": "0.00",
+            "lines": [{
+                "product": liver.id,
+                "line_type": "product",
+                "quantity_cartons": "0",
+                "quantity_pieces": "0",
+                "quantity_kg": "25.000",
+                "unit_price": "4.00",
+                "price_type": "kg",
+                "vat_rate": "0.00",
+            }],
+        },
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    inv_id = resp.data["id"]
+    resp = api.post(
+        f"{PURCHASES_URL}{inv_id}/approve/",
+        {"reason": "cuts received"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    balance = InventoryBalance.objects.get(company=company, product=liver)
+    assert balance.available_kg == Decimal("25.000")
 
 
 # ── Production data hygiene checks ──────────────────────────────────────────

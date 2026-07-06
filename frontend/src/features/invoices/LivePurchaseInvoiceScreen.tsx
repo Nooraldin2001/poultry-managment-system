@@ -15,6 +15,11 @@ import type { LinePayloadOptions } from "./invoiceApi";
 import { addDraftLine, createDraftHeader, patchDraftHeader, removeDraftLine, updateDraftLine } from "./invoiceApi";
 import { applyLineTotals } from "./lineTotals";
 import { deriveQuantitiesFromCartons } from "./lineQuantities";
+import {
+  defaultLineQuantitiesForProduct,
+  isCartonBasedProduct,
+  isKgPrimaryProduct,
+} from "./productLineMode";
 import { PurchaseLinePriceCell } from "./PurchaseLinePriceCell";
 import { canOverridePurchasePrice } from "@/shared/utils/permissions";
 import { notifyTenantDataChanged } from "@/shared/utils/tenantRefresh";
@@ -24,6 +29,9 @@ import type { ProductRow } from "@/shared/types/entities";
 
 function recalcLineFromProduct(line: InvoiceLineDraft, prod: ProductRow | undefined): InvoiceLineDraft {
   if (!prod) return line;
+  if (isKgPrimaryProduct(prod)) {
+    return { ...line, cartons: 0, pieces: line.pieces ?? 0, kg: line.kg };
+  }
   const derived = deriveQuantitiesFromCartons({
     weightGrams: prod.g || 0,
     piecesPerCarton: prod.ppc || 0,
@@ -207,20 +215,22 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     setSaving(true);
     try {
       const id = await ensureDraft();
+      const qtyDefaults = defaultLineQuantitiesForProduct(prod);
       const draftBase: InvoiceLineDraft = {
         id: `tmp-${Date.now()}`,
         productId,
         productName: prod.nameAr,
-        cartons: 1,
-        pieces: 0,
-        kg: 0,
+        cartons: qtyDefaults.cartons,
+        pieces: qtyDefaults.pieces,
+        kg: qtyDefaults.kg,
         unitPrice: prod.buyP || prod.saleP,
-        priceType: prod.buyPT ?? prod.salePT ?? "kg",
+        priceType: isKgPrimaryProduct(prod) ? "kg" : (prod.buyPT ?? prod.salePT ?? "kg"),
         vatRate: lineVatRate,
         lineSubtotal: 0,
         lineTotal: 0,
+        kgOverride: isKgPrimaryProduct(prod),
       };
-      const draft = recalcLineFromProduct(draftBase, prod);
+      const draft = isKgPrimaryProduct(prod) ? draftBase : recalcLineFromProduct(draftBase, prod);
       const finalized = applyLineTotals(draft);
       const serverId = await addDraftLine("purchase", id, finalized);
       setLines((prev) => [...prev, { ...finalized, serverId }]);
@@ -254,7 +264,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     if (options?.kgOverride) {
       merged = { ...next, kgOverride: true };
     }
-    if (!options?.skipQuantityRecalc && !merged.kgOverride) {
+    if (!options?.skipQuantityRecalc && !merged.kgOverride && !isKgPrimaryProduct(prod)) {
       merged = recalcLineFromProduct(merged, prod);
     }
     const withTotals = applyLineTotals(merged);
@@ -283,6 +293,13 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       const id = await ensureDraft();
       await saveHeader(id);
       for (const line of lines) {
+        const prod = products.find((p) => p.id === line.productId);
+        if (isKgPrimaryProduct(prod) && line.kg <= 0) {
+          throw new ApiError(
+            isRTL ? `أدخل الكمية بالكيلو لـ ${line.productName}` : `Enter KG for ${line.productName}`,
+            { status: 400 },
+          );
+        }
         const synced = applyLineTotals({ ...line, vatRate: lineVatRate });
         if (line.serverId) await updateDraftLine("purchase", id, line.serverId, synced);
       }
@@ -375,29 +392,74 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
             />
           </div>
           <div className="bg-white rounded-2xl border overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]">
-              <thead><tr className="bg-slate-50 border-b"><th className="p-2">{isRTL ? "المنتج" : "Product"}</th><th className="p-2">{isRTL ? "كرتون" : "Ct"}</th><th className="p-2">KG</th><th className="p-2">{isRTL ? "السعر" : "Price"}</th><th className="p-2" /></tr></thead>
+            <table className="w-full text-sm min-w-[640px]">
+              <thead>
+                <tr className="bg-slate-50 border-b">
+                  <th className="p-2 text-start">{isRTL ? "المنتج" : "Product"}</th>
+                  <th className="p-2">{isRTL ? "نوع السطر" : "Line type"}</th>
+                  <th className="p-2">{isRTL ? "كراتين" : "Cartons"}</th>
+                  <th className="p-2">{isRTL ? "مقطعات" : "Pieces"}</th>
+                  <th className="p-2">{isRTL ? "الكمية بالكيلو" : "Quantity KG"}</th>
+                  <th className="p-2">{isRTL ? "السعر لكل كيلو" : "Price per KG"}</th>
+                  <th className="p-2">{isRTL ? "الإجمالي" : "Total"}</th>
+                  <th className="p-2" />
+                </tr>
+              </thead>
               <tbody>
-                {lines.map((line) => (
+                {lines.map((line) => {
+                  const prod = products.find((p) => p.id === line.productId);
+                  const kgPrimary = isKgPrimaryProduct(prod);
+                  const cartonBased = isCartonBasedProduct(prod);
+                  return (
                   <tr key={line.id} className="border-b">
                     <td className="p-2 font-semibold">{line.productName}</td>
+                    <td className="p-2 text-xs text-slate-500">
+                      {kgPrimary
+                        ? isRTL ? "مقطعات" : "Cuts"
+                        : isRTL ? "كراتين" : "Cartons"}
+                    </td>
                     <td className="p-2">
-                      <input
-                        type="number"
-                        disabled={!isDraft}
-                        className="w-16 border rounded px-1"
-                        value={line.cartons}
-                        onChange={(e) => updateLine({ ...line, cartons: Number(e.target.value) })}
-                      />
+                      {kgPrimary ? (
+                        <span className="text-slate-300">—</span>
+                      ) : (
+                        <input
+                          type="number"
+                          min={0}
+                          disabled={!isDraft}
+                          className="w-16 border rounded px-1"
+                          value={line.cartons}
+                          onChange={(e) => updateLine({ ...line, cartons: Number(e.target.value) })}
+                        />
+                      )}
+                    </td>
+                    <td className="p-2">
+                      {kgPrimary ? (
+                        <input
+                          type="number"
+                          min={0}
+                          disabled={!isDraft}
+                          className="w-16 border rounded px-1"
+                          value={line.pieces}
+                          onChange={(e) =>
+                            updateLine({ ...line, pieces: Number(e.target.value) }, { skipQuantityRecalc: true })
+                          }
+                        />
+                      ) : (
+                        <span className="font-mono text-xs">{line.pieces || "—"}</span>
+                      )}
                     </td>
                     <td className="p-2">
                       <input
                         type="number"
+                        min={0}
+                        step="0.001"
                         disabled={!isDraft}
-                        readOnly={!!products.find((p) => p.id === line.productId && p.type === "fixed" && (p.g ?? 0) > 0)}
-                        className="w-20 border rounded px-1"
+                        readOnly={cartonBased && !line.kgOverride}
+                        className="w-24 border rounded px-1"
                         value={line.kg}
-                        onChange={(e) => updateLine({ ...line, kg: Number(e.target.value) }, { kgOverride: true })}
+                        onChange={(e) =>
+                          updateLine({ ...line, kg: Number(e.target.value) }, { kgOverride: true })
+                        }
                       />
                     </td>
                     <td className="p-2">
@@ -410,9 +472,11 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
                         onPriceChange={updateLine}
                       />
                     </td>
+                    <td className="p-2 font-mono font-bold">{line.lineSubtotal.toFixed(2)}</td>
                     <td className="p-2">{isDraft && <button type="button" onClick={() => void removeLine(line)}><Trash2 size={14} className="text-red-500" /></button>}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             {lines.length === 0 && <EmptyState lang={lang} messageAr="أضف بنود الشراء" messageEn="Add purchase lines" compact />}
