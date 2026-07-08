@@ -143,3 +143,20 @@ Purchase print preview (`GET /api/v1/tenant/purchases/{id}/print-preview/`) incl
 Frontend uses same template registry as sales (`InvoiceTemplateRenderer`).
 
 See [INVOICE_BRANDING_AND_TEMPLATES.md](./INVOICE_BRANDING_AND_TEMPLATES.md).
+
+---
+
+## Treasury & payment posting (Phase 15 — 2026-07-08)
+
+- Added real treasury accounts (`cashbox` / `bank`) and movement ledger
+- Purchase approval deducts paid amount from treasury; outstanding only to supplier ledger
+- Cancel purchase reverses both supplier payable and treasury outflow
+- Payment section in purchase screen now includes:
+  - payment method
+  - money account
+  - paid amount
+  - remaining payable
+
+See:
+- [TREASURY_AND_BANK_ACCOUNTS.md](./TREASURY_AND_BANK_ACCOUNTS.md)
+- [PURCHASE_PAYMENT_FLOW.md](./PURCHASE_PAYMENT_FLOW.md)

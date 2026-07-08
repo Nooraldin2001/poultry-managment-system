@@ -3,6 +3,9 @@ import type { InvoiceThemeTokens } from "./theme";
 
 export interface PrintLineRow {
   label: string;
+  cartons?: string;
+  pieces?: string;
+  kg?: string;
   qty?: string;
   unit?: string;
   price?: string;

@@ -145,6 +145,7 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
             vat_rate=vd.get("vat_rate", 0),
             amount_paid=vd.get("amount_paid", 0),
             notes=vd.get("notes", ""),
+            money_account=vd.get("money_account"),
         )
         return Response(
             PurchaseInvoiceDetailSerializer(invoice).data,
@@ -171,7 +172,7 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
                 invoice.supplier_trn_snapshot = vd["supplier"].trn or ""
                 header_fields += ["supplier", "supplier_name_snapshot", "supplier_trn_snapshot"]
             for field in ("invoice_date", "due_date", "supplier_invoice_number",
-                          "payment_method", "vat_rate", "amount_paid", "notes"):
+                          "payment_method", "vat_rate", "amount_paid", "notes", "money_account"):
                 if field in vd:
                     setattr(invoice, field, vd[field])
                     header_fields.append(field)

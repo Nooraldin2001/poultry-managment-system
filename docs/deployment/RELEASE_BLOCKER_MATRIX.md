@@ -50,3 +50,7 @@
 | **Pending deploy** | **1** (`88822cd` — purchase/supplier/product edit routes) |
 
 See [TENANT_CREATE_WORKFLOW_AUDIT.md](../frontend/TENANT_CREATE_WORKFLOW_AUDIT.md).
+| Treasury & bank accounts (code) | **Fixed** | No | `MoneyAccount` + `MoneyMovement` + treasury APIs + live screen | Deploy + smoke |
+| Purchase payment posting split (code) | **Fixed** | No | cash/bank deduct treasury; credit/partial post outstanding payable | Deploy + smoke |
+| Invoice line delete permission UX (code) | **Fixed** | No | draft-only delete + permission-gated UI + clear AR/EN errors | Deploy + smoke |
+| Invoice multipage print + cartons column (code) | **Fixed** | No | print CSS pagination + cartons/pieces/kg rendered in print table | Deploy + smoke |

@@ -71,3 +71,27 @@ export function canOverridePurchasePrice(role: TenantRole, permissions: string[]
   }
   return role === "accountant";
 }
+
+export function canDeleteSalesLine(role: TenantRole, permissions: string[]): boolean {
+  if (role === "owner") return true;
+  if (permissions.length > 0) {
+    return permissions.includes("sales.lines.delete") || permissions.includes("sales.edit");
+  }
+  return role === "accountant";
+}
+
+export function canDeletePurchaseLine(role: TenantRole, permissions: string[]): boolean {
+  if (role === "owner") return true;
+  if (permissions.length > 0) {
+    return permissions.includes("purchases.lines.delete") || permissions.includes("purchases.edit");
+  }
+  return role === "accountant";
+}
+
+export function canDeleteQuotationLine(role: TenantRole, permissions: string[]): boolean {
+  if (role === "owner") return true;
+  if (permissions.length > 0) {
+    return permissions.includes("quotations.lines.delete") || permissions.includes("quotations.edit");
+  }
+  return role === "accountant";
+}

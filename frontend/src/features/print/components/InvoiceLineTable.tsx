@@ -52,8 +52,16 @@ export function InvoiceLineTable({
               }}
             >
               <td className="py-1.5 px-2 font-semibold" style={{ color: theme.text }}>{line.label}</td>
-              <td className="py-1.5 px-2 font-mono text-xs text-center">{line.qty ?? "—"}</td>
-              <td className="py-1.5 px-2 text-xs text-center" style={{ color: theme.muted }}>{line.unit || "—"}</td>
+              {/* Client mapping contract:
+                 - Qty (الكمية) = cartons
+                 - Unit (الوحدة) = kg quantity
+              */}
+              <td className="py-1.5 px-2 font-mono text-xs text-center">
+                {line.cartons !== undefined && line.cartons !== null ? line.cartons : "—"}
+              </td>
+              <td className="py-1.5 px-2 font-mono text-xs text-center" style={{ color: theme.muted }}>
+                {line.kg !== undefined && line.kg !== null ? line.kg : "—"}
+              </td>
               <td className="py-1.5 px-2 font-mono text-xs text-center">{line.price ?? "—"}</td>
               <td className={`py-1.5 px-2 font-mono font-bold ${isRTL ? "text-left" : "text-right"}`} style={{ color: theme.text }}>
                 {line.total ?? "—"}

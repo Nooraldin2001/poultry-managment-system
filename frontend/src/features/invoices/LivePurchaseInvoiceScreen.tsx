@@ -21,11 +21,12 @@ import {
   isKgPrimaryProduct,
 } from "./productLineMode";
 import { PurchaseLinePriceCell } from "./PurchaseLinePriceCell";
-import { canOverridePurchasePrice } from "@/shared/utils/permissions";
+import { canDeletePurchaseLine, canOverridePurchasePrice } from "@/shared/utils/permissions";
 import { notifyTenantDataChanged } from "@/shared/utils/tenantRefresh";
 import { ReasonModal } from "./ReasonModal";
 import { parseAmount } from "@/services/crud/parse";
 import type { ProductRow } from "@/shared/types/entities";
+import { listMoneyAccounts, type MoneyAccountRow } from "@/services/treasuryService";
 
 function recalcLineFromProduct(line: InvoiceLineDraft, prod: ProductRow | undefined): InvoiceLineDraft {
   if (!prod) return line;
@@ -61,6 +62,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   const isRTL = lang === "ar";
   const canApprove = role === "owner" || role === "accountant";
   const canEditPrice = canOverridePurchasePrice(role, permissions);
+  const canDeleteLine = canDeletePurchaseLine(role, permissions);
   const [docId, setDocId] = useState(invoiceId ?? "");
   const [supplierId, setSupplierId] = useState("");
   const [supplierInvNo, setSupplierInvNo] = useState("");
@@ -68,6 +70,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   const [status, setStatus] = useState("draft");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
+  const [moneyAccountId, setMoneyAccountId] = useState("");
   const [amountPaid, setAmountPaid] = useState("0");
   const [notes, setNotes] = useState("");
   const [vatEnabled, setVatEnabled] = useState(false);
@@ -78,6 +81,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   const [showApprove, setShowApprove] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccountRow[]>([]);
 
   const { items: suppliers, loading: loadingSuppliers } = useSuppliers();
   const { items: products, loading: loadingProducts } = useProducts();
@@ -90,6 +94,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     setStatus("draft");
     setInvoiceNumber("");
     setPaymentMethod("bank_transfer");
+    setMoneyAccountId("");
     setAmountPaid("0");
     setNotes("");
     setVatEnabled(false);
@@ -109,7 +114,9 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       setSupplierId(detail.invoice.supplierId);
       setInvoiceNumber(detail.invoice.number);
       setStatus(detail.invoice.status);
+      setPaymentMethod((detail.invoice as unknown as { paymentMethod?: string }).paymentMethod ?? "bank_transfer");
       setAmountPaid(String(detail.invoice.paid));
+      setMoneyAccountId(detail.invoice.moneyAccountId ?? "");
       setVatEnabled(detail.invoice.vat > 0);
       setLines(
         detail.lines.map((l) => ({
@@ -148,6 +155,13 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     void loadDoc();
   }, [invoiceId, loadDoc, resetDraft]);
 
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    void listMoneyAccounts()
+      .then(setMoneyAccounts)
+      .catch(() => setMoneyAccounts([]));
+  }, []);
+
   const totals = useMemo(() => {
     const subtotal = lines.reduce((s, l) => s + l.lineSubtotal, 0);
     const vat = vatEnabled ? Math.round(subtotal * DEFAULT_VAT_RATE) / 100 : 0;
@@ -159,10 +173,16 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   const lineVatRate = vatEnabled ? DEFAULT_VAT_RATE : 0;
 
   const saveHeader = async (id: string) => {
+    const selectedAccount = moneyAccounts.find((a) => a.id === moneyAccountId);
+    const resolvedPaymentMethod =
+      paymentMethod === "partial"
+        ? (selectedAccount?.accountType === "cashbox" ? "cash" : "bank_transfer")
+        : paymentMethod;
     await patchDraftHeader("purchase", id, {
       supplier: Number(supplierId),
       supplier_invoice_number: supplierInvNo,
-      payment_method: paymentMethod,
+      payment_method: resolvedPaymentMethod,
+      money_account: moneyAccountId ? Number(moneyAccountId) : null,
       amount_paid: amountPaid || "0",
       vat_rate: vatEnabled ? "5.00" : "0.00",
       notes,
@@ -173,11 +193,17 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     if (docId) return docId;
     if (!supplierId) throw new ApiError(isRTL ? "اختر المورد" : "Select supplier", { status: 400 });
     const today = new Date().toISOString().slice(0, 10);
+    const selectedAccount = moneyAccounts.find((a) => a.id === moneyAccountId);
+    const resolvedPaymentMethod =
+      paymentMethod === "partial"
+        ? (selectedAccount?.accountType === "cashbox" ? "cash" : "bank_transfer")
+        : paymentMethod;
     const created = await createDraftHeader("purchase", {
       supplier: Number(supplierId),
       invoice_date: today,
       supplier_invoice_number: supplierInvNo,
-      payment_method: paymentMethod,
+      payment_method: resolvedPaymentMethod,
+      money_account: moneyAccountId ? Number(moneyAccountId) : null,
       amount_paid: amountPaid || "0",
       notes,
       vat_rate: vatEnabled ? "5.00" : "0.00",
@@ -191,6 +217,15 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   const handleSaveDraft = async () => {
     if (!supplierId) {
       toast.error(isRTL ? "اختر المورد أولاً" : "Select a supplier first");
+      return;
+    }
+    const paid = parseAmount(amountPaid || "0");
+    if (paid > totals.total) {
+      toast.error(isRTL ? "المبلغ المدفوع لا يمكن أن يتجاوز الإجمالي" : "Paid amount cannot exceed total");
+      return;
+    }
+    if ((paymentMethod === "cash" || paymentMethod === "bank_transfer" || paymentMethod === "partial") && !moneyAccountId) {
+      toast.error(isRTL ? "اختر الخزنة / الحساب البنكي" : "Select cashbox / bank account");
       return;
     }
     setSaving(true);
@@ -244,8 +279,20 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   };
 
   const removeLine = async (line: InvoiceLineDraft) => {
-    if (line.serverId && docId) await removeDraftLine("purchase", docId, line.serverId);
-    setLines((prev) => prev.filter((l) => l.id !== line.id));
+    if (!canDeleteLine) {
+      toast.error(isRTL ? "لا تملك صلاحية حذف هذا البند" : "You do not have permission to delete this line");
+      return;
+    }
+    try {
+      if (line.serverId && docId) await removeDraftLine("purchase", docId, line.serverId);
+      setLines((prev) => prev.filter((l) => l.id !== line.id));
+      if (docId) {
+        const detail = await getPurchaseDetail(docId);
+        setAmountPaid(String(detail.invoice.paid));
+      }
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "تعذر حذف البند" : "Unable to delete line"));
+    }
   };
 
   const persistLine = async (line: InvoiceLineDraft, options?: LinePayloadOptions) => {
@@ -339,6 +386,16 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   if (error && !docId && invoiceId) return <ErrorState lang={lang} error={error} onRetry={() => void loadDoc()} />;
 
   const isDraft = status === "draft";
+  const activeCashboxes = moneyAccounts.filter((a) => a.isActive && a.accountType === "cashbox");
+  const activeBanks = moneyAccounts.filter((a) => a.isActive && a.accountType === "bank");
+  const eligibleAccounts =
+    paymentMethod === "cash"
+      ? activeCashboxes
+      : paymentMethod === "bank_transfer"
+        ? activeBanks
+        : paymentMethod === "partial"
+          ? [...activeCashboxes, ...activeBanks]
+          : [];
 
   return (
     <div className="p-3 lg:p-6 max-w-screen-xl mx-auto space-y-4 pb-24">
@@ -473,7 +530,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
                       />
                     </td>
                     <td className="p-2 font-mono font-bold">{line.lineSubtotal.toFixed(2)}</td>
-                    <td className="p-2">{isDraft && <button type="button" onClick={() => void removeLine(line)}><Trash2 size={14} className="text-red-500" /></button>}</td>
+                    <td className="p-2">{isDraft && canDeleteLine && <button type="button" onClick={() => void removeLine(line)}><Trash2 size={14} className="text-red-500" /></button>}</td>
                   </tr>
                   );
                 })}
@@ -520,7 +577,27 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
             <span>{isRTL ? "الإجمالي" : "Total"}</span>
             <span className="font-mono">AED {totals.total.toFixed(2)}</span>
           </div>
+          <select value={paymentMethod} disabled={!isDraft} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full border rounded-xl px-2 py-2 text-sm">
+            <option value="cash">{isRTL ? "طريقة الدفع: كاش" : "Payment method: Cash"}</option>
+            <option value="bank_transfer">{isRTL ? "طريقة الدفع: بنك" : "Payment method: Bank"}</option>
+            <option value="credit">{isRTL ? "طريقة الدفع: آجل" : "Payment method: Credit"}</option>
+            <option value="partial">{isRTL ? "طريقة الدفع: جزئي" : "Payment method: Partial"}</option>
+          </select>
+          {(paymentMethod === "cash" || paymentMethod === "bank_transfer" || paymentMethod === "partial") && (
+            <select value={moneyAccountId} disabled={!isDraft} onChange={(e) => setMoneyAccountId(e.target.value)} className="w-full border rounded-xl px-2 py-2 text-sm">
+              <option value="">{isRTL ? "الخزنة / الحساب البنكي" : "Cashbox / Bank account"}</option>
+              {eligibleAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} ({acc.currentBalance.toFixed(2)} {acc.currency})
+                </option>
+              ))}
+            </select>
+          )}
           <input value={amountPaid} disabled={!isDraft} onChange={(e) => setAmountPaid(e.target.value)} className="w-full border rounded-xl px-2 py-2 font-mono" placeholder={isRTL ? "المدفوع" : "Paid"} />
+          <div className="text-xs text-slate-500">
+            {isRTL ? "المتبقي على المورد" : "Remaining payable"}:{" "}
+            <span className="font-mono">{totals.balance.toFixed(2)}</span>
+          </div>
           {isDraft && (
             <button type="button" disabled={saving || !supplierId} onClick={() => void handleSaveDraft()} className="w-full py-2 rounded-xl border border-[#0F2C59]/30 text-[#0F2C59] font-bold disabled:opacity-50">
               {isRTL ? "حفظ مسودة" : "Save draft"}

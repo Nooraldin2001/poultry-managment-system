@@ -23,19 +23,22 @@ import type { InvoiceLineDraft } from "./types";
 import { addDraftLine, createDraftHeader, patchDraftHeader, removeDraftLine, updateDraftLine } from "./invoiceApi";
 import { ReasonModal } from "./ReasonModal";
 import { parseAmount } from "@/services/crud/parse";
+import { canDeleteQuotationLine } from "@/shared/utils/permissions";
 
 type Props = {
   lang: Lang;
   role: TenantRole;
+  permissions?: string[];
   onNavigate: (s: TenantScreen) => void;
   quotationId?: string | null;
   onSaved?: (id: string) => void;
   onConvertedToSales?: (salesId: string) => void;
 };
 
-export function LiveQuotationScreen({ lang, role, onNavigate, quotationId, onSaved, onConvertedToSales }: Props) {
+export function LiveQuotationScreen({ lang, role, permissions = [], onNavigate, quotationId, onSaved, onConvertedToSales }: Props) {
   const isRTL = lang === "ar";
   const canManage = role === "owner" || role === "accountant";
+  const canDeleteLine = canDeleteQuotationLine(role, permissions);
   const [docId, setDocId] = useState(quotationId ?? "");
   const [customerId, setCustomerId] = useState("");
   const [lines, setLines] = useState<InvoiceLineDraft[]>([]);
@@ -165,8 +168,16 @@ export function LiveQuotationScreen({ lang, role, onNavigate, quotationId, onSav
   };
 
   const removeLine = async (line: InvoiceLineDraft) => {
-    if (line.serverId && docId) await removeDraftLine("quotation", docId, line.serverId);
-    setLines((prev) => prev.filter((l) => l.id !== line.id));
+    if (!canDeleteLine) {
+      toast.error(isRTL ? "لا تملك صلاحية حذف هذا البند" : "You do not have permission to delete this line");
+      return;
+    }
+    try {
+      if (line.serverId && docId) await removeDraftLine("quotation", docId, line.serverId);
+      setLines((prev) => prev.filter((l) => l.id !== line.id));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "تعذر حذف البند" : "Unable to delete line"));
+    }
   };
 
   const persistLine = async (line: InvoiceLineDraft) => {
@@ -220,7 +231,7 @@ export function LiveQuotationScreen({ lang, role, onNavigate, quotationId, onSav
                         }} />
                     </td>
                     <td className="p-2 font-mono">{line.unitPrice.toFixed(2)}</td>
-                    <td className="p-2">{isDraft && <button type="button" onClick={() => void removeLine(line)}><Trash2 size={14} className="text-red-500" /></button>}</td>
+                    <td className="p-2">{isDraft && canDeleteLine && <button type="button" onClick={() => void removeLine(line)}><Trash2 size={14} className="text-red-500" /></button>}</td>
                   </tr>
                 ))}
               </tbody>

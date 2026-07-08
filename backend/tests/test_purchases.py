@@ -29,6 +29,7 @@ from apps.purchases.models import (
     PurchaseLineType,
     PurchaseStatus,
 )
+from apps.payments.models import MoneyAccount, MoneyMovement, MoneyMovementType
 from apps.suppliers.models import Supplier, SupplierLedgerEntry, SupplierType
 
 pytestmark = pytest.mark.django_db
@@ -779,6 +780,130 @@ def test_api_purchase_cut_without_cartons(api, company, owner):
     assert resp.status_code == 200, resp.data
     balance = InventoryBalance.objects.get(company=company, product=liver)
     assert balance.available_kg == Decimal("25.000")
+
+
+def test_cash_purchase_approve_deducts_cashbox(company, owner):
+    supplier = _supplier(company, sku="SCASH")
+    product = _product(company, sku="PCASH")
+    cashbox = MoneyAccount.objects.create(
+        company=company,
+        name="Main Cash",
+        account_type="cashbox",
+        opening_balance=Decimal("1000"),
+        current_balance=Decimal("1000"),
+        currency="AED",
+    )
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="cash",
+        amount_paid=Decimal("60"),
+        money_account=cashbox,
+        vat_rate=Decimal("0"),
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="cash buy")
+    cashbox.refresh_from_db()
+    supplier.refresh_from_db()
+    assert cashbox.current_balance == Decimal("940.00")
+    assert supplier.current_balance == Decimal("40.00")
+    assert MoneyMovement.objects.filter(
+        company=company,
+        movement_type=MoneyMovementType.PURCHASE_PAYMENT,
+        reference_type="purchase_invoice",
+        reference_id=str(inv.id),
+    ).exists()
+
+
+def test_bank_purchase_approve_deducts_bank_account(company, owner):
+    supplier = _supplier(company, sku="SBANK")
+    product = _product(company, sku="PBANK")
+    bank = MoneyAccount.objects.create(
+        company=company,
+        name="ENBD",
+        account_type="bank",
+        opening_balance=Decimal("500"),
+        current_balance=Decimal("500"),
+        currency="AED",
+    )
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="bank_transfer",
+        amount_paid=Decimal("25"),
+        money_account=bank,
+        vat_rate=Decimal("0"),
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="bank buy")
+    bank.refresh_from_db()
+    supplier.refresh_from_db()
+    assert bank.current_balance == Decimal("475.00")
+    assert supplier.current_balance == Decimal("75.00")
+
+
+def test_credit_purchase_posts_supplier_payable_only(company, owner):
+    supplier = _supplier(company, sku="SCRED")
+    product = _product(company, sku="PCRED")
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="credit",
+        amount_paid=Decimal("0"),
+        vat_rate=Decimal("0"),
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="credit buy")
+    supplier.refresh_from_db()
+    assert supplier.current_balance == Decimal("100.00")
+
+
+def test_partial_purchase_posts_outstanding_supplier_payable(company, owner):
+    supplier = _supplier(company, sku="SPART")
+    product = _product(company, sku="PPART")
+    cashbox = MoneyAccount.objects.create(
+        company=company,
+        name="Petty Cash",
+        account_type="cashbox",
+        opening_balance=Decimal("500"),
+        current_balance=Decimal("500"),
+        currency="AED",
+    )
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="cash",
+        amount_paid=Decimal("30"),
+        money_account=cashbox,
+        vat_rate=Decimal("0"),
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="partial")
+    supplier.refresh_from_db()
+    assert supplier.current_balance == Decimal("70.00")
+
+
+def test_cancel_reverses_purchase_money_movement(company, owner):
+    supplier = _supplier(company, sku="SCAN")
+    product = _product(company, sku="PCAN")
+    cashbox = MoneyAccount.objects.create(
+        company=company,
+        name="Cancel Cash",
+        account_type="cashbox",
+        opening_balance=Decimal("300"),
+        current_balance=Decimal("300"),
+        currency="AED",
+    )
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="cash",
+        amount_paid=Decimal("20"),
+        money_account=cashbox,
+        vat_rate=Decimal("0"),
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="approve")
+    services.cancel_purchase_invoice(invoice=inv, user=owner, reason="cancel")
+    cashbox.refresh_from_db()
+    supplier.refresh_from_db()
+    assert cashbox.current_balance == Decimal("300.00")
+    assert supplier.current_balance == Decimal("0.00")
 
 
 # ── Production data hygiene checks ──────────────────────────────────────────

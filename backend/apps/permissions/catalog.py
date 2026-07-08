@@ -18,6 +18,7 @@ GROUPS = [
     "customers",
     "suppliers",
     "payments",
+    "treasury",
     "receipts",
     "expenses",
     "reports",
@@ -68,6 +69,13 @@ GROUP_ACTIONS = {
         "view", "create_customer_collection", "create_supplier_payment",
         "create_customer_refund", "create_supplier_refund", "cancel", "allocate",
         "print", "export", "reconcile", "sensitive",
+    ],
+    "treasury": [
+        "view",
+        "create",
+        "update",
+        "adjust",
+        "movements.view",
     ],
     "receipts": ["view", "print"],
     "expenses": [
@@ -209,6 +217,11 @@ ACCOUNTANT_DEFAULTS = [
     "reports.view_payments", "reports.view_expenses", "reports.view_profit",
     "reports.view_tax_summary", "reports.export", "reports.view_audit",
     "settings.view",
+    "treasury.view",
+    "treasury.create",
+    "treasury.update",
+    "treasury.adjust",
+    "treasury.movements.view",
     "audit.view",
 ]
 
@@ -220,6 +233,7 @@ CASHIER_DEFAULTS = [
     "customers.view",
     "inventory.view",
     "payments.view", "payments.create_customer_collection", "payments.print",
+    "treasury.view",
     "receipts.view", "receipts.print",
     "reports.view_dashboard", "reports.view_sales",
 ]

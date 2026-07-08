@@ -9,7 +9,13 @@ from apps.purchases.models import PurchaseInvoice
 from apps.sales.models import SalesInvoice
 from apps.suppliers.models import Supplier
 
-from .models import PaymentAllocation, PaymentMethod, PaymentMovement
+from .models import (
+    MoneyAccount,
+    MoneyMovement,
+    PaymentAllocation,
+    PaymentMethod,
+    PaymentMovement,
+)
 
 ZERO = Decimal("0")
 
@@ -223,3 +229,65 @@ class SupplierBalanceReconciliationSerializer(serializers.Serializer):
     open_purchase_invoice_balance = serializers.DecimalField(max_digits=16, decimal_places=2)
     difference = serializers.DecimalField(max_digits=16, decimal_places=2)
     status = serializers.CharField()
+
+
+class MoneyAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MoneyAccount
+        fields = [
+            "id",
+            "name",
+            "account_type",
+            "bank_name",
+            "account_number",
+            "iban",
+            "currency",
+            "opening_balance",
+            "current_balance",
+            "is_active",
+            "allow_negative",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "current_balance", "created_at", "updated_at"]
+
+
+class MoneyMovementSerializer(serializers.ModelSerializer):
+    money_account_name = serializers.CharField(source="money_account.name", read_only=True)
+
+    class Meta:
+        model = MoneyMovement
+        fields = [
+            "id",
+            "money_account",
+            "money_account_name",
+            "movement_type",
+            "direction",
+            "amount",
+            "reference_type",
+            "reference_id",
+            "description",
+            "reason",
+            "created_by",
+            "created_at",
+        ]
+
+
+class MoneyAdjustmentSerializer(serializers.Serializer):
+    direction = serializers.ChoiceField(choices=["in", "out"])
+    amount = serializers.DecimalField(max_digits=16, decimal_places=2)
+    reason = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Amount must be positive.")
+        return value
+
+
+class TreasurySummarySerializer(serializers.Serializer):
+    cashbox_total = serializers.DecimalField(max_digits=16, decimal_places=2)
+    bank_total = serializers.DecimalField(max_digits=16, decimal_places=2)
+    available_total = serializers.DecimalField(max_digits=16, decimal_places=2)
+    accounts_count = serializers.IntegerField()

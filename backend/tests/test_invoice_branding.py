@@ -147,6 +147,9 @@ def test_sales_print_preview_includes_company_and_customer_trn(
     assert "/media/company_assets/" in res.data["company"]["logo_url"]
     assert res.data["customer"]["trn"] == "100488358000003"
     assert res.data["party"]["trn"] == "100488358000003"
+    assert "cartons" in res.data["lines"][0]
+    assert "pieces" in res.data["lines"][0]
+    assert "kg" in res.data["lines"][0]
 
 
 def test_old_invoice_without_snapshot_falls_back_to_customer_trn(
@@ -211,6 +214,10 @@ def test_purchase_print_preview_includes_company_identity(api, owner, company, f
     assert res.status_code == 200, res.data
     assert res.data["company"]["trn"] == "10498835800003"
     assert res.data["company"]["logo_url"]
+    if res.data["lines"]:
+        assert "cartons" in res.data["lines"][0]
+        assert "pieces" in res.data["lines"][0]
+        assert "kg" in res.data["lines"][0]
 
 
 def test_purchase_print_preview_supplier_trn_fallback(company, owner):

@@ -15,7 +15,7 @@ from apps.sales.models import SalesInvoice
 from apps.suppliers.models import Supplier
 
 from . import services
-from .models import PaymentMovement, PaymentMovementStatus
+from .models import MoneyAccount, MoneyMovement, PaymentMovement, PaymentMovementStatus
 from .serializers import (
     CustomerBalanceReconciliationSerializer,
     CustomerCollectionCreateSerializer,
@@ -27,6 +27,10 @@ from .serializers import (
     SupplierBalanceReconciliationSerializer,
     SupplierPaymentCreateSerializer,
     SupplierRefundCreateSerializer,
+    MoneyAccountSerializer,
+    MoneyAdjustmentSerializer,
+    MoneyMovementSerializer,
+    TreasurySummarySerializer,
 )
 
 
@@ -318,3 +322,74 @@ class ReceiptPrintPreviewView(APIView):
             PaymentMovement, pk=pk, company_id=request.user.company_id
         )
         return Response(services.build_receipt_preview(movement, request=request))
+
+
+class MoneyAccountViewSet(TenantScopedViewSet):
+    queryset = MoneyAccount.objects.all()
+    serializer_class = MoneyAccountSerializer
+    permission_map = {
+        "list": "treasury.view",
+        "retrieve": "treasury.view",
+        "create": "treasury.create",
+        "partial_update": "treasury.update",
+        "update": "treasury.update",
+        "movements": "treasury.movements.view",
+        "adjustments": "treasury.adjust",
+    }
+
+    def perform_create(self, serializer):
+        account = serializer.save(
+            company=self.request.user.company,
+            current_balance=0,
+        )
+        opening = serializer.validated_data.get("opening_balance")
+        if opening and opening > 0:
+            services.post_money_movement(
+                company=self.request.user.company,
+                money_account=account,
+                movement_type="opening_balance",
+                direction="in",
+                amount=opening,
+                reference_type="money_account",
+                reference_id=account.id,
+                description=f"Opening balance for {account.name}",
+                reason="opening balance",
+                user=self.request.user,
+            )
+
+    @action(detail=True, methods=["get"])
+    def movements(self, request, pk=None):
+        account = self.get_object()
+        qs = MoneyMovement.objects.filter(
+            company_id=request.user.company_id, money_account=account
+        ).order_by("-created_at", "-id")
+        return Response(MoneyMovementSerializer(qs, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def adjustments(self, request, pk=None):
+        account = self.get_object()
+        serializer = MoneyAdjustmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        vd = serializer.validated_data
+        movement = services.post_money_movement(
+            company=request.user.company,
+            money_account=account,
+            movement_type="manual_adjustment",
+            direction=vd["direction"],
+            amount=vd["amount"],
+            reference_type="money_account_adjustment",
+            reference_id=account.id,
+            description=vd.get("description", ""),
+            reason=vd["reason"],
+            user=request.user,
+        )
+        return Response(MoneyMovementSerializer(movement).data, status=status.HTTP_201_CREATED)
+
+
+class TreasurySummaryView(APIView):
+    permission_classes = [IsTenantUser, HasTenantPermission]
+    required_permission = "treasury.view"
+
+    def get(self, request):
+        data = services.get_treasury_summary(request.user.company)
+        return Response(TreasurySummarySerializer(data).data)

@@ -16,7 +16,7 @@ import { applyLineTotals } from "./lineTotals";
 import { deriveQuantitiesFromCartons } from "./lineQuantities";
 import { isCartonBasedProduct, isKgPrimaryProduct } from "./productLineMode";
 import { SalesLinePriceCell } from "./SalesLinePriceCell";
-import { canOverrideSalesPrice } from "@/shared/utils/permissions";
+import { canDeleteSalesLine, canOverrideSalesPrice } from "@/shared/utils/permissions";
 import type { ProductRow } from "@/shared/types/entities";
 import {
   addDraftLine,
@@ -55,6 +55,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
   const isRTL = lang === "ar";
   const canApprove = role === "owner" || role === "accountant";
   const canEditPrice = canOverrideSalesPrice(role, permissions);
+  const canDeleteLine = canDeleteSalesLine(role, permissions);
   const [docId, setDocId] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [lines, setLines] = useState<InvoiceLineDraft[]>([]);
@@ -261,8 +262,16 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
   };
 
   const removeLine = async (line: InvoiceLineDraft) => {
-    if (line.serverId && docId) await removeDraftLine("sales", docId, line.serverId);
-    setLines((prev) => prev.filter((l) => l.id !== line.id));
+    if (!canDeleteLine) {
+      toast.error(isRTL ? "لا تملك صلاحية حذف هذا البند" : "You do not have permission to delete this line");
+      return;
+    }
+    try {
+      if (line.serverId && docId) await removeDraftLine("sales", docId, line.serverId);
+      setLines((prev) => prev.filter((l) => l.id !== line.id));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "تعذر حذف البند" : "Unable to delete line"));
+    }
   };
 
   const runStockCheck = async (): Promise<boolean> => {
@@ -485,7 +494,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
                       </td>
                       <td className="p-2 font-mono font-bold">{line.lineTotal.toFixed(2)}</td>
                       <td className="p-2">
-                        {isDraft && (
+                        {isDraft && canDeleteLine && (
                           <button type="button" onClick={() => void removeLine(line)} className="text-red-500">
                             <Trash2 size={14} />
                           </button>

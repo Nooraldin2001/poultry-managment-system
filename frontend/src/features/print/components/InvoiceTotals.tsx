@@ -14,7 +14,7 @@ export function InvoiceTotals({
   const last = totals.length - 1;
 
   return (
-    <div className={`mt-4 flex gap-6 items-end ${isRTL ? "flex-row-reverse" : ""}`}>
+    <div className={`mt-4 flex gap-6 items-end invoice-totals ${isRTL ? "flex-row-reverse" : ""}`}>
       {stampUrl && (
         <PrintAssetImage
           src={stampUrl}

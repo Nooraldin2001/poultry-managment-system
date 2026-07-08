@@ -126,11 +126,13 @@ export interface PurchaseInvoiceRow {
   dueDate?: string;
   status: string;
   paymentStatus: string;
+  paymentMethod?: string;
   subtotal: number;
   vat: number;
   total: number;
   paid: number;
   balance: number;
+  moneyAccountId?: string;
 }
 
 export interface PurchaseInvoiceLineRow {

@@ -15,10 +15,13 @@ from .views import (
     SupplierPaymentsListView,
     SupplierReconciliationView,
     SupplierRefundCreateView,
+    MoneyAccountViewSet,
+    TreasurySummaryView,
 )
 
 router = DefaultRouter()
 router.register("payments/movements", PaymentMovementViewSet, basename="payment-movements")
+router.register("money-accounts", MoneyAccountViewSet, basename="money-accounts")
 
 urlpatterns = [
     path("payments/summary/", PaymentSummaryView.as_view(), name="payments-summary"),
@@ -69,5 +72,6 @@ urlpatterns = [
         ReceiptPrintPreviewView.as_view(),
         name="receipts-print-preview",
     ),
+    path("treasury/summary/", TreasurySummaryView.as_view(), name="treasury-summary"),
 ]
 urlpatterns += router.urls

@@ -159,3 +159,78 @@ class PaymentStatusHistory(TenantOwnedModel):
 
     class Meta:
         ordering = ["changed_at", "id"]
+
+
+class MoneyAccountType(models.TextChoices):
+    CASHBOX = "cashbox", "Cashbox"
+    BANK = "bank", "Bank"
+
+
+class MoneyDirection(models.TextChoices):
+    IN = "in", "In"
+    OUT = "out", "Out"
+
+
+class MoneyMovementType(models.TextChoices):
+    PURCHASE_PAYMENT = "purchase_payment", "Purchase Payment"
+    SUPPLIER_PAYMENT = "supplier_payment", "Supplier Payment"
+    CUSTOMER_COLLECTION = "customer_collection", "Customer Collection"
+    EXPENSE_PAYMENT = "expense_payment", "Expense Payment"
+    MANUAL_ADJUSTMENT = "manual_adjustment", "Manual Adjustment"
+    REFUND = "refund", "Refund"
+    OPENING_BALANCE = "opening_balance", "Opening Balance"
+
+
+class MoneyAccount(TenantOwnedModel):
+    name = models.CharField(max_length=128)
+    account_type = models.CharField(max_length=16, choices=MoneyAccountType.choices)
+    bank_name = models.CharField(max_length=128, blank=True)
+    account_number = models.CharField(max_length=64, blank=True)
+    iban = models.CharField(max_length=64, blank=True)
+    currency = models.CharField(max_length=8, default="AED")
+    opening_balance = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
+    current_balance = models.DecimalField(default=ZERO, **MONEY)
+    is_active = models.BooleanField(default=True)
+    allow_negative = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["account_type", "name", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "name"],
+                name="uniq_company_money_account_name",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["company", "account_type"]),
+            models.Index(fields=["company", "is_active"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.account_type})"
+
+
+class MoneyMovement(TenantOwnedModel):
+    money_account = models.ForeignKey(
+        MoneyAccount, on_delete=models.PROTECT, related_name="movements"
+    )
+    movement_type = models.CharField(max_length=32, choices=MoneyMovementType.choices)
+    direction = models.CharField(max_length=8, choices=MoneyDirection.choices)
+    amount = models.DecimalField(**MONEY, validators=_NON_NEG)
+    reference_type = models.CharField(max_length=64, blank=True)
+    reference_id = models.CharField(max_length=64, blank=True)
+    description = models.CharField(max_length=255, blank=True)
+    reason = models.TextField(blank=True)
+    created_by = get_created_by_field("money_movements_created")
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["company", "money_account"]),
+            models.Index(fields=["company", "movement_type"]),
+            models.Index(fields=["company", "reference_type", "reference_id"]),
+        ]
+
+    def __str__(self):
+        return f"{self.money_account_id} {self.direction} {self.amount}"

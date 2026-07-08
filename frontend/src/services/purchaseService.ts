@@ -20,14 +20,17 @@ interface ApiPurchaseList {
   due_date?: string | null;
   status: string;
   payment_status: string;
+  payment_method?: string;
   subtotal: string;
   vat_amount: string;
   total_amount: string;
   amount_paid: string;
   balance_due: string;
+  money_account?: number | null;
 }
 
 interface ApiPurchaseDetail extends ApiPurchaseList {
+  money_account?: number | null;
   lines?: ApiPurchaseLine[];
 }
 
@@ -57,11 +60,13 @@ export function mapApiPurchaseToRow(row: ApiPurchaseList): PurchaseInvoiceRow {
     dueDate: row.due_date ?? undefined,
     status: row.status,
     paymentStatus: row.payment_status,
+    paymentMethod: row.payment_method ?? "credit",
     subtotal: parseAmount(row.subtotal),
     vat: parseAmount(row.vat_amount),
     total: parseAmount(row.total_amount),
     paid: parseAmount(row.amount_paid),
     balance: parseAmount(row.balance_due),
+    moneyAccountId: row.money_account != null ? String(row.money_account) : "",
   };
 }
 

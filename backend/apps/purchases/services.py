@@ -55,6 +55,7 @@ from .models import (
     PurchaseInvoice,
     PurchaseInvoiceLine,
     PurchaseLineType,
+    PurchasePaymentMethod,
     PurchasePaymentStatus,
     PurchaseStatus,
     PurchaseStatusHistory,
@@ -212,7 +213,8 @@ def recalculate_purchase_invoice(invoice) -> PurchaseInvoice:
 def create_purchase_invoice(*, company, supplier, created_by, invoice_date,
                             lines, adjustments=None, supplier_invoice_number="",
                             due_date=None, payment_method=None, vat_rate=ZERO,
-                            amount_paid=ZERO, notes="", invoice_number=None):
+                            amount_paid=ZERO, notes="", invoice_number=None,
+                            money_account=None):
     """Create a DRAFT purchase invoice with its lines and adjustments.
 
     No stock and no supplier ledger effects — those happen only on approval.
@@ -239,6 +241,7 @@ def create_purchase_invoice(*, company, supplier, created_by, invoice_date,
         ).default,
         vat_rate=_d(vat_rate),
         amount_paid=_d(amount_paid),
+        money_account=money_account,
         notes=notes or "",
         supplier_name_snapshot=supplier.name_ar,
         supplier_trn_snapshot=supplier.trn or "",
@@ -624,7 +627,7 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
 
     invoice = (
         PurchaseInvoice.objects.select_for_update()
-        .select_related("supplier")
+        .select_related("supplier", "money_account")
         .get(pk=invoice.pk)
     )
     if invoice.status != PurchaseStatus.DRAFT:
@@ -653,18 +656,53 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
     # subtotal) so unit_cost_per_kg reflects the true landed cost.
     _apply_purchase_stock_side_effects(invoice=invoice, user=user, reason=reason)
 
-    # Supplier payable: post the gross total. Payment receipt ledger is deferred
-    # to the payments phase (documented limitation).
+    # Post money movement for paid part (cash/bank), then supplier payable only
+    # for outstanding part so credit/partial works correctly.
+    from apps.payments import services as payment_services
+    from apps.payments.models import MoneyAccountType, MoneyDirection, MoneyMovementType
+
+    paid_amount = _d(invoice.amount_paid)
+    if paid_amount > _d(invoice.total_amount):
+        raise ValidationError({"amount_paid": "Amount paid cannot exceed total."})
+
+    if invoice.payment_method == PurchasePaymentMethod.CREDIT:
+        if paid_amount > 0:
+            raise ValidationError({"amount_paid": "Credit purchase must have zero paid amount."})
+        paid_amount = ZERO
+    elif paid_amount > 0:
+        if not invoice.money_account_id:
+            raise ValidationError({"money_account": "Select a cashbox/bank account for paid purchases."})
+        account = invoice.money_account
+        if invoice.payment_method == PurchasePaymentMethod.CASH and account.account_type != MoneyAccountType.CASHBOX:
+            raise ValidationError({"money_account": "Cash payment requires a cashbox account."})
+        if invoice.payment_method in (PurchasePaymentMethod.BANK_TRANSFER, PurchasePaymentMethod.CHEQUE) and account.account_type != MoneyAccountType.BANK:
+            raise ValidationError({"money_account": "Bank/Cheque payment requires a bank account."})
+        payment_services.post_money_movement(
+            company=company,
+            money_account=account,
+            movement_type=MoneyMovementType.PURCHASE_PAYMENT,
+            direction=MoneyDirection.OUT,
+            amount=paid_amount,
+            reference_type="purchase_invoice",
+            reference_id=invoice.id,
+            description=f"Purchase payment {invoice.invoice_number}",
+            reason=reason,
+            user=user,
+        )
+
+    payable_amount = max(_d(invoice.total_amount) - paid_amount, ZERO)
     supplier = Supplier.objects.select_for_update().get(pk=invoice.supplier_id)
-    supplier_services.record_purchase_invoice(
-        supplier=supplier,
-        amount=invoice.total_amount,
-        reference_id=invoice.id,
-        reference_number=invoice.invoice_number,
-        created_by=user,
-        reason=reason,
-        entry_date=invoice.invoice_date,
-    )
+    if payable_amount > 0:
+        supplier_services.record_purchase_invoice(
+            supplier=supplier,
+            amount=payable_amount,
+            reference_id=invoice.id,
+            reference_number=invoice.invoice_number,
+            created_by=user,
+            reason=reason,
+            entry_date=invoice.invoice_date,
+        )
+    invoice.supplier_payable_posted = payable_amount
 
     invoice.status = PurchaseStatus.APPROVED
     invoice.approval_reason = reason
@@ -673,7 +711,7 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
     _apply_payment_state(invoice)
     invoice.save(update_fields=[
         "status", "approval_reason", "approved_by", "approved_at",
-        "payment_status", "balance_due", "updated_at",
+        "payment_status", "balance_due", "supplier_payable_posted", "updated_at",
     ])
 
     create_audit_log(
@@ -725,15 +763,43 @@ def cancel_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
 
         # Reverse the supplier payable (do not delete the original entry).
         supplier = Supplier.objects.select_for_update().get(pk=invoice.supplier_id)
-        supplier_services.reverse_purchase_invoice(
-            supplier=supplier,
-            amount=invoice.total_amount,
-            reference_id=invoice.id,
-            reference_number=invoice.invoice_number,
-            created_by=user,
-            reason=reason,
-            entry_date=timezone.now().date(),
+        if _d(invoice.supplier_payable_posted) > 0:
+            supplier_services.reverse_purchase_invoice(
+                supplier=supplier,
+                amount=invoice.supplier_payable_posted,
+                reference_id=invoice.id,
+                reference_number=invoice.invoice_number,
+                created_by=user,
+                reason=reason,
+                entry_date=timezone.now().date(),
+            )
+
+        # Reverse paid money movement by booking an IN refund.
+        from apps.payments import services as payment_services
+        from apps.payments.models import MoneyDirection, MoneyMovement, MoneyMovementType
+
+        paid_out = (
+            MoneyMovement.objects.filter(
+                company=company,
+                movement_type=MoneyMovementType.PURCHASE_PAYMENT,
+                direction=MoneyDirection.OUT,
+                reference_type="purchase_invoice",
+                reference_id=str(invoice.id),
+            ).aggregate(s=Sum("amount"))["s"] or ZERO
         )
+        if paid_out > 0 and invoice.money_account_id:
+            payment_services.post_money_movement(
+                company=company,
+                money_account=invoice.money_account,
+                movement_type=MoneyMovementType.REFUND,
+                direction=MoneyDirection.IN,
+                amount=paid_out,
+                reference_type="purchase_invoice_cancel",
+                reference_id=invoice.id,
+                description=f"Cancel purchase {invoice.invoice_number}",
+                reason=reason,
+                user=user,
+            )
 
     invoice.status = PurchaseStatus.CANCELLED
     invoice.cancel_reason = reason
@@ -941,6 +1007,9 @@ def build_purchase_print_preview(invoice, request=None) -> dict:
                 "quantity_cartons": str(ln.quantity_cartons),
                 "quantity_pieces": str(ln.quantity_pieces),
                 "quantity_kg": str(ln.quantity_kg),
+                "cartons": str(ln.quantity_cartons),
+                "pieces": str(ln.quantity_pieces),
+                "kg": str(ln.quantity_kg),
                 "unit_price": str(ln.unit_price),
                 "line_total": str(ln.line_total),
             }

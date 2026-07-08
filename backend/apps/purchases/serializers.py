@@ -71,6 +71,7 @@ class PurchaseInvoiceListSerializer(serializers.ModelSerializer):
             "id", "invoice_number", "supplier", "supplier_name_snapshot",
             "supplier_invoice_number", "invoice_date", "due_date",
             "status", "payment_status", "payment_method",
+            "money_account",
             "subtotal", "vat_amount", "total_amount", "amount_paid",
             "balance_due", "created_at",
         ]
@@ -90,7 +91,8 @@ class PurchaseInvoiceDetailSerializer(serializers.ModelSerializer):
             "invoice_date", "due_date", "status", "payment_status",
             "payment_method", "subtotal", "adjustment_total", "taxable_amount",
             "vat_rate", "vat_amount", "total_amount", "amount_paid", "balance_due",
-            "inventory_cost_total", "vat_enabled", "notes",
+            "inventory_cost_total", "money_account", "supplier_payable_posted",
+            "vat_enabled", "notes",
             "approval_reason", "approved_by", "approved_at",
             "cancel_reason", "cancelled_by", "cancelled_at",
             "created_by", "updated_by", "created_at", "updated_at",
@@ -198,6 +200,7 @@ class PurchaseInvoiceCreateUpdateSerializer(_NonNegativeMixin, serializers.Seria
         choices=PurchaseInvoice._meta.get_field("payment_method").choices,
         required=False,
     )
+    money_account = serializers.IntegerField(required=False, allow_null=True)
     vat_rate = serializers.DecimalField(
         max_digits=5, decimal_places=2, required=False, default=ZERO
     )
@@ -226,6 +229,15 @@ class PurchaseInvoiceCreateUpdateSerializer(_NonNegativeMixin, serializers.Seria
                 {"invoice_number": "Internal invoice number is assigned automatically."}
             )
         self._check_non_negative(attrs)
+        company = self.context["company"]
+        account_id = attrs.get("money_account")
+        if account_id is not None:
+            from apps.payments.models import MoneyAccount
+
+            try:
+                attrs["money_account"] = MoneyAccount.objects.get(pk=account_id, company=company)
+            except MoneyAccount.DoesNotExist:
+                raise serializers.ValidationError({"money_account": "Money account not found for this company."})
         return attrs
 
 

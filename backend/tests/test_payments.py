@@ -18,6 +18,9 @@ from apps.inventory import services as inventory_services
 from apps.inventory.models import MovementType, StockSourceType
 from apps.payments import services as payment_services
 from apps.payments.models import (
+    MoneyAccount,
+    MoneyMovement,
+    MoneyMovementType,
     PaymentAllocation,
     PaymentMovement,
     PaymentMovementStatus,
@@ -41,6 +44,7 @@ pytestmark = pytest.mark.django_db
 COLLECTIONS_URL = "/api/v1/tenant/payments/customer-collections/"
 PAYMENTS_URL = "/api/v1/tenant/payments/supplier-payments/"
 MOVEMENTS_URL = "/api/v1/tenant/payments/movements/"
+MONEY_ACCOUNTS_URL = "/api/v1/tenant/money-accounts/"
 
 
 def _customer(company, **kwargs):
@@ -59,6 +63,84 @@ def _supplier(company, **kwargs):
     )
     defaults.update(kwargs)
     return Supplier.objects.create(**defaults)
+
+
+def _money_account(company, *, name="Main Cash", account_type="cashbox", opening="1000"):
+    return MoneyAccount.objects.create(
+        company=company,
+        name=name,
+        account_type=account_type,
+        opening_balance=Decimal(opening),
+        current_balance=Decimal(opening),
+        currency="AED",
+        is_active=True,
+    )
+
+
+def test_create_cashbox_and_opening_movement(api, owner):
+    api.force_authenticate(owner)
+    res = api.post(
+        MONEY_ACCOUNTS_URL,
+        {"name": "Main Cashbox", "account_type": "cashbox", "opening_balance": "1500.00"},
+        format="json",
+    )
+    assert res.status_code == 201, res.data
+    account_id = res.data["id"]
+    account = MoneyAccount.objects.get(pk=account_id)
+    assert account.current_balance == Decimal("1500.00")
+    assert MoneyMovement.objects.filter(
+        company=owner.company,
+        money_account=account,
+        movement_type=MoneyMovementType.OPENING_BALANCE,
+    ).exists()
+
+
+def test_create_bank_account(api, owner):
+    api.force_authenticate(owner)
+    res = api.post(
+        MONEY_ACCOUNTS_URL,
+        {
+            "name": "ENBD Current",
+            "account_type": "bank",
+            "bank_name": "ENBD",
+            "opening_balance": "2500.00",
+        },
+        format="json",
+    )
+    assert res.status_code == 201, res.data
+    assert res.data["account_type"] == "bank"
+
+
+def test_manual_adjustment_requires_reason(api, owner):
+    acc = _money_account(owner.company)
+    api.force_authenticate(owner)
+    res = api.post(
+        f"{MONEY_ACCOUNTS_URL}{acc.id}/adjustments/",
+        {"direction": "in", "amount": "100.00", "reason": ""},
+        format="json",
+    )
+    assert res.status_code == 400
+
+
+def test_money_account_tenant_isolation(api, owner, other_owner):
+    acc = _money_account(owner.company)
+    api.force_authenticate(other_owner)
+    res = api.get(f"{MONEY_ACCOUNTS_URL}{acc.id}/")
+    assert res.status_code == 404
+
+
+def test_negative_balance_blocked_by_default(company, owner):
+    acc = _money_account(company, opening="10")
+    with pytest.raises(ValidationError):
+        payment_services.post_money_movement(
+            company=company,
+            money_account=acc,
+            movement_type=MoneyMovementType.MANUAL_ADJUSTMENT,
+            direction="out",
+            amount=Decimal("100"),
+            reason="test",
+            user=owner,
+        )
 
 
 def _product(company, sku="PAY1"):

@@ -18,7 +18,7 @@ export function InvoiceTemplateRenderer({
 
   return (
     <div className="p-4 lg:p-8 max-w-3xl mx-auto print:p-0">
-      <div className="flex gap-2 mb-4 print:hidden flex-wrap">
+      <div className="flex gap-2 mb-4 print:hidden flex-wrap no-print">
         {onBack && (
           <button
             type="button"
@@ -41,7 +41,7 @@ export function InvoiceTemplateRenderer({
 
       <div
         dir={isRTL ? "rtl" : "ltr"}
-        className="bg-white border rounded-2xl p-5 print:border-0 print:shadow-none print:rounded-none print-preview-doc"
+        className="bg-white border rounded-2xl p-5 print:border-0 print:shadow-none print:rounded-none print-preview-doc invoice-page"
         style={{ borderColor: data.theme.border }}
       >
         <Template {...data} />

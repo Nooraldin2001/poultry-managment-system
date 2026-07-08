@@ -126,6 +126,14 @@ class PurchaseInvoice(TenantOwnedModel):
     total_amount = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
     amount_paid = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
     balance_due = models.DecimalField(default=ZERO, **MONEY)
+    money_account = models.ForeignKey(
+        "payments.MoneyAccount",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="purchase_invoices",
+    )
+    supplier_payable_posted = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
     # Inventory cost basis (subtotal + increase_inventory_cost adjustments).
     inventory_cost_total = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
 

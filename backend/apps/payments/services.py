@@ -40,6 +40,11 @@ from .models import (
     PaymentMovementStatus,
     PaymentMovementType,
     PaymentStatusHistory,
+    MoneyAccount,
+    MoneyAccountType,
+    MoneyDirection,
+    MoneyMovement,
+    MoneyMovementType,
 )
 
 ZERO = Decimal("0")
@@ -72,6 +77,67 @@ def _d(value) -> Decimal:
     if isinstance(value, Decimal):
         return value
     return Decimal(str(value if value is not None else 0))
+
+
+def _account_balance_delta(direction: str, amount: Decimal) -> Decimal:
+    return amount if direction == MoneyDirection.IN else -amount
+
+
+@transaction.atomic
+def post_money_movement(
+    *,
+    company,
+    money_account,
+    movement_type: str,
+    direction: str,
+    amount,
+    reference_type="",
+    reference_id="",
+    description="",
+    reason="",
+    user=None,
+) -> MoneyMovement:
+    amount = _d(amount)
+    if amount <= 0:
+        raise ValidationError({"amount": "Amount must be positive."})
+    if money_account.company_id != company.id:
+        raise ValidationError({"money_account": "Account does not belong to this company."})
+    account = MoneyAccount.objects.select_for_update().get(pk=money_account.pk)
+    next_balance = _d(account.current_balance) + _account_balance_delta(direction, amount)
+    if next_balance < 0 and not account.allow_negative:
+        raise ValidationError({"money_account": "Insufficient account balance."})
+    account.current_balance = next_balance
+    account.save(update_fields=["current_balance", "updated_at"])
+    return MoneyMovement.objects.create(
+        company=company,
+        money_account=account,
+        movement_type=movement_type,
+        direction=direction,
+        amount=amount,
+        reference_type=reference_type,
+        reference_id=str(reference_id or ""),
+        description=description or "",
+        reason=reason or "",
+        created_by=user,
+    )
+
+
+def get_treasury_summary(company) -> dict:
+    accounts = MoneyAccount.objects.filter(company=company, is_active=True)
+    cash_total = (
+        accounts.filter(account_type=MoneyAccountType.CASHBOX).aggregate(s=Sum("current_balance"))["s"]
+        or ZERO
+    )
+    bank_total = (
+        accounts.filter(account_type=MoneyAccountType.BANK).aggregate(s=Sum("current_balance"))["s"]
+        or ZERO
+    )
+    return {
+        "cashbox_total": cash_total,
+        "bank_total": bank_total,
+        "available_total": cash_total + bank_total,
+        "accounts_count": accounts.count(),
+    }
 
 
 def _document_type_for_movement(movement_type: str) -> str:

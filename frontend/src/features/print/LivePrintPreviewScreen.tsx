@@ -12,6 +12,9 @@ function mapPrintLines(data: Record<string, unknown>): PrintLineRow[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((line, i) => ({
     label: String(line.product_name ?? line.description ?? line.name ?? `Line ${i + 1}`),
+    cartons: line.quantity_cartons != null ? String(line.quantity_cartons) : undefined,
+    pieces: line.quantity_pieces != null ? String(line.quantity_pieces) : undefined,
+    kg: line.quantity_kg != null ? String(line.quantity_kg) : undefined,
     qty: String(line.quantity_kg ?? line.quantity ?? line.qty ?? line.kg ?? "—"),
     unit: String(line.unit ?? line.price_type ?? ""),
     price: line.unit_price != null ? String(line.unit_price) : undefined,

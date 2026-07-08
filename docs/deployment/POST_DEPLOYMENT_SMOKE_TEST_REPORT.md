@@ -894,3 +894,25 @@ See [INVOICE_BRANDING_AND_TEMPLATES.md](./INVOICE_BRANDING_AND_TEMPLATES.md).
 
 **Launch stance (Phase 14):** **NO-GO** until deploy + First View invoice design + print preview smoke passes.
 
+
+---
+
+## Treasury & purchase payment side effects (Phase 15 — 2026-07-08)
+
+Implemented:
+- `MoneyAccount` + `MoneyMovement` models with tenant-scoped balances
+- Treasury endpoints (`/tenant/money-accounts/*`, `/tenant/treasury/summary/`)
+- Purchase approval now:
+  - deducts paid amount from selected cashbox/bank account
+  - posts supplier payable only for outstanding amount
+  - supports credit/full/partial flows correctly
+- Purchase cancellation reverses treasury movement and supplier payable posting
+
+Checks:
+- `python -m pytest tests/test_payments.py tests/test_purchases.py tests/test_sales.py tests/test_inventory.py tests/test_suppliers.py tests/test_invoice_branding.py` ? **198 passed**
+
+Docs:
+- `TREASURY_AND_BANK_ACCOUNTS.md`
+- `PURCHASE_PAYMENT_FLOW.md`
+- `INVOICE_LINE_DELETE_RULES.md`
+- `INVOICE_PRINT_PAGINATION.md`

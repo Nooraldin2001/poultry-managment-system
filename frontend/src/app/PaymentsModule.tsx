@@ -28,6 +28,15 @@ import {
   mapPaymentRecordsToTableRows,
   reportRecords,
 } from "@/features/reports/reportLiveData";
+import {
+  createMoneyAccount,
+  createMoneyAdjustment,
+  getTreasurySummary,
+  listMoneyAccountMovements,
+  listMoneyAccounts,
+  type MoneyAccountRow,
+  type MoneyMovementRow,
+} from "@/services/treasuryService";
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 type Lang = "ar" | "en";
@@ -1244,47 +1253,141 @@ function PaymentsSettingsPanel({ lang, role, onClose }: { lang: Lang; role: Tena
   );
 }
 
-// ── SCREEN: CASH & BANK ACCOUNTS (Placeholder) ─────────────────────────────────
+// ── SCREEN: CASH & BANK ACCOUNTS (live) ──────────────────────────────────────
 export function CashBankAccountsScreen({ lang, onNavigate }: { lang: Lang; onNavigate: (s: TenantScreen) => void }) {
   const isRTL = lang === "ar";
-  const bankAccounts = [
-    { bank: "Emirates NBD",  nick: "الحساب الرئيسي",     active: true,  lastMov: "2026-01-28" },
-    { bank: "Mashreq Bank",  nick: "حساب العمليات",     active: true,  lastMov: "2026-01-25" },
-    { bank: "ADCB",          nick: "حساب الادخار",       active: false, lastMov: "2025-12-10" },
-  ];
+  const [accounts, setAccounts] = useState<MoneyAccountRow[]>([]);
+  const [summary, setSummary] = useState({ cashboxTotal: 0, bankTotal: 0, availableTotal: 0 });
+  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<"cashbox" | "bank">("cashbox");
+  const [newOpening, setNewOpening] = useState("0");
+  const [selectedAccount, setSelectedAccount] = useState<string>("");
+  const [adjAmount, setAdjAmount] = useState("0");
+  const [adjReason, setAdjReason] = useState("");
+  const [adjDirection, setAdjDirection] = useState<"in" | "out">("in");
+  const [movements, setMovements] = useState<MoneyMovementRow[]>([]);
+
+  const reload = async () => {
+    if (IS_MOCK_MODE) return;
+    setLoading(true);
+    try {
+      const [accs, sum] = await Promise.all([listMoneyAccounts(), getTreasurySummary()]);
+      setAccounts(accs);
+      setSummary(sum);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAccount || IS_MOCK_MODE) return;
+    void listMoneyAccountMovements(selectedAccount).then(setMovements).catch(() => setMovements([]));
+  }, [selectedAccount]);
+
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
       <div className="flex items-start gap-3 flex-wrap">
         <button onClick={() => onNavigate("payments")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
-        <div className="flex-1"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "الخزنة والحسابات البنكية" : "Cash Box & Bank Accounts"}</h2></div>
-        <Btn variant="outline" size="sm"><Plus size={13} />{isRTL ? "إضافة حساب" : "Add Account"}</Btn>
+        <div className="flex-1"><h2 className="text-xl font-black text-[#0F2C59]">{isRTL ? "الخزنة والبنوك" : "Treasury & Banks"}</h2></div>
+        <Btn
+          variant="outline"
+          size="sm"
+          onClick={async () => {
+            try {
+              await createMoneyAccount({
+                name: newName || (newType === "cashbox" ? (isRTL ? "خزنة جديدة" : "New Cashbox") : (isRTL ? "حساب بنكي جديد" : "New Bank Account")),
+                account_type: newType,
+                opening_balance: newOpening || "0",
+                currency: "AED",
+              });
+              toast.success(isRTL ? "تمت إضافة الحساب" : "Account created");
+              setNewName("");
+              setNewOpening("0");
+              await reload();
+            } catch (e) {
+              toast.error(isRTL ? "تعذر إضافة الحساب" : "Unable to create account");
+            }
+          }}
+        ><Plus size={13} />{isRTL ? "إضافة حساب" : "Add Account"}</Btn>
       </div>
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2"><Info size={13} className="text-amber-500 shrink-0 mt-0.5" /><p className="text-xs font-bold text-amber-700">{isRTL ? "إدارة الخزنة والحسابات البنكية سيتم ربطها لاحقاً بالقيود المالية." : "Cash box and bank account management will be linked to accounting journals in a future release."}</p></div>
-      {/* Cash box */}
-      <Card className="p-5 bg-emerald-50 border-emerald-200">
-        <div className="flex items-center justify-between">
-          <div><div className="font-black text-slate-800 text-lg">{isRTL ? "الخزنة الرئيسية" : "Main Cash Box"}</div><div className="text-xs text-slate-500 font-semibold mt-0.5">{isRTL ? "نقد متاح" : "Available Cash"}</div></div>
-          <div className="text-end"><div className="text-3xl font-black font-mono text-emerald-700">AED 5,500</div><div className="text-xs text-slate-400">{isRTL ? "صافي اليوم" : "Today's net"}</div></div>
-        </div>
-        <div className="grid grid-cols-2 gap-3 mt-4">
-          <div className="bg-white rounded-xl p-3 text-center"><div className="font-mono font-black text-emerald-600">+AED 8,000</div><div className="text-[10px] text-slate-400 font-bold">{isRTL ? "كاش داخل" : "Cash In"}</div></div>
-          <div className="bg-white rounded-xl p-3 text-center"><div className="font-mono font-black text-red-500">−AED 2,500</div><div className="text-[10px] text-slate-400 font-bold">{isRTL ? "كاش خارج" : "Cash Out"}</div></div>
+
+      <Card className="p-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="rounded-xl bg-emerald-50 p-3"><div className="text-xs text-slate-500">{isRTL ? "إجمالي الخزائن" : "Cashbox total"}</div><div className="font-black font-mono">AED {summary.cashboxTotal.toFixed(2)}</div></div>
+          <div className="rounded-xl bg-blue-50 p-3"><div className="text-xs text-slate-500">{isRTL ? "إجمالي البنوك" : "Bank total"}</div><div className="font-black font-mono">AED {summary.bankTotal.toFixed(2)}</div></div>
+          <div className="rounded-xl bg-slate-100 p-3"><div className="text-xs text-slate-500">{isRTL ? "الإجمالي المتاح" : "Total available"}</div><div className="font-black font-mono">AED {summary.availableTotal.toFixed(2)}</div></div>
         </div>
       </Card>
-      {/* Bank accounts */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {bankAccounts.map(acc => (
-          <Card key={acc.bank} className={`p-5 ${!acc.active ? "opacity-60" : ""}`}>
-            <div className="flex items-start justify-between mb-3">
-              <div><div className="font-black text-slate-800">{acc.nick}</div><div className="text-xs text-slate-400">{acc.bank}</div></div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${acc.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{acc.active ? (isRTL ? "نشط" : "Active") : (isRTL ? "موقوف" : "Inactive")}</span>
-            </div>
-            <div className="text-2xl font-black font-mono text-[#0F2C59] mb-1">{isRTL ? "رصيد غير محدد" : "Balance N/A"}</div>
-            <div className="text-[10px] text-slate-400">{isRTL ? "آخر حركة:" : "Last movement:"} {acc.lastMov}</div>
-            <Btn size="sm" variant="outline" className="w-full justify-center mt-3" onClick={() => onNavigate("payments-movements")}><Eye size={13} />{isRTL ? "عرض الحركات" : "View Movements"}</Btn>
-          </Card>
-        ))}
-      </div>
+
+      <Card className="p-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} className="border rounded-xl px-3 py-2 text-sm" placeholder={isRTL ? "اسم الحساب" : "Account name"} />
+          <select value={newType} onChange={(e) => setNewType(e.target.value as "cashbox" | "bank")} className="border rounded-xl px-3 py-2 text-sm">
+            <option value="cashbox">{isRTL ? "خزنة" : "Cashbox"}</option>
+            <option value="bank">{isRTL ? "حساب بنكي" : "Bank account"}</option>
+          </select>
+          <input value={newOpening} onChange={(e) => setNewOpening(e.target.value)} className="border rounded-xl px-3 py-2 text-sm font-mono" placeholder={isRTL ? "الرصيد الافتتاحي" : "Opening balance"} />
+        </div>
+      </Card>
+
+      {loading ? (
+        <LoadingState lang={lang} />
+      ) : accounts.length === 0 ? (
+        <EmptyState lang={lang} messageAr="لا توجد خزائن أو حسابات بنكية بعد" messageEn="No cashboxes or bank accounts yet" />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {accounts.map((acc) => (
+            <Card key={acc.id} className={`p-5 ${!acc.isActive ? "opacity-60" : ""}`}>
+              <div className="flex items-start justify-between mb-3">
+                <div><div className="font-black text-slate-800">{acc.name}</div><div className="text-xs text-slate-400">{acc.accountType === "cashbox" ? (isRTL ? "خزنة" : "Cashbox") : (isRTL ? "بنك" : "Bank")}</div></div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${acc.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{acc.isActive ? (isRTL ? "نشط" : "Active") : (isRTL ? "موقوف" : "Inactive")}</span>
+              </div>
+              <div className="text-2xl font-black font-mono text-[#0F2C59] mb-1">AED {acc.currentBalance.toFixed(2)}</div>
+              <Btn size="sm" variant="outline" className="w-full justify-center mt-3" onClick={() => setSelectedAccount(acc.id)}><Eye size={13} />{isRTL ? "عرض الحركات" : "View Movements"}</Btn>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {selectedAccount && (
+        <Card className="p-4 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+            <select value={adjDirection} onChange={(e) => setAdjDirection(e.target.value as "in" | "out")} className="border rounded-xl px-3 py-2 text-sm">
+              <option value="in">{isRTL ? "إضافة رصيد" : "Add funds"}</option>
+              <option value="out">{isRTL ? "سحب رصيد" : "Withdraw funds"}</option>
+            </select>
+            <input value={adjAmount} onChange={(e) => setAdjAmount(e.target.value)} className="border rounded-xl px-3 py-2 text-sm font-mono" placeholder={isRTL ? "المبلغ" : "Amount"} />
+            <input value={adjReason} onChange={(e) => setAdjReason(e.target.value)} className="border rounded-xl px-3 py-2 text-sm" placeholder={isRTL ? "سبب التعديل" : "Adjustment reason"} />
+            <Btn size="sm" onClick={async () => {
+              if (!adjReason.trim()) { toast.error(isRTL ? "السبب مطلوب" : "Reason required"); return; }
+              await createMoneyAdjustment(selectedAccount, { direction: adjDirection, amount: Number(adjAmount || 0), reason: adjReason });
+              setAdjAmount("0");
+              setAdjReason("");
+              await reload();
+              const rows = await listMoneyAccountMovements(selectedAccount);
+              setMovements(rows);
+            }}>{isRTL ? "تسجيل التعديل" : "Post adjustment"}</Btn>
+          </div>
+          <div className="space-y-2">
+            {movements.map((m) => (
+              <div key={m.id} className="flex items-center justify-between text-sm border-b pb-2">
+                <div>
+                  <div className="font-semibold">{m.description || m.movementType}</div>
+                  <div className="text-xs text-slate-500">{m.reason}</div>
+                </div>
+                <div className={`font-mono font-bold ${m.direction === "in" ? "text-emerald-600" : "text-red-600"}`}>
+                  {m.direction === "in" ? "+" : "-"}AED {m.amount.toFixed(2)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
