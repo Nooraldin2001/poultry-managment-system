@@ -32,6 +32,7 @@ interface ApiPurchaseList {
 interface ApiPurchaseDetail extends ApiPurchaseList {
   money_account?: number | null;
   lines?: ApiPurchaseLine[];
+  backdate_reason?: string;
 }
 
 interface ApiPurchaseLine {
@@ -122,7 +123,11 @@ export async function getPurchaseRow(id: string): Promise<PurchaseInvoiceRow | n
   }
 }
 
-export async function getPurchaseDetail(id: string): Promise<{ invoice: PurchaseInvoiceRow; lines: PurchaseInvoiceLineRow[] }> {
+export async function getPurchaseDetail(id: string): Promise<{
+  invoice: PurchaseInvoiceRow;
+  lines: PurchaseInvoiceLineRow[];
+  backdateReason?: string;
+}> {
   if (IS_MOCK_MODE) {
     throw new ApiError("Not found", { status: 404 });
   }
@@ -130,6 +135,7 @@ export async function getPurchaseDetail(id: string): Promise<{ invoice: Purchase
   return {
     invoice: mapApiPurchaseToRow(row),
     lines: (row.lines ?? []).map(mapPurchaseLine),
+    backdateReason: row.backdate_reason ?? "",
   };
 }
 

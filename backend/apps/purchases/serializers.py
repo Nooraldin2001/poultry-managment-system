@@ -11,6 +11,7 @@ from rest_framework import serializers
 
 from apps.products.models import Product
 
+from apps.core.serializer_mixins import PurchaseInvoiceDateValidationMixin
 from apps.products.poultry_cuts import validate_purchase_line_quantities
 
 from .models import (
@@ -92,7 +93,7 @@ class PurchaseInvoiceDetailSerializer(serializers.ModelSerializer):
             "payment_method", "subtotal", "adjustment_total", "taxable_amount",
             "vat_rate", "vat_amount", "total_amount", "amount_paid", "balance_due",
             "inventory_cost_total", "money_account", "supplier_payable_posted",
-            "vat_enabled", "notes",
+            "vat_enabled", "notes", "backdate_reason",
             "approval_reason", "approved_by", "approved_at",
             "cancel_reason", "cancelled_by", "cancelled_at",
             "created_by", "updated_by", "created_at", "updated_at",
@@ -191,9 +192,12 @@ class PurchaseAdjustmentInputSerializer(_NonNegativeMixin, serializers.Serialize
         return attrs
 
 
-class PurchaseInvoiceCreateUpdateSerializer(_NonNegativeMixin, serializers.Serializer):
+class PurchaseInvoiceCreateUpdateSerializer(
+    PurchaseInvoiceDateValidationMixin, _NonNegativeMixin, serializers.Serializer,
+):
     supplier = serializers.IntegerField()
     invoice_date = serializers.DateField()
+    backdate_reason = serializers.CharField(required=False, allow_blank=True)
     due_date = serializers.DateField(required=False, allow_null=True)
     supplier_invoice_number = serializers.CharField(required=False, allow_blank=True)
     payment_method = serializers.ChoiceField(
@@ -238,7 +242,7 @@ class PurchaseInvoiceCreateUpdateSerializer(_NonNegativeMixin, serializers.Seria
                 attrs["money_account"] = MoneyAccount.objects.get(pk=account_id, company=company)
             except MoneyAccount.DoesNotExist:
                 raise serializers.ValidationError({"money_account": "Money account not found for this company."})
-        return attrs
+        return super().validate(attrs)
 
 
 class PurchaseApproveSerializer(serializers.Serializer):

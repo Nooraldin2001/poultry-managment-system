@@ -164,3 +164,16 @@ See [INVOICE_LINE_DELETE_RULES.md](./INVOICE_LINE_DELETE_RULES.md).
 Sales print now includes cartons/pieces/kg columns in line table, and print CSS handles multipage invoices more safely (`thead` repeat + avoid row split + totals/footer keep-together).
 
 See [INVOICE_PRINT_PAGINATION.md](./INVOICE_PRINT_PAGINATION.md).
+
+---
+
+## Backdated sales invoices (2026-07-08)
+
+- Permission: `sales.backdate` (owner + accountant by default; cashier blocked)
+- Draft create/update validates `invoice_date`; past dates require `backdate_reason`
+- Future dates blocked; approved invoice date is read-only
+- Approval posts ledger + stock with `movement_date = invoice_date`
+- `created_at` remains system timestamp; numbering stays sequential by creation
+- Audit action: `backdate_sales_invoice`
+
+See [BACKDATED_INVOICES_POLICY.md](./BACKDATED_INVOICES_POLICY.md).

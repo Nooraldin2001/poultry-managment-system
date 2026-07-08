@@ -151,7 +151,7 @@ def _balance_snapshot(balance) -> dict:
 def add_stock(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO,
               unit_cost_per_kg=ZERO, source_type, source_id=None,
               source_reference="", reason="", user=None, notes="",
-              movement_type=None, received_at=None) -> StockMovement:
+              movement_type=None, received_at=None, movement_date=None) -> StockMovement:
     """Add stock: increases balance, creates a FIFO layer + inbound movement.
 
     Used now by opening inventory / manual increases; later by purchase
@@ -167,7 +167,14 @@ def add_stock(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO,
 
     balance = _lock_balance(company, product)
     previous = _balance_snapshot(balance)
-    received_at = received_at or timezone.now()
+    from datetime import datetime, time
+
+    if movement_date is None:
+        movement_date = (
+            received_at.date() if received_at is not None else timezone.localdate()
+        )
+    if received_at is None:
+        received_at = timezone.make_aware(datetime.combine(movement_date, time.min))
 
     total_cost = (kg * unit_cost_per_kg).quantize(MONEY_Q)
     FIFOStockLayer.objects.create(
@@ -205,6 +212,7 @@ def add_stock(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO,
         balance_kg_after=balance.available_kg,
         unit_cost_per_kg=unit_cost_per_kg,
         reason=reason, notes=notes, created_by=user,
+        movement_date=movement_date,
     )
 
     if source_type in _SENSITIVE_SOURCES:
@@ -232,7 +240,7 @@ def consume_stock_fifo_detailed(*, company, product, cartons=ZERO, pieces=ZERO, 
                               reference_type="", reference_id=None, reference_number="",
                               reason="", user=None, notes="",
                               movement_type=MovementType.MANUAL_DECREASE,
-                              audit_action=None):
+                              audit_action=None, movement_date=None):
     """Consume stock oldest-first; returns ``(movement, allocations)``.
 
     ``allocations`` is a list of dicts with layer + quantities consumed, for
@@ -321,6 +329,9 @@ def consume_stock_fifo_detailed(*, company, product, cartons=ZERO, pieces=ZERO, 
     ])
     balance.refresh_from_db()
 
+    if movement_date is None:
+        movement_date = timezone.localdate()
+
     movement = StockMovement.objects.create(
         company=company, product=product, movement_type=movement_type,
         direction=MovementDirection.OUT,
@@ -332,6 +343,7 @@ def consume_stock_fifo_detailed(*, company, product, cartons=ZERO, pieces=ZERO, 
         balance_kg_after=balance.available_kg,
         fifo_cost_consumed=fifo_cost_consumed,
         reason=reason, notes=notes, created_by=user,
+        movement_date=movement_date,
     )
 
     if audit_action:
@@ -764,6 +776,7 @@ def reverse_source_layers(*, company, source_type, source_id, reason, user=None,
             balance_kg_after=balance.available_kg,
             unit_cost_per_kg=layer.unit_cost_per_kg,
             reason=reason, created_by=user,
+            movement_date=timezone.localdate(),
         )
         movements.append(movement)
     return movements

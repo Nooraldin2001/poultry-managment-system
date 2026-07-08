@@ -1,0 +1,319 @@
+"""Backdated invoice policy tests (sales + purchases)."""
+
+from datetime import date, timedelta
+from decimal import Decimal
+
+import pytest
+from django.utils import timezone
+
+from apps.audit.models import AuditLog
+from apps.inventory import services as inventory_services
+from apps.inventory.models import FIFOStockLayer, MovementType, StockMovement, StockSourceType
+from apps.purchases import services as purchase_services
+from apps.purchases.models import PurchaseLineType, PurchaseStatus
+from apps.reports import services as report_services
+from apps.sales import services as sales_services
+from apps.sales.models import SalesLineType, SalesStatus
+from apps.customers.models import Customer, CustomerLedgerEntry, CustomerType
+from apps.suppliers.models import Supplier, SupplierLedgerEntry, SupplierType
+from apps.products.models import Product, ProductCategory, ProductType
+
+pytestmark = pytest.mark.django_db
+
+SALES_URL = "/api/v1/tenant/sales/"
+PURCHASES_URL = "/api/v1/tenant/purchases/"
+
+
+def _customer(company, **kwargs):
+    defaults = dict(
+        company=company, name_ar="عميل", phone="0500000001",
+        customer_type=CustomerType.CREDIT, credit_limit=Decimal("50000"),
+    )
+    defaults.update(kwargs)
+    return Customer.objects.create(**defaults)
+
+
+def _supplier(company, **kwargs):
+    defaults = dict(
+        company=company, name_ar="مورد", phone="0500000002",
+        supplier_type=SupplierType.CREDIT,
+    )
+    defaults.update(kwargs)
+    return Supplier.objects.create(**defaults)
+
+
+def _product(company, sku="BD1", **kwargs):
+    cat = ProductCategory.objects.create(company=company, name_ar="c", code=f"C{sku}")
+    defaults = dict(
+        company=company, category=cat, name_ar="prod", sku=sku,
+        product_type=ProductType.FIXED_WEIGHT, weight_grams=1000,
+        default_pieces_per_carton=10, sales_price=Decimal("100"),
+        purchase_price=Decimal("10"), can_sell=True,
+    )
+    defaults.update(kwargs)
+    return Product.objects.create(**defaults)
+
+
+def _seed_stock(company, owner, product, kg="100"):
+    inventory_services.add_stock(
+        company=company, product=product, kg=Decimal(kg),
+        unit_cost_per_kg=Decimal("8"),
+        source_type=StockSourceType.OPENING_INVENTORY,
+        reason="opening", user=owner,
+        movement_type=MovementType.OPENING_INVENTORY,
+    )
+
+
+def _sales_payload(customer, product, invoice_date, **overrides):
+    data = {
+        "customer": customer.id,
+        "invoice_date": str(invoice_date),
+        "vat_rate": "0",
+        "lines": [{
+            "product": product.id, "line_type": "product",
+            "quantity_kg": "10", "price_type": "kg",
+        }],
+    }
+    data.update(overrides)
+    return data
+
+
+def _purchase_payload(supplier, product, invoice_date, **overrides):
+    data = {
+        "supplier": supplier.id,
+        "invoice_date": str(invoice_date),
+        "vat_rate": "0",
+        "lines": [{
+            "product": product.id, "line_type": "product",
+            "quantity_kg": "50", "unit_price": "10", "price_type": "kg",
+        }],
+    }
+    data.update(overrides)
+    return data
+
+
+# ── Sales backdating ──────────────────────────────────────────────────────────
+def test_owner_can_create_backdated_sales_with_reason(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    past = date.today() - timedelta(days=3)
+    api.force_authenticate(owner)
+    resp = api.post(
+        SALES_URL,
+        _sales_payload(customer, product, past, backdate_reason="Late entry"),
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    assert resp.data["invoice_date"] == str(past)
+    assert resp.data["backdate_reason"] == "Late entry"
+    assert AuditLog.objects.filter(
+        company=company, action="backdate_sales_invoice",
+        reference_id=str(resp.data["id"]),
+    ).exists()
+
+
+def test_cashier_cannot_create_backdated_sales(api, company, cashier):
+    customer = _customer(company)
+    product = _product(company)
+    past = date.today() - timedelta(days=2)
+    api.force_authenticate(cashier)
+    resp = api.post(
+        SALES_URL,
+        _sales_payload(customer, product, past, backdate_reason="Late entry"),
+        format="json",
+    )
+    assert resp.status_code == 403
+
+
+def test_backdated_sales_without_reason_fails(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    past = date.today() - timedelta(days=2)
+    api.force_authenticate(owner)
+    resp = api.post(SALES_URL, _sales_payload(customer, product, past), format="json")
+    assert resp.status_code == 400
+    assert "backdate_reason" in resp.data
+
+
+def test_future_sales_date_fails(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    future = date.today() + timedelta(days=1)
+    api.force_authenticate(owner)
+    resp = api.post(
+        SALES_URL,
+        _sales_payload(customer, product, future, backdate_reason="x"),
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert "invoice_date" in resp.data
+
+
+def test_backdated_sales_approval_uses_invoice_date_for_stock(company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    _seed_stock(company, owner, product)
+    past = date.today() - timedelta(days=5)
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=past, backdate_reason="Late documents",
+        vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": SalesLineType.PRODUCT,
+            "quantity_kg": Decimal("5"), "price_type": "kg",
+        }],
+    )
+    sales_services.approve_sales_invoice(invoice=inv, user=owner, reason="approve")
+    inv.refresh_from_db()
+    movement = StockMovement.objects.filter(
+        company=company, reference_type="sales_invoice", reference_id=inv.id,
+    ).first()
+    assert movement is not None
+    assert movement.movement_date == past
+    assert inv.created_at.date() == date.today()
+    ledger = CustomerLedgerEntry.objects.filter(
+        customer=customer, reference_type="sales_invoice", reference_id=str(inv.id),
+    ).first()
+    assert ledger.entry_date == past
+
+
+def test_sales_report_includes_backdated_invoice_by_invoice_date(company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    _seed_stock(company, owner, product)
+    past = date.today() - timedelta(days=7)
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=past, backdate_reason="Late",
+        vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": SalesLineType.PRODUCT,
+            "quantity_kg": Decimal("5"), "price_type": "kg",
+        }],
+    )
+    sales_services.approve_sales_invoice(invoice=inv, user=owner, reason="approve")
+    report = report_services.get_sales_report(company, date_from=past, date_to=past)
+    assert report["totals"]["invoice_count"] >= 1
+    assert any(r["id"] == inv.id for r in report["records"])
+
+
+def test_approved_sales_invoice_date_read_only(api, company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    _seed_stock(company, owner, product)
+    api.force_authenticate(owner)
+    resp = api.post(SALES_URL, _sales_payload(customer, product, date.today()), format="json")
+    inv_id = resp.data["id"]
+    api.post(f"{SALES_URL}{inv_id}/approve/", {"reason": "ok"}, format="json")
+    past = date.today() - timedelta(days=2)
+    resp = api.patch(
+        f"{SALES_URL}{inv_id}/",
+        {"invoice_date": str(past), "backdate_reason": "change"},
+        format="json",
+    )
+    assert resp.status_code == 400
+
+
+# ── Purchase backdating ───────────────────────────────────────────────────────
+def test_owner_can_create_backdated_purchase_with_reason(api, company, owner):
+    supplier = _supplier(company)
+    product = _product(company, sku="PBD1")
+    past = date.today() - timedelta(days=4)
+    api.force_authenticate(owner)
+    resp = api.post(
+        PURCHASES_URL,
+        _purchase_payload(supplier, product, past, backdate_reason="Late supplier invoice"),
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    assert resp.data["invoice_date"] == str(past)
+    assert AuditLog.objects.filter(
+        company=company, action="backdate_purchase_invoice",
+        reference_id=str(resp.data["id"]),
+    ).exists()
+
+
+def test_backdated_purchase_approval_fifo_and_stock_use_invoice_date(company, owner):
+    supplier = _supplier(company)
+    product = _product(company, sku="PBD2")
+    past = date.today() - timedelta(days=6)
+    inv = purchase_services.create_purchase_invoice(
+        company=company, supplier=supplier, created_by=owner,
+        invoice_date=past, backdate_reason="Late",
+        vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": PurchaseLineType.PRODUCT,
+            "quantity_kg": Decimal("20"), "unit_price": Decimal("10"), "price_type": "kg",
+        }],
+    )
+    purchase_services.approve_purchase_invoice(invoice=inv, user=owner, reason="approve")
+    movement = StockMovement.objects.filter(
+        company=company, reference_type="purchase_invoice", reference_id=inv.id,
+    ).first()
+    assert movement.movement_date == past
+    layer = FIFOStockLayer.objects.filter(
+        company=company, product=product, source_id=inv.id,
+    ).first()
+    assert timezone.localdate(layer.received_at) == past
+    ledger = SupplierLedgerEntry.objects.filter(
+        supplier=supplier, reference_type="purchase_invoice", reference_id=str(inv.id),
+    ).first()
+    assert ledger.entry_date == past
+
+
+def test_purchase_report_includes_backdated_invoice(company, owner):
+    supplier = _supplier(company)
+    product = _product(company, sku="PBD3")
+    past = date.today() - timedelta(days=8)
+    inv = purchase_services.create_purchase_invoice(
+        company=company, supplier=supplier, created_by=owner,
+        invoice_date=past, backdate_reason="Late",
+        vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": PurchaseLineType.PRODUCT,
+            "quantity_kg": Decimal("10"), "unit_price": Decimal("10"), "price_type": "kg",
+        }],
+    )
+    purchase_services.approve_purchase_invoice(invoice=inv, user=owner, reason="approve")
+    report = report_services.get_purchase_report(company, date_from=past, date_to=past)
+    assert report["totals"]["invoice_count"] >= 1
+    assert any(r["id"] == inv.id for r in report["records"])
+
+
+def test_tax_report_uses_invoice_date(company, owner):
+    customer = _customer(company)
+    product = _product(company, sku="TBD1")
+    _seed_stock(company, owner, product)
+    past = date.today() - timedelta(days=10)
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=past, backdate_reason="Late",
+        vat_rate=Decimal("5"),
+        lines=[{
+            "product": product, "line_type": SalesLineType.PRODUCT,
+            "quantity_kg": Decimal("10"), "price_type": "kg", "unit_price": Decimal("100"),
+        }],
+    )
+    sales_services.approve_sales_invoice(invoice=inv, user=owner, reason="approve")
+    from apps.tax import services as tax_services
+    summary = tax_services.get_tax_summary(company, date_from=past, date_to=past)
+    assert summary["sales_vat"] > 0
+
+
+def test_created_at_remains_system_timestamp(company, owner):
+    customer = _customer(company)
+    product = _product(company, sku="TS1")
+    past = date.today() - timedelta(days=3)
+    before = timezone.now()
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=past, backdate_reason="Late",
+        vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": SalesLineType.PRODUCT,
+            "quantity_kg": Decimal("1"), "price_type": "kg",
+        }],
+    )
+    assert inv.invoice_date == past
+    assert inv.created_at >= before
+    assert inv.created_at.date() == date.today()

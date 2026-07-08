@@ -345,7 +345,8 @@ def recalculate_sales_invoice(invoice) -> SalesInvoice:
 def create_sales_invoice(*, company, customer, created_by, invoice_date, lines,
                            adjustments=None, due_date=None, payment_method=None,
                            vat_rate=None, amount_paid=ZERO, notes="",
-                           invoice_number=None, preserve_pricing=False):
+                           invoice_number=None, preserve_pricing=False,
+                           backdate_reason=""):
     _check_customer(company, customer)
     adjustments = adjustments or []
 
@@ -368,6 +369,7 @@ def create_sales_invoice(*, company, customer, created_by, invoice_date, lines,
         vat_rate=_d(vat_rate),
         amount_paid=_d(amount_paid),
         notes=notes or "",
+        backdate_reason=backdate_reason or "",
         customer_name_snapshot=customer.name_ar,
         customer_trn_snapshot=customer.trn or "",
         customer_phone_snapshot=customer.phone or "",
@@ -567,6 +569,7 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None) -> Sal
             reason=reason,
             user=user,
             movement_type=MovementType.SALES_APPROVED,
+            movement_date=invoice.invoice_date,
         )
         line_cost = _d(movement.fifo_cost_consumed)
         fifo_total += line_cost

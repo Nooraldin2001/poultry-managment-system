@@ -21,9 +21,10 @@ import {
   isKgPrimaryProduct,
 } from "./productLineMode";
 import { PurchaseLinePriceCell } from "./PurchaseLinePriceCell";
-import { canDeletePurchaseLine, canOverridePurchasePrice } from "@/shared/utils/permissions";
+import { canDeletePurchaseLine, canOverridePurchasePrice, canBackdatePurchaseInvoice } from "@/shared/utils/permissions";
 import { notifyTenantDataChanged } from "@/shared/utils/tenantRefresh";
 import { ReasonModal } from "./ReasonModal";
+import { BackdateInvoiceFields, isBackdatedDate, todayIso } from "./BackdateInvoiceFields";
 import { parseAmount } from "@/services/crud/parse";
 import type { ProductRow } from "@/shared/types/entities";
 import { listMoneyAccounts, type MoneyAccountRow } from "@/services/treasuryService";
@@ -63,9 +64,12 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   const canApprove = role === "owner" || role === "accountant";
   const canEditPrice = canOverridePurchasePrice(role, permissions);
   const canDeleteLine = canDeletePurchaseLine(role, permissions);
+  const canBackdate = canBackdatePurchaseInvoice(role, permissions);
   const [docId, setDocId] = useState(invoiceId ?? "");
   const [supplierId, setSupplierId] = useState("");
   const [supplierInvNo, setSupplierInvNo] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState(todayIso());
+  const [backdateReason, setBackdateReason] = useState("");
   const [lines, setLines] = useState<InvoiceLineDraft[]>([]);
   const [status, setStatus] = useState("draft");
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -98,6 +102,8 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     setAmountPaid("0");
     setNotes("");
     setVatEnabled(false);
+    setInvoiceDate(todayIso());
+    setBackdateReason("");
     setError(null);
     setFieldErrors({});
     setNotFound(false);
@@ -114,6 +120,8 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       setSupplierId(detail.invoice.supplierId);
       setInvoiceNumber(detail.invoice.number);
       setStatus(detail.invoice.status);
+      setInvoiceDate(detail.invoice.date?.slice(0, 10) || todayIso());
+      setBackdateReason(detail.backdateReason ?? "");
       setPaymentMethod((detail.invoice as unknown as { paymentMethod?: string }).paymentMethod ?? "bank_transfer");
       setAmountPaid(String(detail.invoice.paid));
       setMoneyAccountId(detail.invoice.moneyAccountId ?? "");
@@ -172,6 +180,14 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
 
   const lineVatRate = vatEnabled ? DEFAULT_VAT_RATE : 0;
 
+  const headerDatePayload = (): Record<string, unknown> => {
+    const payload: Record<string, unknown> = { invoice_date: invoiceDate };
+    if (isBackdatedDate(invoiceDate) && canBackdate) {
+      payload.backdate_reason = backdateReason.trim();
+    }
+    return payload;
+  };
+
   const saveHeader = async (id: string) => {
     const selectedAccount = moneyAccounts.find((a) => a.id === moneyAccountId);
     const resolvedPaymentMethod =
@@ -181,6 +197,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     await patchDraftHeader("purchase", id, {
       supplier: Number(supplierId),
       supplier_invoice_number: supplierInvNo,
+      ...headerDatePayload(),
       payment_method: resolvedPaymentMethod,
       money_account: moneyAccountId ? Number(moneyAccountId) : null,
       amount_paid: amountPaid || "0",
@@ -192,7 +209,12 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   const ensureDraft = async (): Promise<string> => {
     if (docId) return docId;
     if (!supplierId) throw new ApiError(isRTL ? "اختر المورد" : "Select supplier", { status: 400 });
-    const today = new Date().toISOString().slice(0, 10);
+    if (isBackdatedDate(invoiceDate) && canBackdate && !backdateReason.trim()) {
+      throw new ApiError(
+        isRTL ? "سبب إدخال تاريخ سابق مطلوب" : "Backdate reason is required",
+        { status: 400, fieldErrors: { backdate_reason: ["Required"] } },
+      );
+    }
     const selectedAccount = moneyAccounts.find((a) => a.id === moneyAccountId);
     const resolvedPaymentMethod =
       paymentMethod === "partial"
@@ -200,7 +222,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
         : paymentMethod;
     const created = await createDraftHeader("purchase", {
       supplier: Number(supplierId),
-      invoice_date: today,
+      ...headerDatePayload(),
       supplier_invoice_number: supplierInvNo,
       payment_method: resolvedPaymentMethod,
       money_account: moneyAccountId ? Number(moneyAccountId) : null,
@@ -446,6 +468,16 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
               placeholder={isRTL ? "رقم فاتورة المورد" : "Supplier Invoice No."}
               aria-label={isRTL ? "رقم فاتورة المورد" : "Supplier Invoice No."}
               className="w-full rounded-xl border px-3 py-2 text-sm"
+            />
+            <BackdateInvoiceFields
+              lang={lang}
+              invoiceDate={invoiceDate}
+              backdateReason={backdateReason}
+              canBackdate={canBackdate}
+              isDraft={isDraft}
+              onDateChange={setInvoiceDate}
+              onReasonChange={setBackdateReason}
+              fieldErrors={fieldErrors}
             />
           </div>
           <div className="bg-white rounded-2xl border overflow-x-auto">

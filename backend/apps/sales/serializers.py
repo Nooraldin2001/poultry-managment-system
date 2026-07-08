@@ -7,6 +7,8 @@ from rest_framework import serializers
 from apps.customers.models import Customer
 from apps.products.models import Product
 
+from apps.core.serializer_mixins import InvoiceDateValidationMixin
+
 from .models import (
     SalesAdjustmentEffect,
     SalesAdjustmentType,
@@ -79,6 +81,7 @@ class SalesInvoiceDetailSerializer(serializers.ModelSerializer):
             "fifo_cost_total", "gross_profit", "posted_receivable",
             "credit_limit_snapshot", "credit_limit_override_used",
             "credit_limit_override_reason", "vat_enabled", "notes",
+            "backdate_reason",
             "approval_reason", "approved_by", "approved_at",
             "cancel_reason", "cancelled_by", "cancelled_at",
             "created_by", "updated_by", "created_at", "updated_at",
@@ -167,9 +170,12 @@ class SalesAdjustmentInputSerializer(_NonNegativeMixin, serializers.Serializer):
         return attrs
 
 
-class SalesInvoiceCreateUpdateSerializer(_NonNegativeMixin, serializers.Serializer):
+class SalesInvoiceCreateUpdateSerializer(
+    InvoiceDateValidationMixin, _NonNegativeMixin, serializers.Serializer,
+):
     customer = serializers.IntegerField()
     invoice_date = serializers.DateField()
+    backdate_reason = serializers.CharField(required=False, allow_blank=True)
     due_date = serializers.DateField(required=False, allow_null=True)
     payment_method = serializers.ChoiceField(
         choices=SalesInvoice._meta.get_field("payment_method").choices, required=False
@@ -198,7 +204,7 @@ class SalesInvoiceCreateUpdateSerializer(_NonNegativeMixin, serializers.Serializ
                 {"invoice_number": "Internal invoice number is assigned automatically."}
             )
         self._check_non_negative(attrs)
-        return attrs
+        return super().validate(attrs)
 
 
 class SalesApproveSerializer(serializers.Serializer):

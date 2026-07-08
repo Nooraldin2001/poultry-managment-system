@@ -55,3 +55,4 @@ See [TENANT_CREATE_WORKFLOW_AUDIT.md](../frontend/TENANT_CREATE_WORKFLOW_AUDIT.m
 | Invoice line delete permission UX (code) | **Fixed** | No | draft-only delete + permission-gated UI + clear AR/EN errors | Deploy + smoke |
 | Invoice multipage print + cartons column (code) | **Fixed** | No | print CSS pagination + cartons/pieces/kg rendered in print table | Deploy + smoke |
 | Mobile invoice A4 print layout (code) | **Fixed** | No | `PrintA4Shell` + mm-based print CSS; app chrome hidden; mobile Safari print | Deploy + mobile smoke |
+| Backdated sales/purchase invoices (code) | **Fixed** | No | `sales.backdate` / `purchases.backdate`; reason + audit; movement_date | Deploy + smoke |

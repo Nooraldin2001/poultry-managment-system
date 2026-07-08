@@ -16,7 +16,7 @@ import { applyLineTotals } from "./lineTotals";
 import { deriveQuantitiesFromCartons } from "./lineQuantities";
 import { isCartonBasedProduct, isKgPrimaryProduct } from "./productLineMode";
 import { SalesLinePriceCell } from "./SalesLinePriceCell";
-import { canDeleteSalesLine, canOverrideSalesPrice } from "@/shared/utils/permissions";
+import { canDeleteSalesLine, canOverrideSalesPrice, canBackdateSalesInvoice } from "@/shared/utils/permissions";
 import type { ProductRow } from "@/shared/types/entities";
 import {
   addDraftLine,
@@ -26,6 +26,7 @@ import {
   updateDraftLine,
 } from "./invoiceApi";
 import { ReasonModal } from "./ReasonModal";
+import { BackdateInvoiceFields, isBackdatedDate, todayIso } from "./BackdateInvoiceFields";
 import { parseAmount } from "@/services/crud/parse";
 
 function recalcLineFromProduct(line: InvoiceLineDraft, prod: ProductRow | undefined): InvoiceLineDraft {
@@ -56,8 +57,11 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
   const canApprove = role === "owner" || role === "accountant";
   const canEditPrice = canOverrideSalesPrice(role, permissions);
   const canDeleteLine = canDeleteSalesLine(role, permissions);
+  const canBackdate = canBackdateSalesInvoice(role, permissions);
   const [docId, setDocId] = useState("");
   const [customerId, setCustomerId] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState(todayIso());
+  const [backdateReason, setBackdateReason] = useState("");
   const [lines, setLines] = useState<InvoiceLineDraft[]>([]);
   const [status, setStatus] = useState("draft");
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -88,6 +92,8 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
     setAmountPaid("0");
     setNotes("");
     setVatEnabled(true);
+    setInvoiceDate(todayIso());
+    setBackdateReason("");
     setError(null);
     setFieldErrors({});
     setNotFound(false);
@@ -104,6 +110,8 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
       setCustomerId(detail.invoice.customerId);
       setInvoiceNumber(detail.invoice.number);
       setStatus(detail.invoice.status);
+      setInvoiceDate(detail.invoice.date?.slice(0, 10) || todayIso());
+      setBackdateReason(detail.backdateReason ?? "");
       setAmountPaid(String(detail.invoice.paid));
       setVatEnabled(detail.invoice.vat > 0);
       setLines(
@@ -151,13 +159,26 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
     return { subtotal, vat, total, paid, balance: Math.max(0, total - paid) };
   }, [lines, vatEnabled, amountPaid]);
 
+  const headerDatePayload = (): Record<string, unknown> => {
+    const payload: Record<string, unknown> = { invoice_date: invoiceDate };
+    if (isBackdatedDate(invoiceDate) && canBackdate) {
+      payload.backdate_reason = backdateReason.trim();
+    }
+    return payload;
+  };
+
   const ensureDraft = async (): Promise<string> => {
     if (docId) return docId;
     if (!customerId) throw new ApiError(isRTL ? "اختر العميل" : "Select customer", { status: 400 });
-    const today = new Date().toISOString().slice(0, 10);
+    if (isBackdatedDate(invoiceDate) && canBackdate && !backdateReason.trim()) {
+      throw new ApiError(
+        isRTL ? "سبب إدخال تاريخ سابق مطلوب" : "Backdate reason is required",
+        { status: 400, fieldErrors: { backdate_reason: ["Required"] } },
+      );
+    }
     const created = await createDraftHeader("sales", {
       customer: Number(customerId),
-      invoice_date: today,
+      ...headerDatePayload(),
       payment_method: paymentMethod,
       amount_paid: amountPaid || "0",
       notes,
@@ -179,6 +200,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
         : amountPaid || "0");
     await patchDraftHeader("sales", id, {
       customer: Number(customerId),
+      ...headerDatePayload(),
       payment_method: paymentMethod,
       amount_paid: paidValue,
       vat_rate: vatEnabled ? "5.00" : "0.00",
@@ -431,6 +453,16 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
                 </option>
               ))}
             </select>
+            <BackdateInvoiceFields
+              lang={lang}
+              invoiceDate={invoiceDate}
+              backdateReason={backdateReason}
+              canBackdate={canBackdate}
+              isDraft={isDraft}
+              onDateChange={setInvoiceDate}
+              onReasonChange={setBackdateReason}
+              fieldErrors={fieldErrors}
+            />
           </div>
 
           <div className="bg-white rounded-2xl border overflow-hidden">

@@ -52,3 +52,13 @@ python manage.py purge_tenant_demo_data --company-subdomain firstview --dry-run
 2. KPI cards show **AED 0** (empty tenant) or real totals from approved transactions
 3. No values like AED 18,450 / 425,000 unless backed by real data
 4. Open Sales/Purchase reports → empty state or live rows only
+
+---
+
+## Backdated invoice reporting (2026-07-08)
+
+- Sales/purchase/profit/tax reports use **`invoice_date`**
+- Inventory movement report uses **`StockMovement.movement_date`** (not `created_at`)
+- Dashboard month/today KPIs use business dates
+
+See [BACKDATED_INVOICES_POLICY.md](./BACKDATED_INVOICES_POLICY.md).

@@ -146,6 +146,19 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
             amount_paid=vd.get("amount_paid", 0),
             notes=vd.get("notes", ""),
             money_account=vd.get("money_account"),
+            backdate_reason=vd.get("backdate_reason", ""),
+        )
+        from apps.core.document_dates import log_backdated_invoice
+
+        log_backdated_invoice(
+            user=request.user,
+            company=self.company,
+            module="purchases",
+            reference_type="purchase_invoice",
+            invoice_id=invoice.id,
+            invoice_date=invoice.invoice_date,
+            backdate_reason=invoice.backdate_reason,
+            created_at=invoice.created_at,
         )
         return Response(
             PurchaseInvoiceDetailSerializer(invoice).data,
@@ -159,7 +172,7 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
         _require_draft(invoice)
         serializer = PurchaseInvoiceCreateUpdateSerializer(
             data=request.data, partial=True,
-            context={"company": self.company, "request": request},
+            context={"company": self.company, "request": request, "instance": invoice},
         )
         serializer.is_valid(raise_exception=True)
         vd = serializer.validated_data
@@ -172,7 +185,8 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
                 invoice.supplier_trn_snapshot = vd["supplier"].trn or ""
                 header_fields += ["supplier", "supplier_name_snapshot", "supplier_trn_snapshot"]
             for field in ("invoice_date", "due_date", "supplier_invoice_number",
-                          "payment_method", "vat_rate", "amount_paid", "notes", "money_account"):
+                          "payment_method", "vat_rate", "amount_paid", "notes",
+                          "money_account", "backdate_reason"):
                 if field in vd:
                     setattr(invoice, field, vd[field])
                     header_fields.append(field)
@@ -195,6 +209,19 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
             services.recalculate_purchase_invoice(invoice)
 
         invoice.refresh_from_db()
+        if "invoice_date" in vd:
+            from apps.core.document_dates import log_backdated_invoice
+
+            log_backdated_invoice(
+                user=request.user,
+                company=self.company,
+                module="purchases",
+                reference_type="purchase_invoice",
+                invoice_id=invoice.id,
+                invoice_date=invoice.invoice_date,
+                backdate_reason=invoice.backdate_reason,
+                created_at=invoice.created_at,
+            )
         return Response(PurchaseInvoiceDetailSerializer(invoice).data)
 
     # --- Workflow actions -------------------------------------------------

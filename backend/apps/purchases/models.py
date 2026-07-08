@@ -142,6 +142,7 @@ class PurchaseInvoice(TenantOwnedModel):
     supplier_trn_snapshot = models.CharField(max_length=32, blank=True)
 
     notes = models.TextField(blank=True)
+    backdate_reason = models.TextField(blank=True)
 
     approval_reason = models.TextField(blank=True)
     approved_by = get_created_by_field("purchase_invoices_approved")

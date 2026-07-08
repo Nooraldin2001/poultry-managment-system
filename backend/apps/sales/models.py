@@ -133,6 +133,7 @@ class SalesInvoice(TenantOwnedModel):
     credit_limit_override_reason = models.TextField(blank=True)
 
     notes = models.TextField(blank=True)
+    backdate_reason = models.TextField(blank=True)
     approval_reason = models.TextField(blank=True)
     approved_by = models.ForeignKey(
         "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,

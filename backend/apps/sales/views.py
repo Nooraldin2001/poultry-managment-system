@@ -161,6 +161,19 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
             vat_rate=vd.get("vat_rate", 0),
             amount_paid=vd.get("amount_paid", 0),
             notes=vd.get("notes", ""),
+            backdate_reason=vd.get("backdate_reason", ""),
+        )
+        from apps.core.document_dates import log_backdated_invoice
+
+        log_backdated_invoice(
+            user=request.user,
+            company=self.company,
+            module="sales",
+            reference_type="sales_invoice",
+            invoice_id=invoice.id,
+            invoice_date=invoice.invoice_date,
+            backdate_reason=invoice.backdate_reason,
+            created_at=invoice.created_at,
         )
         return self._detail_response(invoice, status.HTTP_201_CREATED)
 
@@ -171,7 +184,7 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
         _require_draft(invoice)
         serializer = SalesInvoiceCreateUpdateSerializer(
             data=request.data, partial=True,
-            context={"company": self.company, "request": request},
+            context={"company": self.company, "request": request, "instance": invoice},
         )
         serializer.is_valid(raise_exception=True)
         vd = serializer.validated_data
@@ -191,7 +204,7 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
                 ]
             for field in (
                 "invoice_date", "due_date", "payment_method",
-                "vat_rate", "amount_paid", "notes",
+                "vat_rate", "amount_paid", "notes", "backdate_reason",
             ):
                 if field in vd:
                     setattr(invoice, field, vd[field])
@@ -218,6 +231,19 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
             services.recalculate_sales_invoice(invoice)
 
         invoice.refresh_from_db()
+        if "invoice_date" in vd:
+            from apps.core.document_dates import log_backdated_invoice
+
+            log_backdated_invoice(
+                user=request.user,
+                company=self.company,
+                module="sales",
+                reference_type="sales_invoice",
+                invoice_id=invoice.id,
+                invoice_date=invoice.invoice_date,
+                backdate_reason=invoice.backdate_reason,
+                created_at=invoice.created_at,
+            )
         return self._detail_response(invoice)
 
     @action(detail=True, methods=["post"])

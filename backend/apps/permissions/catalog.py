@@ -37,7 +37,7 @@ GROUP_ACTIONS = {
     "sales": [
         "view", "create", "edit", "approve", "cancel", "print", "export",
         "sensitive", "view_cost", "view_profit", "override_price", "override_kg",
-        "apply_discount", "collection_adjustment", "credit_override",
+        "apply_discount", "collection_adjustment", "credit_override", "backdate",
     ],
     "quotations": [
         "view", "create", "edit", "send", "accept", "reject", "cancel",
@@ -46,7 +46,7 @@ GROUP_ACTIONS = {
     "purchases": [
         "view", "create", "edit", "approve", "cancel", "print", "export",
         "sensitive", "upload_attachment", "view_cost", "manage_adjustments",
-        "override_price",
+        "override_price", "backdate",
     ],
     "inventory": [
         "view", "view_movements", "view_valuation", "adjust", "export",
@@ -68,7 +68,7 @@ GROUP_ACTIONS = {
     "payments": [
         "view", "create_customer_collection", "create_supplier_payment",
         "create_customer_refund", "create_supplier_refund", "cancel", "allocate",
-        "print", "export", "reconcile", "sensitive",
+        "print", "export", "reconcile", "sensitive", "backdate",
     ],
     "treasury": [
         "view",
@@ -81,7 +81,7 @@ GROUP_ACTIONS = {
     "expenses": [
         "view", "create", "edit", "cancel", "print", "export",
         "manage_categories", "manage_recurring", "purchase_link",
-        "view_profit_impact", "upload_attachment",
+        "view_profit_impact", "upload_attachment", "backdate",
     ],
     "reports": ["view", "export"],
     "tax": ["view", "edit", "export", "sensitive"],
@@ -167,6 +167,7 @@ ACCOUNTANT_DEFAULTS = [
     "sales.print",
     "sales.export",
     "sales.apply_discount",
+    "sales.backdate",
     "sales.view_cost",
     "sales.view_profit",
     "quotations.view",
@@ -183,7 +184,7 @@ ACCOUNTANT_DEFAULTS = [
     "purchases.view", "purchases.create", "purchases.edit",
     "purchases.approve", "purchases.print", "purchases.export",
     "purchases.upload_attachment", "purchases.view_cost",
-    "purchases.manage_adjustments",
+    "purchases.manage_adjustments", "purchases.backdate",
     # Inventory: read + valuation + export. Adjustments and stocktaking apply
     # stay DISABLED by default (Owner/Admin or per-user override required).
     "inventory.view",

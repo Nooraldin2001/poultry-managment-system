@@ -160,3 +160,15 @@ See [INVOICE_BRANDING_AND_TEMPLATES.md](./INVOICE_BRANDING_AND_TEMPLATES.md).
 See:
 - [TREASURY_AND_BANK_ACCOUNTS.md](./TREASURY_AND_BANK_ACCOUNTS.md)
 - [PURCHASE_PAYMENT_FLOW.md](./PURCHASE_PAYMENT_FLOW.md)
+
+---
+
+## Backdated purchase invoices (2026-07-08)
+
+- Permission: `purchases.backdate` (owner + accountant by default)
+- Past `invoice_date` requires `backdate_reason`; future dates blocked
+- Approval: FIFO `received_at`, stock `movement_date`, supplier ledger `entry_date` = `invoice_date`
+- Treasury payment at approval uses `movement_date = invoice_date`
+- Audit action: `backdate_purchase_invoice`
+
+See [BACKDATED_INVOICES_POLICY.md](./BACKDATED_INVOICES_POLICY.md).

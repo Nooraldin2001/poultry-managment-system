@@ -968,3 +968,22 @@ Docs:
 See [INVOICE_PRINT_PAGINATION.md](./INVOICE_PRINT_PAGINATION.md).
 
 **Launch stance (Phase 16):** Deploy frontend + verify mobile print on First View tenant before client sign-off.
+
+---
+
+## Backdated invoices smoke (2026-07-08)
+
+| # | Check | Owner | Cashier |
+|---|-------|-------|---------|
+| 1 | Sales date picker allows past date | Pass expected | Blocked (today only) |
+| 2 | Past date shows reason field + warning | Pass expected | N/A |
+| 3 | Create backdated sales with reason ? 201 | Pass expected | 403 expected |
+| 4 | Approve backdated sale ? stock/ledger dated to invoice_date | Pass expected | N/A |
+| 5 | Same for purchase invoice | Pass expected | N/A |
+| 6 | Sales report for past date range includes invoice | Pass expected | N/A |
+| 7 | Future date rejected | Pass expected | Pass expected |
+| 8 | Approved invoice date read-only on PATCH | Pass expected | N/A |
+
+Automated: `pytest tests/test_backdated_invoices.py` ? **14 passed** (local).
+
+See [BACKDATED_INVOICES_POLICY.md](./BACKDATED_INVOICES_POLICY.md).

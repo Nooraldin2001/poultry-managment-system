@@ -227,6 +227,7 @@ class StockMovement(TenantOwnedModel):
     unit_cost_per_kg = models.DecimalField(null=True, blank=True, **COST_PER_KG)
     reason = models.TextField(blank=True)
     notes = models.TextField(blank=True)
+    movement_date = models.DateField(db_index=True)
     created_by = get_created_by_field("stock_movements_created")
 
     class Meta:
@@ -243,6 +244,7 @@ class StockMovement(TenantOwnedModel):
         ]
         indexes = [
             models.Index(fields=["company", "product", "created_at"]),
+            models.Index(fields=["company", "product", "movement_date"]),
             models.Index(fields=["company", "movement_type"]),
             models.Index(fields=["company", "reference_type", "reference_id"]),
         ]

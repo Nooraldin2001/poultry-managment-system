@@ -361,7 +361,7 @@ def get_inventory_movement_report(company, *, date_from, date_to, filters=None) 
     date_from, date_to = _parse_dates(date_from, date_to)
     filters = filters or {}
     qs = StockMovement.objects.filter(
-        company=company, created_at__date__gte=date_from, created_at__date__lte=date_to,
+        company=company, movement_date__gte=date_from, movement_date__lte=date_to,
     ).select_related("product")
     if filters.get("product"):
         qs = qs.filter(product_id=filters["product"])
@@ -381,9 +381,10 @@ def get_inventory_movement_report(company, *, date_from, date_to, filters=None) 
         qs.values("product_id", "product__name_ar")
         .annotate(kg=Sum("kg_delta"), count=Count("id")).order_by("-kg")[:30]
     )
-    records = list(qs.order_by("-created_at")[:200].values(
+    records = list(qs.order_by("-movement_date", "-created_at")[:200].values(
         "id", "movement_type", "direction", "product_id", "cartons_delta",
-        "pieces_delta", "kg_delta", "fifo_cost_consumed", "reference_number", "created_at",
+        "pieces_delta", "kg_delta", "fifo_cost_consumed", "reference_number",
+        "movement_date", "created_at",
     ))
 
     return {

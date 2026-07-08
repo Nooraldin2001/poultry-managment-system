@@ -50,3 +50,13 @@ After `git pull` + `deploy_vps.sh` on VPS:
 - **Deploy required** — production bundle last modified before this fix (`2026-07-05 07:26 UTC`).
 - Tax export preview still uses mock PDF flow; live `getTaxExportPayload` wired in service but export UI not fully connected.
 - Multi-month trend chart not available in live mode (by design until backend trend API exists).
+
+---
+
+## Backdated invoices & tax dates (2026-07-08)
+
+- Sales/purchase VAT reports filter by **`invoice_date`**, not `created_at`
+- Backdated invoices appear in the tax period matching their business date
+- Closed `TaxPeriod` blocks backdated create/update unless user has `tax.sensitive`
+
+See [BACKDATED_INVOICES_POLICY.md](./BACKDATED_INVOICES_POLICY.md).

@@ -214,7 +214,7 @@ def create_purchase_invoice(*, company, supplier, created_by, invoice_date,
                             lines, adjustments=None, supplier_invoice_number="",
                             due_date=None, payment_method=None, vat_rate=ZERO,
                             amount_paid=ZERO, notes="", invoice_number=None,
-                            money_account=None):
+                            money_account=None, backdate_reason=""):
     """Create a DRAFT purchase invoice with its lines and adjustments.
 
     No stock and no supplier ledger effects — those happen only on approval.
@@ -243,6 +243,7 @@ def create_purchase_invoice(*, company, supplier, created_by, invoice_date,
         amount_paid=_d(amount_paid),
         money_account=money_account,
         notes=notes or "",
+        backdate_reason=backdate_reason or "",
         supplier_name_snapshot=supplier.name_ar,
         supplier_trn_snapshot=supplier.trn or "",
         created_by=created_by,
@@ -441,7 +442,11 @@ def _posted_stock_deltas(company, invoice, product_id) -> tuple[Decimal, Decimal
 
 def _apply_purchase_stock_side_effects(*, invoice, user, reason) -> list[dict]:
     """Add FIFO stock for stock-tracked purchase lines (idempotent per quantity)."""
+    from apps.core.document_dates import invoice_date_to_received_at
+
     company = invoice.company
+    business_date = invoice.invoice_date
+    received_at = invoice_date_to_received_at(business_date)
     lines = list(invoice.lines.select_related("product").all())
     extra = _inventory_cost_extra(list(invoice.adjustments.all()))
     product_lines = [ln for ln in lines if ln.is_stock_tracked and ln.has_quantity]
@@ -476,6 +481,8 @@ def _apply_purchase_stock_side_effects(*, invoice, user, reason) -> list[dict]:
             reason=reason,
             user=user,
             movement_type=MovementType.PURCHASE_APPROVED,
+            received_at=received_at,
+            movement_date=business_date,
         )
         applied.append({
             "product_id": line.product_id,
@@ -688,6 +695,7 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
             description=f"Purchase payment {invoice.invoice_number}",
             reason=reason,
             user=user,
+            movement_date=invoice.invoice_date,
         )
 
     payable_amount = max(_d(invoice.total_amount) - paid_amount, ZERO)

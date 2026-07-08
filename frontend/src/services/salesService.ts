@@ -30,6 +30,7 @@ interface ApiSalesList {
 
 interface ApiSalesDetail extends ApiSalesList {
   lines?: ApiSalesLine[];
+  backdate_reason?: string;
 }
 
 interface ApiSalesLine {
@@ -126,7 +127,11 @@ export async function getSalesRow(id: string): Promise<SalesInvoiceRow | null> {
   }
 }
 
-export async function getSalesDetail(id: string): Promise<{ invoice: SalesInvoiceRow; lines: SalesInvoiceLineRow[] }> {
+export async function getSalesDetail(id: string): Promise<{
+  invoice: SalesInvoiceRow;
+  lines: SalesInvoiceLineRow[];
+  backdateReason?: string;
+}> {
   if (IS_MOCK_MODE) {
     throw new ApiError("Not found", { status: 404 });
   }
@@ -134,6 +139,7 @@ export async function getSalesDetail(id: string): Promise<{ invoice: SalesInvoic
   return {
     invoice: mapApiSalesToRow(row),
     lines: (row.lines ?? []).map(mapSalesLine),
+    backdateReason: row.backdate_reason ?? "",
   };
 }
 

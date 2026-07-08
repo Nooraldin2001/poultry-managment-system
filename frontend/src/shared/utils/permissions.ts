@@ -95,3 +95,20 @@ export function canDeleteQuotationLine(role: TenantRole, permissions: string[]):
   }
   return role === "accountant";
 }
+
+/** True when the user may create invoices with a business date before today. */
+export function canBackdateSalesInvoice(role: TenantRole, permissions: string[]): boolean {
+  if (role === "owner") return true;
+  if (permissions.length > 0) {
+    return permissions.includes("sales.backdate");
+  }
+  return role === "accountant";
+}
+
+export function canBackdatePurchaseInvoice(role: TenantRole, permissions: string[]): boolean {
+  if (role === "owner") return true;
+  if (permissions.length > 0) {
+    return permissions.includes("purchases.backdate");
+  }
+  return role === "accountant";
+}

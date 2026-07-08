@@ -96,6 +96,7 @@ def post_money_movement(
     description="",
     reason="",
     user=None,
+    movement_date=None,
 ) -> MoneyMovement:
     amount = _d(amount)
     if amount <= 0:
@@ -108,6 +109,8 @@ def post_money_movement(
         raise ValidationError({"money_account": "Insufficient account balance."})
     account.current_balance = next_balance
     account.save(update_fields=["current_balance", "updated_at"])
+    if movement_date is None:
+        movement_date = timezone.now().date()
     return MoneyMovement.objects.create(
         company=company,
         money_account=account,
@@ -118,6 +121,7 @@ def post_money_movement(
         reference_id=str(reference_id or ""),
         description=description or "",
         reason=reason or "",
+        movement_date=movement_date,
         created_by=user,
     )
 

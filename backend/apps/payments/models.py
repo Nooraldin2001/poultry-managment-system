@@ -222,6 +222,7 @@ class MoneyMovement(TenantOwnedModel):
     reference_id = models.CharField(max_length=64, blank=True)
     description = models.CharField(max_length=255, blank=True)
     reason = models.TextField(blank=True)
+    movement_date = models.DateField(db_index=True)
     created_by = get_created_by_field("money_movements_created")
 
     class Meta:
