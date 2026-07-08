@@ -2783,8 +2783,8 @@ function TenantSidebar({ screen, onNavigate, lang, isOpen, onClose, company, rol
   const visibleNav = getFilteredTenantNav(permissions, role);
   return (
     <>
-      {isOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={onClose} />}
-      <aside className={`fixed top-0 h-full w-72 z-40 flex flex-col transition-transform duration-300 bg-[#0F2C59] lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${isRTL ? "right-0" : "left-0"} ${isOpen ? "translate-x-0" : isRTL ? "translate-x-full" : "-translate-x-full"}`}>
+      {isOpen && <div className="sidebar-overlay fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={onClose} />}
+      <aside className={`tenant-sidebar sidebar fixed top-0 h-full w-72 z-40 flex flex-col transition-transform duration-300 bg-[#0F2C59] lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${isRTL ? "right-0" : "left-0"} ${isOpen ? "translate-x-0" : isRTL ? "translate-x-full" : "-translate-x-full"}`}>
         {/* Company brand */}
         <div className="px-5 py-4 border-b border-white/10">
           <div className="flex items-center gap-3">
@@ -2842,7 +2842,7 @@ function TenantTopBar({ lang, onLangSwitch, onMenuClick, role, onRoleChange, onN
   const isRTL = lang === "ar";
   const today = new Date().toLocaleDateString(isRTL ? "ar-AE" : "en-AE", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   return (
-    <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-3 lg:px-6 h-16 flex items-center gap-3">
+    <header className="tenant-topbar sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-3 lg:px-6 h-16 flex items-center gap-3">
       <button onClick={onMenuClick} className="lg:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100"><Menu size={20} /></button>
       {/* Company */}
       <div className="hidden lg:flex items-center gap-2.5">
@@ -3682,11 +3682,11 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
   );
 
   return (
-    <div dir={isRTL ? "rtl" : "ltr"} className={`flex h-screen overflow-hidden bg-[#F8FAFC] ${isRTL ? "flex-row-reverse" : ""}`}>
+    <div dir={isRTL ? "rtl" : "ltr"} className={`tenant-app-shell flex h-screen overflow-hidden bg-[#F8FAFC] ${isRTL ? "flex-row-reverse" : ""}`}>
       <TenantSidebar screen={tScreen} onNavigate={navTenant} lang={lang} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} company={company} role={role} permissions={permissions} />
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div className="tenant-layout flex-1 flex flex-col overflow-hidden min-w-0">
         <TenantTopBar lang={lang} onLangSwitch={onLangSwitch} onMenuClick={() => setSidebarOpen(true)} role={role} onRoleChange={setRole} onNotificationsClick={() => setShowNotif(v => !v)} notifCount={T_NOTIFS.length} company={company} onBack={onBack} onQAClick={() => setTScreen("qa-summary")} />
-        <main className="flex-1 overflow-y-auto relative">
+        <main className="tenant-main flex-1 overflow-y-auto relative">
           {!canViewScreen(tScreen, permissions, role) ? (
             <PermissionDeniedState lang={lang} />
           ) : (
@@ -3853,7 +3853,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           )}
         </main>
         {/* Mobile bottom nav */}
-        <div className={`lg:hidden bg-white border-t border-slate-200 flex items-center justify-around px-1 py-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+        <div className={`tenant-bottom-nav bottom-nav mobile-nav lg:hidden bg-white border-t border-slate-200 flex items-center justify-around px-1 py-2 ${isRTL ? "flex-row-reverse" : ""}`}>
           {[{ key: "dashboard" as TenantScreen, icon: LayoutDashboard, ar: "الرئيسية", en: "Home" }, { key: "sales-list" as TenantScreen, icon: FileText, ar: "المبيعات", en: "Sales" }, { key: "inventory" as TenantScreen, icon: Package, ar: "المخزون", en: "Inventory" }, { key: "customers" as TenantScreen, icon: Users, ar: "العملاء", en: "Customers" }].map(item => {
             const Icon = item.icon;
             const active = tScreen === item.key || (item.key === "sales-list" && tScreen.startsWith("sales")) || (item.key === "inventory" && tScreen.startsWith("inventory")) || (item.key === "customers" && tScreen.startsWith("customers")) || (item.key === "suppliers" && (tScreen === "suppliers" || tScreen === "suppliers-new" || tScreen === "supplier-profile" || tScreen === "supplier-statement"));
@@ -3861,7 +3861,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           })}
         </div>
         {/* Mobile sticky FAB */}
-        <div className={`lg:hidden fixed bottom-20 ${isRTL ? "left-4" : "right-4"} z-20`}>
+        <div className={`tenant-mobile-fab lg:hidden fixed bottom-20 ${isRTL ? "left-4" : "right-4"} z-20`}>
           <button className="w-14 h-14 bg-[#22C55E] rounded-full shadow-2xl shadow-emerald-300/50 flex items-center justify-center hover:bg-emerald-600 active:scale-95 transition-all">
             <Plus size={26} className="text-white" />
           </button>

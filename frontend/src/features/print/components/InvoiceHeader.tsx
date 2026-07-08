@@ -31,7 +31,7 @@ export function InvoiceHeader({
   if (variant === "plain") {
     return (
       <div
-        className={`flex gap-4 items-start pb-4 mb-4 ${isRTL ? "flex-row-reverse text-right" : "text-left"}`}
+        className={`invoice-header flex gap-4 items-start pb-4 mb-4 ${isRTL ? "flex-row-reverse text-right" : "text-left"}`}
         style={{ borderBottom: `2px solid ${theme.primary}` }}
       >
         {showLogo && (
@@ -67,7 +67,7 @@ export function InvoiceHeader({
   if (variant === "solid") {
     // Full-width colored header block (modern).
     return (
-      <div className="mb-4 rounded-lg overflow-hidden">
+      <div className="invoice-header mb-4 rounded-lg overflow-hidden print:overflow-visible">
         <div
           className={`flex gap-4 items-center p-4 ${isRTL ? "flex-row-reverse text-right" : "text-left"}`}
           style={{ background: theme.headerBg, color: "#FFFFFF" }}
@@ -108,7 +108,7 @@ export function InvoiceHeader({
 
   // "banded" — official style: dark header band + colored title strip + TRN row.
   return (
-    <div className="mb-4">
+    <div className="invoice-header mb-4">
       <div
         className={`flex gap-4 items-center p-4 rounded-t-lg ${isRTL ? "flex-row-reverse" : ""}`}
         style={{ background: theme.headerBg, color: "#FFFFFF" }}
@@ -136,7 +136,7 @@ export function InvoiceHeader({
           )}
         </div>
         {/* Spacer keeps the company block centered when a logo is shown */}
-        {showLogo && <div className="w-[130px] shrink-0 hidden sm:block" />}
+        {showLogo && <div className="w-[130px] shrink-0 hidden sm:block print:block" />}
       </div>
       <div
         className="text-center py-1.5 font-black text-sm tracking-wide"

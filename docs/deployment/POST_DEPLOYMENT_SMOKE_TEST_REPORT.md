@@ -916,3 +916,55 @@ Docs:
 - `PURCHASE_PAYMENT_FLOW.md`
 - `INVOICE_LINE_DELETE_RULES.md`
 - `INVOICE_PRINT_PAGINATION.md`
+
+---
+
+## Phase 16 ? Mobile invoice A4 print layout (2026-07-08)
+
+### Root cause
+
+| Issue | Cause |
+|-------|-------|
+| Invoice too small on iPhone PDF | `.print-preview-doc { width: 100% }` used viewport width, not 210mm A4 |
+| Huge blank space / extra page | `h-screen` app shell + `visibility:hidden` print hack left empty printable area |
+| Mobile responsive table in print | `max-w-3xl`, viewport-based wrappers applied before print CSS |
+
+### Fix applied
+
+| Area | Change |
+|------|--------|
+| A4 wrapper | `PrintA4Shell` ? `.print-shell` > `.invoice-a4-page` (210mm screen + print) |
+| Print CSS | `print-a4.css` ? `@page A4`, hide tenant sidebar/topbar/bottom-nav/FAB |
+| Print button | `triggerPrint()` double-rAF before `window.print()` |
+| Templates | `InvoiceTemplateRenderer`, `PrintPreviewLayout` use A4 shell |
+| Table columns | Qty = cartons, Unit = KG (unchanged) |
+
+### Reproduction notes (pre-fix)
+
+| Environment | Symptom |
+|-------------|---------|
+| Desktop Chrome print preview | Acceptable layout but inherited visibility hack |
+| Mobile 390px responsive | Invoice preview constrained to ~390px width |
+| iPhone Safari Save PDF | Tiny invoice, large blank area, 2 pages |
+
+### Verification (post-fix ? pending production)
+
+| # | Check | Desktop | Mobile |
+|---|-------|---------|--------|
+| 1 | A4 full-width invoice (not tiny) | Pending deploy | Pending deploy |
+| 2 | No blank second page (short invoice) | Pending | Pending |
+| 3 | Long invoice multi-page | Pending | Pending |
+| 4 | No sidebar/nav/FAB in PDF | Pending | Pending |
+| 5 | Logo/TRN/stamp/signature | Pending | Pending |
+| 6 | Qty=cartons, Unit=KG | Pending | Pending |
+
+### Automated checks (local)
+
+| Check | Result |
+|-------|--------|
+| `pnpm run typecheck` | **Pass** |
+| `pnpm run build` | **Pass** |
+
+See [INVOICE_PRINT_PAGINATION.md](./INVOICE_PRINT_PAGINATION.md).
+
+**Launch stance (Phase 16):** Deploy frontend + verify mobile print on First View tenant before client sign-off.

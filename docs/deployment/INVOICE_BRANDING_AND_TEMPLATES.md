@@ -85,8 +85,16 @@ Purchase: `party.trn` uses `supplier_trn_snapshot` first, falls back to current 
 - Templates: `frontend/src/features/print/templates/InvoiceTemplate*.tsx`
 - Shared components: `frontend/src/features/print/components/`
 - Renderer: `frontend/src/features/print/InvoiceTemplateRenderer.tsx`
+- A4 print shell: `frontend/src/features/print/PrintA4Shell.tsx` + `print-a4.css`
 - Settings UI: Settings → **تصميم الفواتير / Invoice Design** (`settings-invoice-design`)
-- Print CSS: `frontend/src/styles/tailwind.css` (`@page A4`, `print-line-table` row break avoidance)
+- Print CSS: `frontend/src/features/print/print-a4.css` (fixed 210mm A4; mobile-safe print; app chrome hidden)
+
+### Mobile print (2026-07-08)
+
+- **Problem:** iPhone PDF showed invoice scaled to viewport (~390px), blank second page, app chrome bleeding into print.
+- **Fix:** mm-based `.invoice-a4-page` inside `.print-shell`; removed legacy `visibility:hidden` + `width:100%` hack.
+- **Print button:** `triggerPrint()` waits two animation frames before `window.print()` for mobile Safari layout settle.
+- See [INVOICE_PRINT_PAGINATION.md](./INVOICE_PRINT_PAGINATION.md) for verification checklist.
 
 ## Tests run
 

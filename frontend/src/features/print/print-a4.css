@@ -1,0 +1,193 @@
+/* Dedicated A4 invoice print layout — fixed mm width, independent of viewport. */
+
+.invoice-a4-page {
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  background: white;
+  box-sizing: border-box;
+  padding: 8mm;
+}
+
+@media screen {
+  .print-shell {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #f3f4f6;
+    padding: 16px;
+    box-sizing: border-box;
+  }
+
+  .invoice-a4-page {
+    transform-origin: top center;
+    box-shadow: 0 4px 24px rgb(15 44 89 / 8%);
+    border-radius: 4px;
+  }
+
+  .print-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    max-width: 210mm;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    width: 210mm;
+    min-width: 210mm;
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  #root {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .app-shell,
+  .tenant-app-shell,
+  .tenant-layout {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  .tenant-main {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    flex: none !important;
+  }
+
+  .sidebar,
+  .tenant-sidebar,
+  .tenant-topbar,
+  .tenant-bottom-nav,
+  .tenant-mobile-fab,
+  .sidebar-overlay,
+  .bottom-nav,
+  .mobile-nav,
+  .no-print,
+  .print-actions,
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+
+  .print-shell {
+    width: 210mm !important;
+    max-width: 210mm !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  .invoice-a4-page,
+  .print-preview-doc {
+    visibility: visible !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 194mm !important;
+    max-width: 194mm !important;
+    min-height: auto !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    transform: none !important;
+    zoom: 1 !important;
+    page-break-after: auto;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .invoice-a4-page *,
+  .print-preview-doc * {
+    visibility: visible !important;
+  }
+
+  /* Never shrink invoice to viewport on print */
+  .invoice-a4-page .max-w-3xl,
+  .invoice-a4-page .max-w-full,
+  .print-preview-doc .max-w-3xl {
+    max-width: none !important;
+  }
+
+  .invoice-a4-page .w-full,
+  .print-preview-doc .w-full {
+    width: 100% !important;
+  }
+
+  .invoice-a4-page .overflow-x-auto,
+  .invoice-a4-page .overflow-hidden,
+  .print-preview-doc .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  .invoice-a4-page table,
+  .print-preview-doc table {
+    width: 100% !important;
+    min-width: 0 !important;
+    border-collapse: collapse;
+    page-break-inside: auto;
+  }
+
+  .invoice-a4-page thead,
+  .print-preview-doc thead,
+  .print-line-table thead {
+    display: table-header-group;
+  }
+
+  .invoice-a4-page tfoot,
+  .print-preview-doc tfoot {
+    display: table-footer-group;
+  }
+
+  .invoice-a4-page tr,
+  .print-preview-doc tr,
+  .print-line-table tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .invoice-header {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .invoice-totals,
+  .invoice-footer,
+  .signature-section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print-preview-logo,
+  .print-preview-stamp,
+  .print-preview-signature,
+  .print-preview-asset {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

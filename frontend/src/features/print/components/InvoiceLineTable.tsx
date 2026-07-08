@@ -21,8 +21,8 @@ export function InvoiceLineTable({
       : { color: theme.primary, borderBottom: `2px solid ${theme.primary}` };
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm border-collapse min-w-[480px] print-line-table">
+    <div className="overflow-x-auto print:overflow-visible">
+      <table className="w-full text-sm border-collapse print-line-table">
         <thead>
           <tr>
             <th className={`${thBase} ${isRTL ? "text-right" : "text-left"}`} style={thStyle}>

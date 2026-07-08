@@ -10,16 +10,20 @@ import { parseBranding, parseCompanyIdentity, parsePartyIdentity } from "./types
 function mapPrintLines(data: Record<string, unknown>): PrintLineRow[] {
   const raw = (data.lines ?? data.items ?? data.line_items ?? []) as Record<string, unknown>[];
   if (!Array.isArray(raw)) return [];
-  return raw.map((line, i) => ({
-    label: String(line.product_name ?? line.description ?? line.name ?? `Line ${i + 1}`),
-    cartons: line.quantity_cartons != null ? String(line.quantity_cartons) : undefined,
-    pieces: line.quantity_pieces != null ? String(line.quantity_pieces) : undefined,
-    kg: line.quantity_kg != null ? String(line.quantity_kg) : undefined,
-    qty: String(line.quantity_kg ?? line.quantity ?? line.qty ?? line.kg ?? "—"),
-    unit: String(line.unit ?? line.price_type ?? ""),
-    price: line.unit_price != null ? String(line.unit_price) : undefined,
-    total: line.line_total != null ? String(line.line_total) : line.amount != null ? String(line.amount) : undefined,
-  }));
+  return raw.map((line, i) => {
+    const cartonsRaw = line.cartons ?? line.quantity_cartons;
+    const kgRaw = line.kg ?? line.quantity_kg;
+    return {
+      label: String(line.product_name ?? line.description ?? line.name ?? `Line ${i + 1}`),
+      cartons: cartonsRaw != null && cartonsRaw !== "" ? String(cartonsRaw) : undefined,
+      pieces: line.quantity_pieces != null ? String(line.quantity_pieces) : undefined,
+      kg: kgRaw != null && kgRaw !== "" ? String(kgRaw) : undefined,
+      qty: cartonsRaw != null ? String(cartonsRaw) : undefined,
+      unit: kgRaw != null ? String(kgRaw) : String(line.unit ?? line.price_type ?? ""),
+      price: line.unit_price != null ? String(line.unit_price) : undefined,
+      total: line.line_total != null ? String(line.line_total) : line.amount != null ? String(line.amount) : undefined,
+    };
+  });
 }
 
 function mapTotals(data: Record<string, unknown>): { label: string; value: string }[] {

@@ -22,7 +22,7 @@ export function InvoiceFooterBranding({
         </p>
       )}
       <div
-        className={`invoice-footer mt-8 pt-4 flex flex-wrap gap-8 items-end justify-between ${isRTL ? "flex-row-reverse" : ""}`}
+        className={`signature-section invoice-footer mt-8 pt-4 flex flex-wrap gap-8 items-end justify-between ${isRTL ? "flex-row-reverse" : ""}`}
         style={{ borderTop: `1px solid ${theme.border}` }}
       >
         <div className={isRTL ? "text-right" : "text-left"}>
