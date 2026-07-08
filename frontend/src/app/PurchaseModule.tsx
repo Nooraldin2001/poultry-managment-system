@@ -17,6 +17,10 @@ import { IS_MOCK_MODE } from "@/services/config";
 import { LivePurchaseInvoiceScreen } from "@/features/invoices/LivePurchaseInvoiceScreen";
 import { cancelPurchase } from "@/services/purchaseService";
 import { ApiError } from "@/services/api/errors";
+import {
+  getPurchaseStatusStyle,
+  normalizePurchaseInvoiceStatus,
+} from "@/shared/utils/purchaseStatus";
 
 // ── LOCAL TYPE ALIASES (mirrors App.tsx — no circular import) ──────────────────
 type Lang = "ar" | "en";
@@ -87,7 +91,7 @@ function AuditBadge({ type, lang }: { type: "price" | "kg"; lang: Lang }) {
   const cfg = {
     price: { bg: "bg-amber-100", t: "text-amber-700", ar: "تم تعديل السعر", en: "Price modified" },
     kg:    { bg: "bg-amber-100", t: "text-amber-700", ar: "تم تعديل الكيلو", en: "KG overridden" },
-  }[type];
+  }[type] ?? { bg: "bg-slate-100", t: "text-slate-600", ar: "—", en: "—" };
   return <span className={`inline-flex items-center text-[10px] font-black px-1.5 py-0.5 rounded-full ${cfg.bg} ${cfg.t}`}>{lang === "ar" ? cfg.ar : cfg.en}</span>;
 }
 
@@ -203,16 +207,11 @@ const P_SAMPLE_BYPRODUCTS = [
 ];
 
 // ── PURCHASE STATUS BADGE ──────────────────────────────────────────────────────
-function PurchStatusBadge({ status, lang }: { status: PurchStatus; lang: Lang }) {
-  const cfg = {
-    draft:     { bg: "bg-slate-100",  t: "text-slate-600",   ar: "مسودة",          en: "Draft" },
-    approved:  { bg: "bg-blue-50",    t: "text-blue-700",    ar: "معتمدة",          en: "Approved" },
-    paid:      { bg: "bg-emerald-50", t: "text-emerald-700", ar: "مدفوعة",          en: "Paid" },
-    partial:   { bg: "bg-amber-50",   t: "text-amber-700",   ar: "مدفوعة جزئياً", en: "Partial" },
-    credit:    { bg: "bg-violet-50",  t: "text-violet-700",  ar: "على الحساب",     en: "On Account" },
-    cancelled: { bg: "bg-red-50",     t: "text-red-700",     ar: "ملغاة",           en: "Cancelled" },
-  }[status];
-  return <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.t}`}>{lang === "ar" ? cfg.ar : cfg.en}</span>;
+function PurchStatusBadge({ status, lang, paymentStatus }: { status: string; lang: Lang; paymentStatus?: string }) {
+  const cfg = getPurchaseStatusStyle(status, paymentStatus);
+  const label = lang === "ar" ? (cfg.labelAr ?? cfg.ar ?? status) : (cfg.labelEn ?? cfg.en ?? status);
+  const textClass = cfg.t ?? cfg.text;
+  return <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${cfg.bg} ${textClass}`}>{label}</span>;
 }
 
 type PurchListItem = (typeof MOCK_P_INVOICES)[number];
@@ -238,12 +237,13 @@ function purchaseRowFromMock(inv: PurchListItem) {
 function mergePurchaseListItem(row: import("@/shared/types/entities").PurchaseInvoiceRow): PurchListItem & { recordId: string } {
   const m = toModulePurchase(row);
   const mock = IS_MOCK_MODE ? MOCK_P_INVOICES.find((x) => x.id === row.id || x.id === row.number) : undefined;
+  const displayStatus = normalizePurchaseInvoiceStatus(m.status, m.paymentStatus) as PurchStatus;
   return {
     id: m.number || m.id,
     recordId: row.id,
-    date: m.date,
+    date: m.date || "",
     supplierId: m.supplierId,
-    supplier: m.supplier,
+    supplier: m.supplier || "—",
     supplierInvNo: mock?.supplierInvNo ?? "",
     cartons: mock?.cartons ?? 0,
     pieces: mock?.pieces ?? 0,
@@ -255,7 +255,7 @@ function mergePurchaseListItem(row: import("@/shared/types/entities").PurchaseIn
     paid: m.paid,
     remaining: m.balance,
     method: mock?.method ?? m.paymentStatus,
-    status: m.status as PurchStatus,
+    status: displayStatus,
     user: mock?.user ?? "",
   };
 }
@@ -287,7 +287,7 @@ export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId 
     listFilters,
     async () => MOCK_P_INVOICES.map(purchaseRowFromMock),
   );
-  const P_INVOICES = purchaseRows.map(mergePurchaseListItem);
+  const P_INVOICES = (Array.isArray(purchaseRows) ? purchaseRows : []).map(mergePurchaseListItem);
 
   if (forbidden) return <PermissionDeniedState lang={lang} />;
   if (loading) return <LoadingState lang={lang} />;

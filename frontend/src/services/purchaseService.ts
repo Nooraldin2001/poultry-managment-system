@@ -7,6 +7,7 @@ import { request } from "./api/client";
 import { ENDPOINTS } from "./api/endpoints";
 import type { PurchaseInvoiceLineRow, PurchaseInvoiceRow } from "@/shared/types/entities";
 import type { PriceHistoryEntry } from "@/services/salesService";
+import { normalizePurchaseInvoiceStatus } from "@/shared/utils/purchaseStatus";
 import * as purchaseMock from "./mock/purchaseService.mock";
 
 const crud = createCrudService<ApiPurchaseList, ApiPurchaseDetail>(ENDPOINTS.tenant.purchases);
@@ -52,15 +53,16 @@ interface ApiPurchaseLine {
 }
 
 export function mapApiPurchaseToRow(row: ApiPurchaseList): PurchaseInvoiceRow {
+  const paymentStatus = row.payment_status ?? "unpaid";
   return {
     id: String(row.id),
-    number: row.invoice_number,
-    supplier: row.supplier_name_snapshot,
-    supplierId: String(row.supplier),
-    date: row.invoice_date,
+    number: row.invoice_number ?? "",
+    supplier: row.supplier_name_snapshot ?? "—",
+    supplierId: String(row.supplier ?? ""),
+    date: row.invoice_date ?? "",
     dueDate: row.due_date ?? undefined,
-    status: row.status,
-    paymentStatus: row.payment_status,
+    status: normalizePurchaseInvoiceStatus(row.status, paymentStatus),
+    paymentStatus,
     paymentMethod: row.payment_method ?? "credit",
     subtotal: parseAmount(row.subtotal),
     vat: parseAmount(row.vat_amount),

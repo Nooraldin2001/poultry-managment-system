@@ -3720,36 +3720,52 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
               <SalesDetailScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} salesId={selectedSalesId || undefined} />
             </ModuleErrorBoundary>
           )}
-          {(tScreen === "purchases" || tScreen === "purchases-list") && <PurchListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedPurchaseId={setSelectedPurchaseId} />}
-          {tScreen === "purchases-new"     && <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} onSaved={setSelectedPurchaseId} />}
-          {tScreen === "purchases-edit"    && selectedPurchaseId && <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} purchaseId={selectedPurchaseId} onSaved={setSelectedPurchaseId} />}
+          {(tScreen === "purchases" || tScreen === "purchases-list") && (
+            <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المشتريات" messageEn="Something went wrong while loading purchases" onBack={() => navTenant("dashboard")}>
+              <PurchListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedPurchaseId={setSelectedPurchaseId} />
+            </ModuleErrorBoundary>
+          )}
+          {tScreen === "purchases-new" && (
+            <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المشتريات" messageEn="Something went wrong while loading purchases" onBack={() => navTenant("dashboard")}>
+              <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} onSaved={setSelectedPurchaseId} />
+            </ModuleErrorBoundary>
+          )}
+          {tScreen === "purchases-edit" && selectedPurchaseId && (
+            <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المشتريات" messageEn="Something went wrong while loading purchases" onBack={() => navTenant("dashboard")}>
+              <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} purchaseId={selectedPurchaseId} onSaved={setSelectedPurchaseId} />
+            </ModuleErrorBoundary>
+          )}
           {tScreen === "purchases-edit"    && !selectedPurchaseId && <EmptyState lang={lang} messageAr="اختر فاتورة شراء من القائمة" messageEn="Select a purchase invoice from the list" />}
           {tScreen === "purchases-preview" && (
-            !IS_MOCK_MODE ? (
-              selectedPurchaseId ? (
-                <LivePrintPreviewScreen
-                  lang={lang}
-                  onNavigate={navTenant}
-                  backScreen="purchases-list"
-                  titleAr="فاتورة شراء"
-                  titleEn="Purchase Invoice"
-                  loadPreview={() => getPurchasePrintPreview(selectedPurchaseId)}
-                />
+            <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المشتريات" messageEn="Something went wrong while loading purchases" onBack={() => navTenant("dashboard")}>
+              {!IS_MOCK_MODE ? (
+                selectedPurchaseId ? (
+                  <LivePrintPreviewScreen
+                    lang={lang}
+                    onNavigate={navTenant}
+                    backScreen="purchases-list"
+                    titleAr="فاتورة شراء"
+                    titleEn="Purchase Invoice"
+                    loadPreview={() => getPurchasePrintPreview(selectedPurchaseId)}
+                  />
+                ) : (
+                  <EmptyState lang={lang} messageAr="اختر فاتورة شراء للطباعة" messageEn="Select a purchase invoice to print" />
+                )
               ) : (
-                <EmptyState lang={lang} messageAr="اختر فاتورة شراء للطباعة" messageEn="Select a purchase invoice to print" />
-              )
-            ) : (
-              <PurchPreviewScreen lang={lang} onNavigate={navTenant} role={role} />
-            )
+                <PurchPreviewScreen lang={lang} onNavigate={navTenant} role={role} />
+              )}
+            </ModuleErrorBoundary>
           )}
           {tScreen === "purchases-detail"  && (
-            <PurchDetailScreen
-              lang={lang}
-              role={role}
-              onNavigate={navTenant}
-              purchaseId={selectedPurchaseId || undefined}
-              onOpenPrint={() => navTenant("purchases-preview")}
-            />
+            <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المشتريات" messageEn="Something went wrong while loading purchases" onBack={() => navTenant("dashboard")}>
+              <PurchDetailScreen
+                lang={lang}
+                role={role}
+                onNavigate={navTenant}
+                purchaseId={selectedPurchaseId || undefined}
+                onOpenPrint={() => navTenant("purchases-preview")}
+              />
+            </ModuleErrorBoundary>
           )}
           {tScreen === "customers"          && <CustomersListScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} setSelectedCustomer={setSelectedCustomerId} />}
           {tScreen === "customers-create"  && <CreateCustomerScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} setSelectedCustomer={setSelectedCustomerId} />}
