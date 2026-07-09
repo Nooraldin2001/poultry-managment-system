@@ -336,3 +336,92 @@ export async function listPlans(): Promise<ApiPlan[]> {
   if (IS_MOCK_MODE) return [];
   return listPlansLive();
 }
+
+export interface ModuleResetCatalogItem {
+  key: string;
+  label_ar: string;
+  label_en: string;
+  danger_level: "low" | "medium" | "high" | "critical";
+  description_ar: string;
+  description_en: string;
+  requires_confirmation: boolean;
+}
+
+export interface ModuleResetCatalogResponse {
+  company: { id: number; name_ar: string; name_en: string; subdomain: string };
+  modules: ModuleResetCatalogItem[];
+  backup_warning_en: string;
+  backup_warning_ar: string;
+}
+
+export interface ModuleResetDryRunResponse {
+  company: { id: number; name_ar: string; name_en: string; subdomain: string };
+  module: string;
+  can_reset: boolean;
+  danger_level: string;
+  affected_counts: Record<string, number>;
+  side_effects: string[];
+  blocking_dependencies: string[];
+  blocking_dependencies_ar?: string[];
+  required_reset_order?: string[];
+  required_confirmation_text: string;
+  dry_run_token?: string;
+}
+
+export interface ModuleResetConfirmResponse {
+  company: { id: number; name_ar: string; name_en: string; subdomain: string };
+  module: string;
+  success: boolean;
+  deleted_counts: Record<string, number>;
+  recalculation: Record<string, unknown>;
+  completed_at: string;
+}
+
+export interface ModuleResetHistoryItem {
+  id: number;
+  action: string;
+  module: string | null;
+  reason: string;
+  user_id: number | null;
+  user_email: string | null;
+  new_value: Record<string, unknown> | null;
+  previous_value: Record<string, unknown> | null;
+  created_at: string | null;
+}
+
+export async function getModuleResetCatalog(companyId: number | string): Promise<ModuleResetCatalogResponse> {
+  return request<ModuleResetCatalogResponse>(ENDPOINTS.admin.moduleResetCatalog(companyId));
+}
+
+export async function moduleResetDryRun(
+  companyId: number | string,
+  module: string,
+): Promise<ModuleResetDryRunResponse> {
+  return request<ModuleResetDryRunResponse>(ENDPOINTS.admin.moduleResetDryRun(companyId), {
+    method: "POST",
+    body: { module },
+  });
+}
+
+export async function moduleResetConfirm(
+  companyId: number | string,
+  payload: {
+    module: string;
+    confirmation_text: string;
+    reason: string;
+    dry_run_token?: string;
+    backup_confirmed?: boolean;
+  },
+): Promise<ModuleResetConfirmResponse> {
+  return request<ModuleResetConfirmResponse>(ENDPOINTS.admin.moduleResetConfirm(companyId), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function getModuleResetHistory(companyId: number | string): Promise<{
+  company_id: number;
+  history: ModuleResetHistoryItem[];
+}> {
+  return request(ENDPOINTS.admin.moduleResetHistory(companyId));
+}

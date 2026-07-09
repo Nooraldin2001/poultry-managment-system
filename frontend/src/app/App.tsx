@@ -38,6 +38,7 @@ import { parseAmount } from "@/services/reportsService";
 import { resolveTenantCompany, mapBackendRole } from "@/services/tenantService";
 import { buildAdminDashboardSummary, createCompany, createCompanyAdminUser, getCompanyById, listPlans, updateCompanyAssetsLive } from "@/services/adminService";
 import { AdminCompanyEditScreen } from "@/features/admin/AdminCompanyEditScreen";
+import { AdminModuleResetPanel } from "@/features/admin/AdminModuleResetPanel";
 import { CompanyAssetUploadField, InvoiceBrandingPreview } from "@/features/company/CompanyAssetUploadField";
 import { getAppHostKind, getTenantSubdomainFromHost, getTenantUrl } from "@/services/tenantUrl";
 import { ApiError } from "@/services/api/errors";
@@ -702,6 +703,7 @@ function CompanyDetailScreen({ companyId, lang, onNavigate }: {
     { k: "payments", ar: "المدفوعات", en: "Payments" },
     { k: "modules", ar: "الوحدات", en: "Modules" },
     { k: "activity", ar: "سجل النشاط", en: "Activity" },
+    { k: "danger", ar: "منطقة خطرة", en: "Danger Zone" },
   ];
   const companyPmts = c && IS_MOCK_MODE ? PAYMENTS_DATA.filter(p => p.companyId === c.id) : [];
 
@@ -866,6 +868,17 @@ function CompanyDetailScreen({ companyId, lang, onNavigate }: {
           )}
           {tab === "users" && <div><div className="bg-slate-50 rounded-2xl p-4 flex items-center gap-3"><div className="w-11 h-11 rounded-full bg-[#0F2C59] flex items-center justify-center text-white font-black text-sm shrink-0">{c.adminName[0]}</div><div className="flex-1 min-w-0"><div className="font-black text-slate-800">{c.adminName}</div><div className="text-sm text-slate-500">{c.adminEmail}</div></div><span className="text-xs font-bold bg-violet-100 text-violet-700 px-2.5 py-1 rounded-full shrink-0">Admin</span></div></div>}
           {tab === "activity" && <div className="space-y-2">{AUDIT_LOGS.slice(0, 5).map(l => <div key={l.id} className="flex gap-3 bg-slate-50 rounded-xl p-3.5"><div className="font-mono text-xs text-slate-400 shrink-0 w-32">{l.timestamp}</div><div><div className="text-sm font-bold text-slate-700">{isRTL ? l.action : l.actionEn}</div><div className="text-xs text-slate-400">{l.details}</div></div></div>)}</div>}
+          {tab === "danger" && !IS_MOCK_MODE && (
+            <AdminModuleResetPanel
+              companyId={c.id}
+              companySubdomain={c.subdomain}
+              lang={lang}
+              onResetComplete={loadCompany}
+            />
+          )}
+          {tab === "danger" && IS_MOCK_MODE && (
+            <ProductionEmptyState lang={lang} messageAr="تصفير البيانات متاح في الوضع المباشر فقط" messageEn="Module reset is available in live mode only" />
+          )}
         </div>
       </Card>
       <ConfirmModal open={confirmSuspend} title={isRTL ? "تأكيد تعليق الحساب" : "Confirm Suspension"} message={isRTL ? "هل أنت متأكد من تعليق هذه الشركة؟" : "Sure you want to suspend?"} onConfirm={() => { toast.success(isRTL ? "تم تعليق الشركة" : "Company suspended"); setConfirmSuspend(false); }} onCancel={() => setConfirmSuspend(false)} danger />

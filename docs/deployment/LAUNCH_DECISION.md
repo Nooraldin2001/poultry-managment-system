@@ -32,6 +32,7 @@ Code fixes for purchase Not Found, product/supplier edit, **Sales white screen**
 | Price override + history | **Code fixed** — smoke **pending** |
 | Invoice branding + customer TRN on print | **Code fixed** (Phase 12) — smoke **pending** |
 | Super Admin company edit + assets | **Code fixed** (Phase 12) — smoke **pending** |
+| Super Admin module data reset | **Code fixed** — dry-run/confirm on sandbox tenant **pending** |
 | DB purge dry-run | **Not run** |
 
 ---
