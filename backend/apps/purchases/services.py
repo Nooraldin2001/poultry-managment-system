@@ -132,6 +132,40 @@ def _inventory_cost_extra(adjustments) -> Decimal:
     )
 
 
+def _validate_service_deductions(invoice, *, gross_total: Decimal) -> None:
+    """Validate slaughterhouse/transport deduction fields on a purchase invoice."""
+    slaughter = _d(invoice.slaughterhouse_deduction_amount)
+    transport = _d(invoice.transport_deduction_amount)
+    company = invoice.company
+
+    if slaughter < 0 or transport < 0:
+        raise ValidationError("Deduction amounts cannot be negative.")
+
+    if slaughter > 0 and not invoice.slaughterhouse_supplier_id:
+        raise ValidationError(
+            {"slaughterhouse_supplier": "Slaughterhouse account is required when deduction amount is set."}
+        )
+    if transport > 0 and not invoice.transport_supplier_id:
+        raise ValidationError(
+            {"transport_supplier": "Transport account is required when deduction amount is set."}
+        )
+
+    total_deductions = slaughter + transport
+    if total_deductions > gross_total:
+        raise ValidationError(
+            {"deductions": "Total deductions cannot exceed the gross invoice total."}
+        )
+
+    for field_name, supplier_id in (
+        ("slaughterhouse_supplier", invoice.slaughterhouse_supplier_id),
+        ("transport_supplier", invoice.transport_supplier_id),
+    ):
+        if not supplier_id:
+            continue
+        if not Supplier.objects.filter(pk=supplier_id, company_id=company.id).exists():
+            raise ValidationError({field_name: "Supplier does not belong to this company."})
+
+
 def _apply_payment_state(invoice):
     """Derive payment_status (and post-approval status) from amount_paid."""
     total = _d(invoice.total_amount)
@@ -187,11 +221,19 @@ def recalculate_purchase_invoice(invoice) -> PurchaseInvoice:
     else:
         vat = ZERO
 
+    gross_total = (taxable + vat).quantize(MONEY_Q)
+    _validate_service_deductions(invoice, gross_total=gross_total)
+
+    slaughter = _d(invoice.slaughterhouse_deduction_amount)
+    transport = _d(invoice.transport_deduction_amount)
+    total_deductions = slaughter + transport
+
     invoice.subtotal = subtotal.quantize(MONEY_Q)
     invoice.adjustment_total = payable_adjustment.quantize(MONEY_Q)
     invoice.taxable_amount = taxable
     invoice.vat_amount = vat
-    invoice.total_amount = (taxable + vat).quantize(MONEY_Q)
+    invoice.gross_total = gross_total
+    invoice.total_amount = (gross_total - total_deductions).quantize(MONEY_Q)
     invoice.inventory_cost_total = (subtotal + inventory_extra).quantize(MONEY_Q)
 
     if _d(invoice.amount_paid) > _d(invoice.total_amount):
@@ -202,7 +244,7 @@ def recalculate_purchase_invoice(invoice) -> PurchaseInvoice:
     _apply_payment_state(invoice)
     invoice.save(update_fields=[
         "subtotal", "adjustment_total", "taxable_amount", "vat_amount",
-        "total_amount", "inventory_cost_total", "amount_paid", "balance_due",
+        "gross_total", "total_amount", "inventory_cost_total", "amount_paid", "balance_due",
         "payment_status", "status", "updated_at",
     ])
     return invoice
@@ -214,7 +256,10 @@ def create_purchase_invoice(*, company, supplier, created_by, invoice_date,
                             lines, adjustments=None, supplier_invoice_number="",
                             due_date=None, payment_method=None, vat_rate=ZERO,
                             amount_paid=ZERO, notes="", invoice_number=None,
-                            money_account=None, backdate_reason=""):
+                            money_account=None, backdate_reason="",
+                            slaughterhouse_supplier=None, slaughterhouse_deduction_amount=ZERO,
+                            transport_supplier=None, transport_deduction_amount=ZERO,
+                            deduction_notes=""):
     """Create a DRAFT purchase invoice with its lines and adjustments.
 
     No stock and no supplier ledger effects — those happen only on approval.
@@ -246,6 +291,11 @@ def create_purchase_invoice(*, company, supplier, created_by, invoice_date,
         backdate_reason=backdate_reason or "",
         supplier_name_snapshot=supplier.name_ar,
         supplier_trn_snapshot=supplier.trn or "",
+        slaughterhouse_supplier=slaughterhouse_supplier,
+        slaughterhouse_deduction_amount=_d(slaughterhouse_deduction_amount),
+        transport_supplier=transport_supplier,
+        transport_deduction_amount=_d(transport_deduction_amount),
+        deduction_notes=deduction_notes or "",
         created_by=created_by,
         updated_by=created_by,
     )
@@ -634,7 +684,7 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
 
     invoice = (
         PurchaseInvoice.objects.select_for_update()
-        .select_related("supplier", "money_account")
+        .select_related("supplier", "money_account", "slaughterhouse_supplier", "transport_supplier")
         .get(pk=invoice.pk)
     )
     if invoice.status != PurchaseStatus.DRAFT:
@@ -712,6 +762,37 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
         )
     invoice.supplier_payable_posted = payable_amount
 
+    slaughter_posted = ZERO
+    transport_posted = ZERO
+    if _d(invoice.slaughterhouse_deduction_amount) > 0 and invoice.slaughterhouse_supplier_id:
+        sh = Supplier.objects.select_for_update().get(pk=invoice.slaughterhouse_supplier_id)
+        slaughter_posted = _d(invoice.slaughterhouse_deduction_amount)
+        supplier_services.record_purchase_deduction(
+            supplier=sh,
+            amount=slaughter_posted,
+            reference_id=invoice.id,
+            reference_number=invoice.invoice_number,
+            created_by=user,
+            reason=reason,
+            entry_date=invoice.invoice_date,
+            description=f"Slaughterhouse deduction {invoice.invoice_number}",
+        )
+    if _d(invoice.transport_deduction_amount) > 0 and invoice.transport_supplier_id:
+        tr = Supplier.objects.select_for_update().get(pk=invoice.transport_supplier_id)
+        transport_posted = _d(invoice.transport_deduction_amount)
+        supplier_services.record_purchase_deduction(
+            supplier=tr,
+            amount=transport_posted,
+            reference_id=invoice.id,
+            reference_number=invoice.invoice_number,
+            created_by=user,
+            reason=reason,
+            entry_date=invoice.invoice_date,
+            description=f"Transport deduction {invoice.invoice_number}",
+        )
+    invoice.slaughterhouse_deduction_posted = slaughter_posted
+    invoice.transport_deduction_posted = transport_posted
+
     invoice.status = PurchaseStatus.APPROVED
     invoice.approval_reason = reason
     invoice.approved_by = user
@@ -719,7 +800,9 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
     _apply_payment_state(invoice)
     invoice.save(update_fields=[
         "status", "approval_reason", "approved_by", "approved_at",
-        "payment_status", "balance_due", "supplier_payable_posted", "updated_at",
+        "payment_status", "balance_due", "supplier_payable_posted",
+        "slaughterhouse_deduction_posted", "transport_deduction_posted",
+        "updated_at",
     ])
 
     create_audit_log(
@@ -727,7 +810,15 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
         module="purchases", reference_type="purchase_invoice",
         reference_id=invoice.id,
         previous_value={"status": PurchaseStatus.DRAFT},
-        new_value={"status": invoice.status, "total_amount": str(invoice.total_amount)},
+        new_value={
+            "status": invoice.status,
+            "gross_total": str(invoice.gross_total),
+            "total_amount": str(invoice.total_amount),
+            "slaughterhouse_deduction": str(invoice.slaughterhouse_deduction_amount),
+            "transport_deduction": str(invoice.transport_deduction_amount),
+            "slaughterhouse_supplier_id": invoice.slaughterhouse_supplier_id,
+            "transport_supplier_id": invoice.transport_supplier_id,
+        },
         reason=reason,
     )
     _record_status_history(invoice, PurchaseStatus.DRAFT, invoice.status, reason, user)
@@ -742,7 +833,7 @@ def cancel_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
 
     invoice = (
         PurchaseInvoice.objects.select_for_update()
-        .select_related("supplier")
+        .select_related("supplier", "slaughterhouse_supplier", "transport_supplier")
         .get(pk=invoice.pk)
     )
     if invoice.status == PurchaseStatus.CANCELLED:
@@ -780,6 +871,32 @@ def cancel_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
                 created_by=user,
                 reason=reason,
                 entry_date=timezone.now().date(),
+            )
+
+        if _d(invoice.slaughterhouse_deduction_posted) > 0 and invoice.slaughterhouse_supplier_id:
+            sh = Supplier.objects.select_for_update().get(pk=invoice.slaughterhouse_supplier_id)
+            supplier_services.reverse_purchase_deduction(
+                supplier=sh,
+                amount=invoice.slaughterhouse_deduction_posted,
+                reference_id=invoice.id,
+                reference_number=invoice.invoice_number,
+                created_by=user,
+                reason=reason,
+                entry_date=timezone.now().date(),
+                description=f"Reverse slaughterhouse deduction {invoice.invoice_number}",
+            )
+
+        if _d(invoice.transport_deduction_posted) > 0 and invoice.transport_supplier_id:
+            tr = Supplier.objects.select_for_update().get(pk=invoice.transport_supplier_id)
+            supplier_services.reverse_purchase_deduction(
+                supplier=tr,
+                amount=invoice.transport_deduction_posted,
+                reference_id=invoice.id,
+                reference_number=invoice.invoice_number,
+                created_by=user,
+                reason=reason,
+                entry_date=timezone.now().date(),
+                description=f"Reverse transport deduction {invoice.invoice_number}",
             )
 
         # Reverse paid money movement by booking an IN refund.
@@ -866,9 +983,20 @@ def get_purchase_summary(company) -> dict:
     now = timezone.now()
     active = qs.exclude(status=PurchaseStatus.CANCELLED)
 
-    month_total = active.filter(
+    month_qs = active.filter(
         invoice_date__year=now.year, invoice_date__month=now.month
-    ).aggregate(s=Sum("total_amount"))["s"] or ZERO
+    )
+    month_total = month_qs.aggregate(s=Sum("total_amount"))["s"] or ZERO
+    month_gross = month_qs.aggregate(s=Sum("gross_total"))["s"] or ZERO
+    month_deductions = (
+        month_qs.aggregate(
+            sh=Sum("slaughterhouse_deduction_amount"),
+            tr=Sum("transport_deduction_amount"),
+        )
+    )
+    month_service_deductions = (
+        _d(month_deductions.get("sh")) + _d(month_deductions.get("tr"))
+    )
 
     approved_count = qs.filter(
         status__in=[PurchaseStatus.APPROVED, PurchaseStatus.PARTIALLY_PAID,
@@ -892,6 +1020,8 @@ def get_purchase_summary(company) -> dict:
 
     return {
         "total_purchases_this_month": month_total,
+        "gross_purchases_this_month": month_gross or month_total,
+        "service_deductions_this_month": month_service_deductions,
         "approved_purchases_count": approved_count,
         "draft_purchases_count": draft_count,
         "unpaid_balance": unpaid_balance,
@@ -1026,9 +1156,21 @@ def build_purchase_print_preview(invoice, request=None) -> dict:
         "totals": {
             "subtotal": str(invoice.subtotal),
             "deduction_total": str(invoice.adjustment_total),
+            "gross_total": str(invoice.gross_total or invoice.total_amount),
+            "slaughterhouse_deduction": str(invoice.slaughterhouse_deduction_amount),
+            "transport_deduction": str(invoice.transport_deduction_amount),
+            "slaughterhouse_name": (
+                invoice.slaughterhouse_supplier.name_ar
+                if invoice.slaughterhouse_supplier_id else ""
+            ),
+            "transport_name": (
+                invoice.transport_supplier.name_ar
+                if invoice.transport_supplier_id else ""
+            ),
             "vat_rate": str(invoice.vat_rate),
             "vat_amount": str(invoice.vat_amount),
             "total_amount": str(invoice.total_amount),
+            "net_supplier_payable": str(invoice.total_amount),
             "amount_paid": str(invoice.amount_paid),
             "balance_due": str(invoice.balance_due),
         },

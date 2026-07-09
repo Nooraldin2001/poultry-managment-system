@@ -1009,3 +1009,23 @@ See [BACKDATED_INVOICES_POLICY.md](./BACKDATED_INVOICES_POLICY.md).
 Automated: `pytest tests/test_admin_module_reset.py tests/test_admin_companies.py tests/test_audit.py` ? run after deploy.
 
 See [ADMIN_MODULE_DATA_RESET.md](./ADMIN_MODULE_DATA_RESET.md).
+
+---
+
+## Purchase slaughter/transport deductions smoke (2026-07-09)
+
+| # | Check | Expected |
+|---|-------|----------|
+| 1 | Create supplier category `slaughterhouse` + slaughterhouse supplier | Pass |
+| 2 | Create supplier category `transport` + transport supplier | Pass |
+| 3 | Purchase invoice draft with slaughter + transport deductions | Saved on draft |
+| 4 | Approve purchase | Poultry supplier balance = net payable |
+| 5 | Slaughterhouse supplier balance += slaughter deduction | Pass |
+| 6 | Transport supplier balance += transport deduction | Pass |
+| 7 | Inventory stock-in at gross unit cost (not net) | Pass |
+| 8 | Print preview shows gross, deductions, net payable | Pass |
+| 9 | Cancel approved purchase reverses all three ledgers | Pass |
+
+Automated: `pytest tests/test_purchases.py -k deduction` ? run after deploy.
+
+See [PURCHASE_DEDUCTIONS_SLAUGHTER_TRANSPORT.md](./PURCHASE_DEDUCTIONS_SLAUGHTER_TRANSPORT.md).

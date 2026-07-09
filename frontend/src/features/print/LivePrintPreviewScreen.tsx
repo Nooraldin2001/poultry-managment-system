@@ -31,15 +31,28 @@ function mapTotals(data: Record<string, unknown>): { label: string; value: strin
   const pairs: [string, string][] = [];
   const subtotal = data.subtotal ?? totals.subtotal;
   const vat = data.vat_amount ?? data.vat ?? totals.vat_amount;
-  const total = data.total_amount ?? data.total ?? totals.total_amount;
+  const gross = totals.gross_total ?? data.gross_total;
+  const slaughter = totals.slaughterhouse_deduction;
+  const transport = totals.transport_deduction;
+  const total = data.total_amount ?? data.total ?? totals.total_amount ?? totals.net_supplier_payable;
   const paid = data.amount_paid ?? totals.amount_paid;
   const balance = data.balance ?? totals.balance_due;
   if (subtotal != null) pairs.push(["Subtotal", String(subtotal)]);
-  if (vat != null) pairs.push(["VAT", String(vat)]);
-  if (total != null) pairs.push(["Total", String(total)]);
+  if (vat != null && String(vat) !== "0" && String(vat) !== "0.00") pairs.push(["VAT", String(vat)]);
+  if (gross != null) pairs.push(["Gross Total", String(gross)]);
+  if (slaughter != null && parseFloat(String(slaughter)) > 0) {
+    pairs.push(["Slaughterhouse Deduction", `-${slaughter}`]);
+  }
+  if (transport != null && parseFloat(String(transport)) > 0) {
+    pairs.push(["Transport Deduction", `-${transport}`]);
+  }
+  if (total != null) pairs.push(["Net Supplier Payable", String(total)]);
   if (paid != null) pairs.push(["Paid", String(paid)]);
   if (balance != null) pairs.push(["Balance", String(balance)]);
-  return pairs.map(([label, value]) => ({ label, value: `AED ${value}` }));
+  return pairs.map(([label, value]) => ({
+    label,
+    value: value.startsWith("-") ? `AED ${value}` : `AED ${value}`,
+  }));
 }
 
 type Props = {

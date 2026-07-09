@@ -71,6 +71,8 @@ class SupplierViewSet(TenantScopedViewSet):
             qs = qs.filter(is_active=p["is_active"].lower() in ("1", "true", "yes"))
         if p.get("category"):
             qs = qs.filter(category_id=p["category"])
+        if p.get("category_code"):
+            qs = qs.filter(category__code=p["category_code"])
         if p.get("supplier_type") or p.get("type"):
             qs = qs.filter(supplier_type=p.get("supplier_type") or p.get("type"))
         search = p.get("search") or p.get("q")

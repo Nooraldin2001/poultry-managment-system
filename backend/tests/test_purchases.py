@@ -30,7 +30,7 @@ from apps.purchases.models import (
     PurchaseStatus,
 )
 from apps.payments.models import MoneyAccount, MoneyMovement, MoneyMovementType
-from apps.suppliers.models import Supplier, SupplierLedgerEntry, SupplierType
+from apps.suppliers.models import Supplier, SupplierCategory, SupplierLedgerEntry, SupplierType
 
 pytestmark = pytest.mark.django_db
 
@@ -926,6 +926,141 @@ def test_deploy_scripts_do_not_seed_demo_data():
         code = "\n".join(code_lines)
         for token in forbidden:
             assert token not in code, f"{script.name} must not run '{token}'"
+
+
+def _service_supplier(company, code, name_ar, sku="SS"):
+    cat, _ = SupplierCategory.objects.get_or_create(
+        company=company, code=code,
+        defaults={"name_ar": name_ar, "name_en": code},
+    )
+    return Supplier.objects.create(
+        company=company, name_ar=name_ar, phone=f"050{sku}",
+        supplier_type=SupplierType.CREDIT, category=cat,
+    )
+
+
+# ── Slaughterhouse / transport deductions ───────────────────────────────────
+def test_purchase_with_slaughter_and_transport_deductions(company, owner):
+    poultry = _supplier(company, sku="P1")
+    slaughter = _service_supplier(company, "slaughterhouse", "مسلخ العين", "SH1")
+    transport = _service_supplier(company, "transport", "نقل الإمارات", "TR1")
+    product = _product(company)
+    inv = _create(
+        company, poultry, owner,
+        [_line(product, quantity_kg="100", unit_price="100")],
+        slaughterhouse_supplier=slaughter,
+        slaughterhouse_deduction_amount=Decimal("600"),
+        transport_supplier=transport,
+        transport_deduction_amount=Decimal("400"),
+    )
+    assert inv.gross_total == Decimal("10000.00")
+    assert inv.total_amount == Decimal("9000.00")
+    assert inv.inventory_cost_total == Decimal("10000.00")
+
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="approve")
+    poultry.refresh_from_db()
+    slaughter.refresh_from_db()
+    transport.refresh_from_db()
+    assert poultry.current_balance == Decimal("9000.00")
+    assert slaughter.current_balance == Decimal("600.00")
+    assert transport.current_balance == Decimal("400.00")
+    assert SupplierLedgerEntry.objects.filter(
+        supplier=slaughter, entry_type=SupplierLedgerEntry.EntryType.PURCHASE_DEDUCTION
+    ).exists()
+    layer = FIFOStockLayer.objects.get(
+        company=company, source_type=StockSourceType.PURCHASE_INVOICE, source_id=inv.id
+    )
+    assert layer.unit_cost_per_kg == Decimal("100.0000")
+
+
+def test_deduction_exceeds_gross_blocked(company, owner):
+    poultry = _supplier(company)
+    slaughter = _service_supplier(company, "slaughterhouse", "مسلخ", "SH2")
+    product = _product(company)
+    with pytest.raises(ValidationError):
+        _create(
+            company, poultry, owner,
+            [_line(product, quantity_kg="10", unit_price="100")],
+            slaughterhouse_supplier=slaughter,
+            slaughterhouse_deduction_amount=Decimal("1500"),
+        )
+
+
+def test_deduction_requires_account(company, owner):
+    poultry = _supplier(company)
+    product = _product(company)
+    with pytest.raises(ValidationError):
+        _create(
+            company, poultry, owner,
+            [_line(product, quantity_kg="10", unit_price="100")],
+            slaughterhouse_deduction_amount=Decimal("100"),
+        )
+
+
+def test_draft_deductions_do_not_affect_balances(company, owner):
+    poultry = _supplier(company)
+    slaughter = _service_supplier(company, "slaughterhouse", "مسلخ", "SH3")
+    product = _product(company)
+    _create(
+        company, poultry, owner,
+        [_line(product, quantity_kg="10", unit_price="100")],
+        slaughterhouse_supplier=slaughter,
+        slaughterhouse_deduction_amount=Decimal("200"),
+    )
+    poultry.refresh_from_db()
+    slaughter.refresh_from_db()
+    assert poultry.current_balance == Decimal("0.00")
+    assert slaughter.current_balance == Decimal("0.00")
+
+
+def test_cash_purchase_pays_net_supplier_amount(company, owner):
+    from apps.payments.models import MoneyAccount, MoneyAccountType
+
+    poultry = _supplier(company)
+    slaughter = _service_supplier(company, "slaughterhouse", "مسلخ", "SH4")
+    product = _product(company)
+    cashbox = MoneyAccount.objects.create(
+        company=company, name="Main Cash", account_type=MoneyAccountType.CASHBOX,
+        currency="AED", opening_balance=Decimal("50000"), current_balance=Decimal("50000"),
+    )
+    inv = _create(
+        company, poultry, owner,
+        [_line(product, quantity_kg="10", unit_price="100")],
+        slaughterhouse_supplier=slaughter,
+        slaughterhouse_deduction_amount=Decimal("200"),
+        payment_method="cash",
+        amount_paid=Decimal("800"),
+        money_account=cashbox,
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="cash")
+    poultry.refresh_from_db()
+    assert poultry.current_balance == Decimal("0.00")
+    assert MoneyMovement.objects.filter(
+        company=company, movement_type=MoneyMovementType.PURCHASE_PAYMENT, amount=Decimal("800")
+    ).exists()
+
+
+def test_cancel_reverses_deduction_ledgers(company, owner):
+    poultry = _supplier(company)
+    slaughter = _service_supplier(company, "slaughterhouse", "مسلخ", "SH5")
+    transport = _service_supplier(company, "transport", "نقل", "TR5")
+    product = _product(company)
+    inv = _create(
+        company, poultry, owner,
+        [_line(product, quantity_kg="10", unit_price="100")],
+        slaughterhouse_supplier=slaughter,
+        slaughterhouse_deduction_amount=Decimal("100"),
+        transport_supplier=transport,
+        transport_deduction_amount=Decimal("50"),
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="ok")
+    services.cancel_purchase_invoice(invoice=inv, user=owner, reason="mistake")
+    poultry.refresh_from_db()
+    slaughter.refresh_from_db()
+    transport.refresh_from_db()
+    assert poultry.current_balance == Decimal("0.00")
+    assert slaughter.current_balance == Decimal("0.00")
+    assert transport.current_balance == Decimal("0.00")
 
 
 def test_production_env_example_disables_demo_data():

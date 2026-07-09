@@ -57,7 +57,9 @@ def _require_draft(invoice):
 
 class PurchaseInvoiceViewSet(TenantScopedViewSet):
     queryset = (
-        PurchaseInvoice.objects.select_related("supplier")
+        PurchaseInvoice.objects.select_related(
+            "supplier", "slaughterhouse_supplier", "transport_supplier",
+        )
         .prefetch_related("lines", "lines__product", "adjustments", "attachments")
         .all()
     )
@@ -147,6 +149,11 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
             notes=vd.get("notes", ""),
             money_account=vd.get("money_account"),
             backdate_reason=vd.get("backdate_reason", ""),
+            slaughterhouse_supplier=vd.get("slaughterhouse_supplier"),
+            slaughterhouse_deduction_amount=vd.get("slaughterhouse_deduction_amount", 0),
+            transport_supplier=vd.get("transport_supplier"),
+            transport_deduction_amount=vd.get("transport_deduction_amount", 0),
+            deduction_notes=vd.get("deduction_notes", ""),
         )
         from apps.core.document_dates import log_backdated_invoice
 
@@ -186,10 +193,17 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
                 header_fields += ["supplier", "supplier_name_snapshot", "supplier_trn_snapshot"]
             for field in ("invoice_date", "due_date", "supplier_invoice_number",
                           "payment_method", "vat_rate", "amount_paid", "notes",
-                          "money_account", "backdate_reason"):
+                          "money_account", "backdate_reason", "deduction_notes",
+                          "slaughterhouse_deduction_amount", "transport_deduction_amount"):
                 if field in vd:
                     setattr(invoice, field, vd[field])
                     header_fields.append(field)
+            if "slaughterhouse_supplier" in vd:
+                invoice.slaughterhouse_supplier = vd["slaughterhouse_supplier"]
+                header_fields.append("slaughterhouse_supplier")
+            if "transport_supplier" in vd:
+                invoice.transport_supplier = vd["transport_supplier"]
+                header_fields.append("transport_supplier")
             if header_fields:
                 invoice.updated_by = request.user
                 invoice.save(update_fields=list(set(header_fields)) + ["updated_by", "updated_at"])

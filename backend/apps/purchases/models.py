@@ -134,6 +134,27 @@ class PurchaseInvoice(TenantOwnedModel):
         related_name="purchase_invoices",
     )
     supplier_payable_posted = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
+    # Gross payable before slaughterhouse/transport deductions (subtotal + adjustments + VAT).
+    gross_total = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
+    slaughterhouse_supplier = models.ForeignKey(
+        "suppliers.Supplier",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="slaughterhouse_purchase_deductions",
+    )
+    slaughterhouse_deduction_amount = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
+    slaughterhouse_deduction_posted = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
+    transport_supplier = models.ForeignKey(
+        "suppliers.Supplier",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="transport_purchase_deductions",
+    )
+    transport_deduction_amount = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
+    transport_deduction_posted = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
+    deduction_notes = models.TextField(blank=True)
     # Inventory cost basis (subtotal + increase_inventory_cost adjustments).
     inventory_cost_total = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
 

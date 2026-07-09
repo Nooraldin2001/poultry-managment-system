@@ -21,13 +21,14 @@ class SupplierCategorySerializer(serializers.ModelSerializer):
 
 class SupplierListSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source="category.name_ar", read_only=True)
+    category_code = serializers.CharField(source="category.code", read_only=True, default="")
     balance_status = serializers.CharField(read_only=True)
 
     class Meta:
         model = Supplier
         fields = [
             "id", "name_ar", "name_en", "phone", "supplier_type",
-            "category", "category_name", "current_balance", "balance_status",
+            "category", "category_name", "category_code", "current_balance", "balance_status",
             "track_balance", "is_active",
         ]
 

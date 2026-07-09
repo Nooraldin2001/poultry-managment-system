@@ -91,8 +91,10 @@ class PurchaseInvoiceDetailSerializer(serializers.ModelSerializer):
             "supplier_trn_snapshot", "supplier_invoice_number",
             "invoice_date", "due_date", "status", "payment_status",
             "payment_method", "subtotal", "adjustment_total", "taxable_amount",
-            "vat_rate", "vat_amount", "total_amount", "amount_paid", "balance_due",
+            "vat_rate", "vat_amount", "gross_total", "total_amount", "amount_paid", "balance_due",
             "inventory_cost_total", "money_account", "supplier_payable_posted",
+            "slaughterhouse_supplier", "slaughterhouse_deduction_amount",
+            "transport_supplier", "transport_deduction_amount", "deduction_notes",
             "vat_enabled", "notes", "backdate_reason",
             "approval_reason", "approved_by", "approved_at",
             "cancel_reason", "cancelled_by", "cancelled_at",
@@ -214,6 +216,38 @@ class PurchaseInvoiceCreateUpdateSerializer(
     notes = serializers.CharField(required=False, allow_blank=True)
     lines = PurchaseInvoiceLineInputSerializer(many=True, required=False)
     adjustments = PurchaseAdjustmentInputSerializer(many=True, required=False)
+    slaughterhouse_supplier = serializers.IntegerField(required=False, allow_null=True)
+    slaughterhouse_deduction_amount = serializers.DecimalField(
+        max_digits=16, decimal_places=2, required=False, default=ZERO
+    )
+    transport_supplier = serializers.IntegerField(required=False, allow_null=True)
+    transport_deduction_amount = serializers.DecimalField(
+        max_digits=16, decimal_places=2, required=False, default=ZERO
+    )
+    deduction_notes = serializers.CharField(required=False, allow_blank=True)
+
+    def _resolve_supplier(self, value, field_name):
+        if value is None:
+            return None
+        from apps.suppliers.models import Supplier
+
+        company = self.context["company"]
+        try:
+            return Supplier.objects.get(pk=value, company=company)
+        except Supplier.DoesNotExist:
+            raise serializers.ValidationError(
+                {field_name: "Supplier does not belong to this company."}
+            )
+
+    def validate_slaughterhouse_supplier(self, value):
+        if value is None:
+            return None
+        return self._resolve_supplier(value, "slaughterhouse_supplier")
+
+    def validate_transport_supplier(self, value):
+        if value is None:
+            return None
+        return self._resolve_supplier(value, "transport_supplier")
 
     def validate_supplier(self, value):
         from apps.suppliers.models import Supplier
@@ -274,6 +308,8 @@ class PurchaseAttachmentCreateSerializer(serializers.Serializer):
 
 class PurchaseSummarySerializer(serializers.Serializer):
     total_purchases_this_month = serializers.DecimalField(max_digits=16, decimal_places=2)
+    gross_purchases_this_month = serializers.DecimalField(max_digits=16, decimal_places=2)
+    service_deductions_this_month = serializers.DecimalField(max_digits=16, decimal_places=2)
     approved_purchases_count = serializers.IntegerField()
     draft_purchases_count = serializers.IntegerField()
     unpaid_balance = serializers.DecimalField(max_digits=16, decimal_places=2)

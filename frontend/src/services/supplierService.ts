@@ -77,6 +77,14 @@ export async function listSupplierRows(filters?: ApiListFilters): Promise<Suppli
   return rows.map(mapApiSupplierToRow);
 }
 
+export async function listSlaughterhouseSuppliers(): Promise<SupplierRow[]> {
+  return listSupplierRows({ category_code: "slaughterhouse", is_active: "true" });
+}
+
+export async function listTransportSuppliers(): Promise<SupplierRow[]> {
+  return listSupplierRows({ category_code: "transport", is_active: "true" });
+}
+
 export async function getSupplierRow(id: string): Promise<SupplierRow | null> {
   if (IS_MOCK_MODE) {
     return supplierMock.getSupplierById(id) as Promise<SupplierRow | null>;

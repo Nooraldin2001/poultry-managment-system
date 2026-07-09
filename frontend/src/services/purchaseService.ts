@@ -32,6 +32,12 @@ interface ApiPurchaseList {
 
 interface ApiPurchaseDetail extends ApiPurchaseList {
   money_account?: number | null;
+  gross_total?: string;
+  slaughterhouse_supplier?: number | null;
+  slaughterhouse_deduction_amount?: string;
+  transport_supplier?: number | null;
+  transport_deduction_amount?: string;
+  deduction_notes?: string;
   lines?: ApiPurchaseLine[];
   backdate_reason?: string;
 }
@@ -70,6 +76,22 @@ export function mapApiPurchaseToRow(row: ApiPurchaseList): PurchaseInvoiceRow {
     paid: parseAmount(row.amount_paid),
     balance: parseAmount(row.balance_due),
     moneyAccountId: row.money_account != null ? String(row.money_account) : "",
+    grossTotal: parseAmount((row as ApiPurchaseDetail).gross_total ?? row.total_amount),
+    slaughterhouseSupplierId:
+      (row as ApiPurchaseDetail).slaughterhouse_supplier != null
+        ? String((row as ApiPurchaseDetail).slaughterhouse_supplier)
+        : "",
+    slaughterhouseDeduction: parseAmount(
+      (row as ApiPurchaseDetail).slaughterhouse_deduction_amount ?? "0",
+    ),
+    transportSupplierId:
+      (row as ApiPurchaseDetail).transport_supplier != null
+        ? String((row as ApiPurchaseDetail).transport_supplier)
+        : "",
+    transportDeduction: parseAmount(
+      (row as ApiPurchaseDetail).transport_deduction_amount ?? "0",
+    ),
+    deductionNotes: (row as ApiPurchaseDetail).deduction_notes ?? "",
   };
 }
 

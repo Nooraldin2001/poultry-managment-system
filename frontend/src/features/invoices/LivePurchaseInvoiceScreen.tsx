@@ -28,6 +28,8 @@ import { BackdateInvoiceFields, isBackdatedDate, todayIso } from "./BackdateInvo
 import { parseAmount } from "@/services/crud/parse";
 import type { ProductRow } from "@/shared/types/entities";
 import { listMoneyAccounts, type MoneyAccountRow } from "@/services/treasuryService";
+import { listSlaughterhouseSuppliers, listTransportSuppliers } from "@/services/supplierService";
+import type { SupplierRow } from "@/shared/types/entities";
 
 function recalcLineFromProduct(line: InvoiceLineDraft, prod: ProductRow | undefined): InvoiceLineDraft {
   if (!prod) return line;
@@ -86,6 +88,13 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   const [showCancel, setShowCancel] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccountRow[]>([]);
+  const [slaughterSuppliers, setSlaughterSuppliers] = useState<SupplierRow[]>([]);
+  const [transportSuppliers, setTransportSuppliers] = useState<SupplierRow[]>([]);
+  const [slaughterhouseSupplierId, setSlaughterhouseSupplierId] = useState("");
+  const [slaughterDeduction, setSlaughterDeduction] = useState("0");
+  const [transportSupplierId, setTransportSupplierId] = useState("");
+  const [transportDeduction, setTransportDeduction] = useState("0");
+  const [deductionNotes, setDeductionNotes] = useState("");
 
   const { items: suppliers, loading: loadingSuppliers } = useSuppliers();
   const { items: products, loading: loadingProducts } = useProducts();
@@ -104,6 +113,11 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     setVatEnabled(false);
     setInvoiceDate(todayIso());
     setBackdateReason("");
+    setSlaughterhouseSupplierId("");
+    setSlaughterDeduction("0");
+    setTransportSupplierId("");
+    setTransportDeduction("0");
+    setDeductionNotes("");
     setError(null);
     setFieldErrors({});
     setNotFound(false);
@@ -125,6 +139,11 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       setPaymentMethod((detail.invoice as unknown as { paymentMethod?: string }).paymentMethod ?? "bank_transfer");
       setAmountPaid(String(detail.invoice.paid));
       setMoneyAccountId(detail.invoice.moneyAccountId ?? "");
+      setSlaughterhouseSupplierId(detail.invoice.slaughterhouseSupplierId ?? "");
+      setSlaughterDeduction(String(detail.invoice.slaughterhouseDeduction ?? 0));
+      setTransportSupplierId(detail.invoice.transportSupplierId ?? "");
+      setTransportDeduction(String(detail.invoice.transportDeduction ?? 0));
+      setDeductionNotes(detail.invoice.deductionNotes ?? "");
       setVatEnabled(detail.invoice.vat > 0);
       setLines(
         detail.lines.map((l) => ({
@@ -168,15 +187,28 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     void listMoneyAccounts()
       .then(setMoneyAccounts)
       .catch(() => setMoneyAccounts([]));
+    void listSlaughterhouseSuppliers().then(setSlaughterSuppliers).catch(() => setSlaughterSuppliers([]));
+    void listTransportSuppliers().then(setTransportSuppliers).catch(() => setTransportSuppliers([]));
   }, []);
 
   const totals = useMemo(() => {
     const subtotal = lines.reduce((s, l) => s + l.lineSubtotal, 0);
     const vat = vatEnabled ? Math.round(subtotal * DEFAULT_VAT_RATE) / 100 : 0;
-    const total = subtotal + vat;
+    const gross = subtotal + vat;
+    const slaughter = parseAmount(slaughterDeduction || "0");
+    const transport = parseAmount(transportDeduction || "0");
+    const net = Math.max(0, gross - slaughter - transport);
     const paid = parseAmount(amountPaid);
-    return { subtotal, vat, total, paid, balance: Math.max(0, total - paid) };
-  }, [lines, vatEnabled, amountPaid]);
+    return { subtotal, vat, gross, slaughter, transport, total: net, paid, balance: Math.max(0, net - paid) };
+  }, [lines, vatEnabled, amountPaid, slaughterDeduction, transportDeduction]);
+
+  const deductionPayload = (): Record<string, unknown> => ({
+    slaughterhouse_supplier: slaughterhouseSupplierId ? Number(slaughterhouseSupplierId) : null,
+    slaughterhouse_deduction_amount: slaughterDeduction || "0",
+    transport_supplier: transportSupplierId ? Number(transportSupplierId) : null,
+    transport_deduction_amount: transportDeduction || "0",
+    deduction_notes: deductionNotes,
+  });
 
   const lineVatRate = vatEnabled ? DEFAULT_VAT_RATE : 0;
 
@@ -203,6 +235,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       amount_paid: amountPaid || "0",
       vat_rate: vatEnabled ? "5.00" : "0.00",
       notes,
+      ...deductionPayload(),
     });
   };
 
@@ -229,6 +262,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       amount_paid: amountPaid || "0",
       notes,
       vat_rate: vatEnabled ? "5.00" : "0.00",
+      ...deductionPayload(),
     });
     setDocId(created.id);
     setInvoiceNumber(created.number ?? "");
@@ -243,7 +277,21 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     }
     const paid = parseAmount(amountPaid || "0");
     if (paid > totals.total) {
-      toast.error(isRTL ? "المبلغ المدفوع لا يمكن أن يتجاوز الإجمالي" : "Paid amount cannot exceed total");
+      toast.error(isRTL ? "المبلغ المدفوع لا يمكن أن يتجاوز صافي المستحق للمورد" : "Paid amount cannot exceed net supplier payable");
+      return;
+    }
+    const slaughter = parseAmount(slaughterDeduction || "0");
+    const transport = parseAmount(transportDeduction || "0");
+    if (slaughter > 0 && !slaughterhouseSupplierId) {
+      toast.error(isRTL ? "اختر المسلخ عند إدخال خصم المسلخ" : "Select slaughterhouse when deduction amount is set");
+      return;
+    }
+    if (transport > 0 && !transportSupplierId) {
+      toast.error(isRTL ? "اختر النقل عند إدخال خصم النقل" : "Select transport account when deduction amount is set");
+      return;
+    }
+    if (slaughter + transport > totals.gross) {
+      toast.error(isRTL ? "مجموع الخصومات يتجاوز إجمالي الفاتورة" : "Total deductions exceed gross total");
       return;
     }
     if ((paymentMethod === "cash" || paymentMethod === "bank_transfer" || paymentMethod === "partial") && !moneyAccountId) {
@@ -576,6 +624,73 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
               </select>
             )}
           </div>
+          <div className="bg-white rounded-2xl border p-4 space-y-3">
+            <h3 className="font-black text-[#0F2C59] text-sm">
+              {isRTL ? "خصومات مرتبطة بالفاتورة" : "Invoice Deductions"}
+            </h3>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "المسلخ" : "Slaughterhouse"}</label>
+                <select
+                  value={slaughterhouseSupplierId}
+                  disabled={!isDraft}
+                  onChange={(e) => setSlaughterhouseSupplierId(e.target.value)}
+                  className="w-full rounded-xl border px-3 py-2 text-sm"
+                >
+                  <option value="">{isRTL ? "— اختر المسلخ —" : "— Select slaughterhouse —"}</option>
+                  {slaughterSuppliers.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "خصم المسلخ" : "Slaughterhouse Deduction"}</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  disabled={!isDraft}
+                  value={slaughterDeduction}
+                  onChange={(e) => setSlaughterDeduction(e.target.value)}
+                  className="w-full rounded-xl border px-3 py-2 text-sm font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "النقل / السائق" : "Transport / Driver"}</label>
+                <select
+                  value={transportSupplierId}
+                  disabled={!isDraft}
+                  onChange={(e) => setTransportSupplierId(e.target.value)}
+                  className="w-full rounded-xl border px-3 py-2 text-sm"
+                >
+                  <option value="">{isRTL ? "— اختر النقل —" : "— Select transport —"}</option>
+                  {transportSuppliers.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "خصم النقل" : "Transport Deduction"}</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  disabled={!isDraft}
+                  value={transportDeduction}
+                  onChange={(e) => setTransportDeduction(e.target.value)}
+                  className="w-full rounded-xl border px-3 py-2 text-sm font-mono"
+                />
+              </div>
+            </div>
+            <textarea
+              value={deductionNotes}
+              disabled={!isDraft}
+              onChange={(e) => setDeductionNotes(e.target.value)}
+              rows={2}
+              placeholder={isRTL ? "ملاحظات الخصومات (اختياري)" : "Deduction notes (optional)"}
+              className="w-full rounded-xl border px-3 py-2 text-sm"
+            />
+          </div>
         </div>
         <div className="bg-white rounded-2xl border p-4 space-y-2 text-sm">
           <div className="flex justify-between font-bold">
@@ -605,8 +720,24 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
               <span className="font-mono">AED {totals.vat.toFixed(2)}</span>
             </div>
           </div>
+          <div className="flex justify-between font-bold text-slate-700">
+            <span>{isRTL ? "إجمالي الفاتورة" : "Gross Total"}</span>
+            <span className="font-mono">AED {totals.gross.toFixed(2)}</span>
+          </div>
+          {(totals.slaughter > 0 || slaughterDeduction !== "0") && (
+            <div className="flex justify-between text-red-600 font-bold">
+              <span>{isRTL ? "خصم المسلخ" : "Slaughterhouse Deduction"}</span>
+              <span className="font-mono">- AED {totals.slaughter.toFixed(2)}</span>
+            </div>
+          )}
+          {(totals.transport > 0 || transportDeduction !== "0") && (
+            <div className="flex justify-between text-red-600 font-bold">
+              <span>{isRTL ? "خصم النقل" : "Transport Deduction"}</span>
+              <span className="font-mono">- AED {totals.transport.toFixed(2)}</span>
+            </div>
+          )}
           <div className="flex justify-between font-black text-[#0F2C59] pt-1 border-t">
-            <span>{isRTL ? "الإجمالي" : "Total"}</span>
+            <span>{isRTL ? "صافي المستحق للمورد" : "Net Supplier Payable"}</span>
             <span className="font-mono">AED {totals.total.toFixed(2)}</span>
           </div>
           <select value={paymentMethod} disabled={!isDraft} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full border rounded-xl px-2 py-2 text-sm">

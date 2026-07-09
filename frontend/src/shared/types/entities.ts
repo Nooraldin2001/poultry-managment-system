@@ -133,6 +133,12 @@ export interface PurchaseInvoiceRow {
   paid: number;
   balance: number;
   moneyAccountId?: string;
+  grossTotal?: number;
+  slaughterhouseSupplierId?: string;
+  slaughterhouseDeduction?: number;
+  transportSupplierId?: string;
+  transportDeduction?: number;
+  deductionNotes?: string;
 }
 
 export interface PurchaseInvoiceLineRow {
