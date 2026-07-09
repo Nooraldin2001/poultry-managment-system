@@ -6,6 +6,7 @@ import { request } from "./api/client";
 import { ENDPOINTS } from "./api/endpoints";
 import type { SupplierLedgerEntry, SupplierRow } from "@/shared/types/entities";
 import { normalizeSupplierPaymentMethod } from "@/shared/utils/supplierPaymentMethod";
+import { notifyTenantDataChanged } from "@/shared/utils/tenantRefresh";
 import * as supplierMock from "./mock/supplierService.mock";
 
 const crud = createCrudService<ApiSupplierList, ApiSupplierDetail>(ENDPOINTS.tenant.suppliers);
@@ -18,6 +19,7 @@ interface ApiSupplierList {
   current_balance?: string;
   payment_terms_days?: number;
   is_active?: boolean;
+  category_code?: string;
 }
 
 interface ApiSupplierDetail extends ApiSupplierList {
@@ -67,6 +69,7 @@ export function mapApiSupplierToRow(row: ApiSupplierList): SupplierRow {
     overdue: balance > 0,
     phone: row.phone,
     isActive: row.is_active,
+    categoryCode: row.category_code ?? "",
   };
 }
 
@@ -76,6 +79,19 @@ export async function listSupplierRows(filters?: ApiListFilters): Promise<Suppli
   }
   const rows = await crud.listAll(filters);
   return rows.map(mapApiSupplierToRow);
+}
+
+/** Service-only categories excluded from the main purchase supplier dropdown. */
+const SERVICE_ONLY_CATEGORY_CODES = new Set(["slaughterhouse", "transport"]);
+
+/**
+ * Suppliers eligible as the main (poultry/general) supplier of a purchase invoice.
+ * Broad active list; only clearly service-only categories are excluded client-side.
+ * Suppliers with category "other" or no category are always included.
+ */
+export async function listPurchaseSuppliers(): Promise<SupplierRow[]> {
+  const rows = await listSupplierRows({ is_active: "true" });
+  return rows.filter((r) => !SERVICE_ONLY_CATEGORY_CODES.has(r.categoryCode ?? ""));
 }
 
 export async function listSlaughterhouseSuppliers(): Promise<SupplierRow[]> {
@@ -142,11 +158,13 @@ export async function getSupplierDetail(id: string): Promise<SupplierFormValues 
 
 export async function createSupplier(payload: Record<string, unknown>): Promise<SupplierRow> {
   const row = await crud.create(payload as never);
+  notifyTenantDataChanged("suppliers");
   return mapApiSupplierToRow(row);
 }
 
 export async function updateSupplier(id: string, payload: Record<string, unknown>): Promise<SupplierRow> {
   const row = await crud.patch(id, payload as never);
+  notifyTenantDataChanged("suppliers");
   return mapApiSupplierToRow(row);
 }
 

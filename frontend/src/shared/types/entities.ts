@@ -81,6 +81,7 @@ export interface SupplierRow {
   overdue?: boolean;
   phone?: string;
   isActive?: boolean;
+  categoryCode?: string;
 }
 
 export interface SupplierLedgerEntry {

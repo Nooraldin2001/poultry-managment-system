@@ -58,3 +58,5 @@ See [TENANT_CREATE_WORKFLOW_AUDIT.md](../frontend/TENANT_CREATE_WORKFLOW_AUDIT.m
 | Backdated sales/purchase invoices (code) | **Fixed** | No | `sales.backdate` / `purchases.backdate`; reason + audit; movement_date | Deploy + smoke |
 | Super Admin module data reset (code) | **Fixed** | No | Per-module dry-run/confirm; Danger Zone UI; audit history | Deploy + Super Admin smoke only |
 | Purchase slaughter/transport deductions (code) | **Fixed** | No | Net supplier payable + service supplier ledgers; inventory at gross cost | Deploy + purchase smoke |
+| Supplier `bank` payment method rejected (code) | **Fixed** | No | Enum `cash/bank/credit` + alias normalization; migration `suppliers.0003` | Deploy + `migrate` + supplier smoke |
+| New supplier missing from purchase dropdown (code) | **Fixed** | No | `listPurchaseSuppliers()` (broad active list, excludes only slaughterhouse/transport); refresh event on supplier create + manual refresh button | Deploy + purchase smoke (2026-07-09) |

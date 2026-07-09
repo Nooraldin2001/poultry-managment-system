@@ -1029,3 +1029,29 @@ See [ADMIN_MODULE_DATA_RESET.md](./ADMIN_MODULE_DATA_RESET.md).
 Automated: `pytest tests/test_purchases.py -k deduction` ? run after deploy.
 
 See [PURCHASE_DEDUCTIONS_SLAUGHTER_TRANSPORT.md](./PURCHASE_DEDUCTIONS_SLAUGHTER_TRANSPORT.md).
+
+---
+
+## Supplier payment method + purchase dropdown smoke (2026-07-09)
+
+Tenant: `https://firstview.poultryhero.solutions` (`VITE_USE_MOCK_DATA=false`)
+
+| # | Check | Expected | Status |
+|---|-------|----------|--------|
+| 1 | Create supplier with default payment method **???? ???? / Bank** | POST 201, `default_payment_method: "bank"` | Pending manual (owner login) |
+| 2 | Create slaughterhouse supplier with bank default | POST 201 | Pending manual |
+| 3 | Add supplier `?????? ???? ???????` (category `Other`, active) | Appears in Suppliers list | Pending manual |
+| 4 | Open Purchase Invoice ? main supplier dropdown | New supplier appears (uses `GET /api/v1/tenant/suppliers/?is_active=true`) | Pending manual |
+| 5 | Refresh suppliers button (????? ????????) | Refetches list | Pending manual |
+| 6 | Slaughterhouse deduction dropdown | Only `category_code=slaughterhouse` suppliers | Pending manual |
+| 7 | Transport deduction dropdown | Only `category_code=transport` suppliers | Pending manual |
+| 8 | Select new supplier + save draft ? refresh | Draft persists; supplier still shown | Pending manual |
+
+Deploy prerequisites:
+
+```bash
+python manage.py migrate            # suppliers.0003 + inventory.0004
+python manage.py ensure_service_supplier_categories --company-subdomain firstview
+```
+
+Automated (passed locally 2026-07-09): `pytest tests/test_suppliers.py tests/test_purchases.py` ? 83 passed; frontend typecheck + build pass.

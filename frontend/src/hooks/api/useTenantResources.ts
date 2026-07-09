@@ -2,7 +2,7 @@ import { useListResource } from "./useListResource";
 import { useDetailResource } from "./useDetailResource";
 import { listProductRows, getProductRow } from "@/services/productService";
 import { listCustomerRows, getCustomerRow } from "@/services/customerService";
-import { listSupplierRows, getSupplierRow } from "@/services/supplierService";
+import { listSupplierRows, listPurchaseSuppliers, getSupplierRow } from "@/services/supplierService";
 import { listInventoryRows } from "@/services/inventoryService";
 import { listPurchaseRows, getPurchaseRow } from "@/services/purchaseService";
 import { listSalesRows, getSalesRow } from "@/services/salesService";
@@ -33,6 +33,11 @@ export function useSuppliers(filters?: ApiListFilters, mockFetcher?: () => Promi
 
 export function useSupplierDetail(id: string | null, mockFetcher?: (id: string) => Promise<import("@/shared/types/entities").SupplierRow | null>) {
   return useDetailResource(id, getSupplierRow, mockFetcher);
+}
+
+/** Active suppliers eligible as the main purchase-invoice supplier (excludes service-only categories). */
+export function usePurchaseSuppliers(mockFetcher?: () => Promise<import("@/shared/types/entities").SupplierRow[]>) {
+  return useListResource(() => listPurchaseSuppliers(), mockFetcher, [], ["suppliers"]);
 }
 
 export function useInventory(filters?: ApiListFilters, mockFetcher?: () => Promise<import("@/shared/types/entities").InventoryBalanceRow[]>) {

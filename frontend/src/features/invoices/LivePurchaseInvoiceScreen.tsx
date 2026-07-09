@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Check, Trash2, Printer } from "lucide-react";
+import { Check, Trash2, Printer, RefreshCw } from "lucide-react";
 import type { Lang } from "@/shared/types";
 import type { TenantRole } from "@/shared/types/roles";
 import type { TenantScreen } from "@/shared/types";
 import { IS_MOCK_MODE } from "@/services/config";
-import { useSuppliers, useProducts } from "@/hooks/api/useTenantResources";
+import { usePurchaseSuppliers, useProducts } from "@/hooks/api/useTenantResources";
 import { getPurchaseDetail, approvePurchase, cancelPurchase } from "@/services/purchaseService";
 import { LoadingState, ErrorState, EmptyState, PermissionDeniedState, NotFoundState } from "@/shared/components/ApiStates";
 import { FormErrors } from "@/shared/components/FormErrors";
@@ -97,12 +97,14 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   const [transportDeduction, setTransportDeduction] = useState("0");
   const [deductionNotes, setDeductionNotes] = useState("");
 
-  const { items: suppliers, loading: loadingSuppliers } = useSuppliers();
+  const { items: suppliers, loading: loadingSuppliers, reload: reloadSuppliers } = usePurchaseSuppliers();
   const { items: products, loading: loadingProducts } = useProducts();
+  const [supplierNameSnapshot, setSupplierNameSnapshot] = useState("");
 
   const resetDraft = useCallback(() => {
     setDocId("");
     setSupplierId("");
+    setSupplierNameSnapshot("");
     setSupplierInvNo("");
     setLines([]);
     setStatus("draft");
@@ -133,6 +135,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       const detail = await getPurchaseDetail(invoiceId);
       setDocId(detail.invoice.id);
       setSupplierId(detail.invoice.supplierId);
+      setSupplierNameSnapshot(detail.invoice.supplier ?? "");
       setInvoiceNumber(detail.invoice.number);
       setStatus(detail.invoice.status);
       setInvoiceDate(detail.invoice.date?.slice(0, 10) || todayIso());
@@ -519,12 +522,29 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       <div className="grid lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white rounded-2xl border p-4 space-y-3">
-            <select value={supplierId} disabled={!isDraft} onChange={(e) => setSupplierId(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm">
-              <option value="">{isRTL ? "— المورد —" : "— Supplier —"}</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <select value={supplierId} disabled={!isDraft} onChange={(e) => setSupplierId(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm">
+                <option value="">{isRTL ? "— المورد —" : "— Supplier —"}</option>
+                {supplierId && !suppliers.some((s) => s.id === supplierId) && (
+                  <option value={supplierId}>{supplierNameSnapshot || (isRTL ? "المورد الحالي" : "Current supplier")}</option>
+                )}
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => void reloadSuppliers()}
+                title={isRTL ? "تحديث الموردين" : "Refresh suppliers"}
+                aria-label={isRTL ? "تحديث الموردين" : "Refresh suppliers"}
+                className="p-2 rounded-xl border text-slate-500 hover:bg-slate-50 shrink-0"
+              >
+                <RefreshCw size={15} />
+              </button>
+            </div>
+            {!loadingSuppliers && suppliers.length === 0 && (
+              <p className="text-xs font-bold text-amber-600">{isRTL ? "لا يوجد موردين متاحين" : "No suppliers available"}</p>
+            )}
             <input
               value={supplierInvNo}
               disabled={!isDraft}

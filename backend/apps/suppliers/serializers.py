@@ -31,7 +31,7 @@ class SupplierListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name_ar", "name_en", "phone", "supplier_type",
             "category", "category_name", "category_code", "current_balance", "balance_status",
-            "track_balance", "is_active",
+            "default_payment_method", "track_balance", "is_active",
         ]
 
 

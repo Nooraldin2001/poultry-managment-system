@@ -198,6 +198,76 @@ def test_bank_transfer_alias_normalized_to_bank(api, owner):
     assert resp.json()["default_payment_method"] == PaymentMethod.BANK
 
 
+def _list_ids(resp):
+    body = resp.json()
+    rows = body["results"] if isinstance(body, dict) and "results" in body else body
+    return {r["id"] for r in rows}
+
+
+def test_new_supplier_appears_in_list(api, owner):
+    api.force_authenticate(user=owner)
+    sid = _create_supplier(api, name_ar="اختبار مورد مشتريات").json()["id"]
+    resp = api.get("/api/v1/tenant/suppliers/")
+    assert resp.status_code == 200
+    assert sid in _list_ids(resp)
+
+
+def test_other_category_supplier_in_active_list(api, owner):
+    api.force_authenticate(user=owner)
+    other_cat = _category(owner.company, "other", "أخرى")
+    sid = _create_supplier(api, category=other_cat.id, name_ar="مورد آخر").json()["id"]
+    resp = api.get("/api/v1/tenant/suppliers/?is_active=true")
+    assert resp.status_code == 200
+    ids = _list_ids(resp)
+    assert sid in ids
+    # list rows expose category_code + default_payment_method for frontend filtering
+    body = resp.json()
+    rows = body["results"] if isinstance(body, dict) and "results" in body else body
+    row = next(r for r in rows if r["id"] == sid)
+    assert row["category_code"] == "other"
+    assert "default_payment_method" in row
+
+
+def test_category_code_filters_are_exclusive(api, owner):
+    api.force_authenticate(user=owner)
+    slaughter_cat = _category(owner.company, CATEGORY_SLAUGHTERHOUSE, "مسلخ")
+    transport_cat = _category(owner.company, CATEGORY_TRANSPORT, "نقل")
+    general_id = _create_supplier(api, name_ar="مورد عام", phone="+971600000010").json()["id"]
+    slaughter_id = _create_supplier(
+        api, category=slaughter_cat.id, name_ar="مسلخ العين", phone="+971600000011"
+    ).json()["id"]
+    transport_id = _create_supplier(
+        api, category=transport_cat.id, name_ar="نقل الإمارات", phone="+971600000012"
+    ).json()["id"]
+
+    slaughter_ids = _list_ids(api.get("/api/v1/tenant/suppliers/?category_code=slaughterhouse"))
+    assert slaughter_ids == {slaughter_id}
+
+    transport_ids = _list_ids(api.get("/api/v1/tenant/suppliers/?category_code=transport"))
+    assert transport_ids == {transport_id}
+
+    all_ids = _list_ids(api.get("/api/v1/tenant/suppliers/?is_active=true"))
+    assert {general_id, slaughter_id, transport_id} <= all_ids
+
+
+def test_inactive_supplier_excluded_from_active_list(api, owner):
+    api.force_authenticate(user=owner)
+    sid = _create_supplier(api, name_ar="مورد موقوف").json()["id"]
+    api.post(f"/api/v1/tenant/suppliers/{sid}/disable/", {"reason": "test"}, format="json")
+    active_ids = _list_ids(api.get("/api/v1/tenant/suppliers/?is_active=true"))
+    assert sid not in active_ids
+    all_ids = _list_ids(api.get("/api/v1/tenant/suppliers/"))
+    assert sid in all_ids
+
+
+def test_other_company_supplier_not_in_list(api, owner, other_owner):
+    other_supplier = Supplier.objects.create(
+        company=other_owner.company, name_ar="مورد شركة أخرى", phone="777", supplier_type="cash"
+    )
+    api.force_authenticate(user=owner)
+    assert other_supplier.id not in _list_ids(api.get("/api/v1/tenant/suppliers/"))
+
+
 def test_supplier_bank_default_maps_to_purchase_bank_transfer():
     from apps.core.payment_methods import supplier_default_to_purchase_payment_method
 

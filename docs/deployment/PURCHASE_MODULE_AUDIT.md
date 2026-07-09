@@ -106,6 +106,20 @@ See [INVOICE_BRANDING_AND_TAX_IDENTITY.md](./INVOICE_BRANDING_AND_TAX_IDENTITY.m
 
 ---
 
+## Supplier dropdowns on purchase invoice (2026-07-09)
+
+| Dropdown | Source | Filter |
+|----------|--------|--------|
+| Main supplier | `listPurchaseSuppliers()` ? `GET /api/v1/tenant/suppliers/?is_active=true` (all pages) | Client-side exclusion of `category_code ? {slaughterhouse, transport}` only; `other`/no-category always included |
+| Slaughterhouse deduction | `GET /api/v1/tenant/suppliers/?category_code=slaughterhouse&is_active=true` | Backend filter |
+| Transport deduction | `GET /api/v1/tenant/suppliers/?category_code=transport&is_active=true` | Backend filter |
+
+- Root cause of "new supplier missing from dropdown": stale supplier list state ? creating a supplier did not broadcast a refresh, and the dropdown had no manual refresh. `createSupplier`/`updateSupplier` now emit `notifyTenantDataChanged("suppliers")`; the dropdown list subscribes to that scope, and a **????? ???????? / Refresh suppliers** button + `?? ???? ?????? ??????` empty state were added.
+- Existing invoices whose saved supplier is inactive or service-category still render it via a snapshot option.
+- Pagination handled via `crud.listAll()` (`results` + `next`, `page_size=100`). No mock supplier fallback in live mode.
+
+---
+
 ## Production verification (manual)
 
 1. Open Purchases → select invoice → Print / Save PDF → no 404, real company/supplier data
