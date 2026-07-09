@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/services/api/errors";
 import { IS_MOCK_MODE } from "@/services/config";
+import { isAuthenticated } from "@/services/authService";
 import {
   getSupplierLedger,
   listSupplierAgreements,
@@ -62,7 +63,7 @@ export function useSupplierProfileTabs(supplierId: string, activeTab: SupplierPr
       setter: (s: TabState<T>) => void,
       fallback: T,
     ) => {
-      if (IS_MOCK_MODE || !supplierId) return;
+      if (IS_MOCK_MODE || !supplierId || !isAuthenticated()) return;
       setter({ data: fallback, loading: true, error: null, forbidden: false, unavailable: false });
       try {
         const data = await loader();

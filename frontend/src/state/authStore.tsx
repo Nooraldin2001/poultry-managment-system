@@ -11,6 +11,7 @@ import type { CurrentUser } from "@/shared/types/auth";
 import type { TenantRole } from "@/shared/types/roles";
 import { IS_MOCK_MODE } from "@/services/config";
 import * as authService from "@/services/authService";
+import { resetSessionExpiredFlag } from "@/services/api/session";
 import { mapBackendRole } from "@/services/tenantService";
 import { ApiError } from "@/services/api/errors";
 
@@ -84,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return mockUser;
     }
     const loggedIn = await authService.login({ email, password });
+    resetSessionExpiredFlag();
     setUser(loggedIn);
     setError(null);
     return loggedIn;

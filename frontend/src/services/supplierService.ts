@@ -106,12 +106,8 @@ export async function getSupplierRow(id: string): Promise<SupplierRow | null> {
   if (IS_MOCK_MODE) {
     return supplierMock.getSupplierById(id) as Promise<SupplierRow | null>;
   }
-  try {
-    const row = await crud.retrieve(id);
-    return mapApiSupplierToRow(row);
-  } catch {
-    return null;
-  }
+  const row = await crud.retrieve(id);
+  return mapApiSupplierToRow(row);
 }
 
 function reverseOpeningBalanceType(api: string): string {

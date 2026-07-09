@@ -55,6 +55,7 @@ type Props = {
   permissions?: string[];
   onNavigate: (s: TenantScreen) => void;
   invoiceId?: string | null;
+  initialSupplierId?: string;
   onSaved?: (id: string) => void;
   onApproved?: () => void;
   onOpenPrint?: () => void;
@@ -62,7 +63,7 @@ type Props = {
 
 const DEFAULT_VAT_RATE = 5;
 
-export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavigate, invoiceId, onSaved, onApproved, onOpenPrint }: Props) {
+export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavigate, invoiceId, initialSupplierId, onSaved, onApproved, onOpenPrint }: Props) {
   const isRTL = lang === "ar";
   const canApprove = role === "owner" || role === "accountant";
   const canEditPrice = canOverridePurchasePrice(role, permissions);
@@ -126,6 +127,22 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     setNotFound(false);
   }, []);
 
+  const mapDetailLines = (detail: Awaited<ReturnType<typeof getPurchaseDetail>>): InvoiceLineDraft[] =>
+    detail.lines.map((l) => ({
+      id: l.id,
+      serverId: l.id,
+      productId: l.productId,
+      productName: l.productName,
+      cartons: l.cartons ?? 0,
+      pieces: l.pieces ?? l.qty,
+      kg: l.kg ?? l.qty,
+      unitPrice: l.price,
+      priceType: (l.unit as InvoiceLineDraft["priceType"]) || "kg",
+      vatRate: l.vatRate ?? (detail.invoice.vat > 0 ? DEFAULT_VAT_RATE : 0),
+      lineSubtotal: l.subtotal ?? l.total,
+      lineTotal: l.total,
+    }));
+
   const loadDoc = useCallback(async () => {
     if (!invoiceId || IS_MOCK_MODE) return;
     setLoadingDoc(true);
@@ -149,22 +166,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       setTransportDeduction(String(detail.invoice.transportDeduction ?? 0));
       setDeductionNotes(detail.invoice.deductionNotes ?? "");
       setVatEnabled(detail.invoice.vat > 0);
-      setLines(
-        detail.lines.map((l) => ({
-          id: l.id,
-          serverId: l.id,
-          productId: l.productId,
-          productName: l.productName,
-          cartons: l.cartons ?? 0,
-          pieces: l.pieces ?? l.qty,
-          kg: l.kg ?? l.qty,
-          unitPrice: l.price,
-          priceType: (l.unit as InvoiceLineDraft["priceType"]) || "kg",
-          vatRate: l.vatRate ?? (detail.invoice.vat > 0 ? DEFAULT_VAT_RATE : 0),
-          lineSubtotal: l.subtotal ?? l.total,
-          lineTotal: l.total,
-        })),
-      );
+      setLines(mapDetailLines(detail));
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setNotFound(true);
@@ -180,11 +182,14 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   useEffect(() => {
     if (!invoiceId) {
       resetDraft();
+      if (initialSupplierId && !IS_MOCK_MODE) {
+        setSupplierId(initialSupplierId);
+      }
       setLoadingDoc(false);
       return;
     }
     void loadDoc();
-  }, [invoiceId, loadDoc, resetDraft]);
+  }, [invoiceId, initialSupplierId, loadDoc, resetDraft]);
 
   useEffect(() => {
     if (IS_MOCK_MODE) return;
@@ -356,12 +361,16 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       };
       const draft = isKgPrimaryProduct(prod) ? draftBase : recalcLineFromProduct(draftBase, prod);
       const finalized = applyLineTotals(draft);
-      const serverId = await addDraftLine("purchase", id, finalized);
-      setLines((prev) => [...prev, { ...finalized, serverId }]);
+      await addDraftLine("purchase", id, finalized);
+      const detail = await getPurchaseDetail(id);
+      setAmountPaid(String(detail.invoice.paid));
+      setLines(mapDetailLines(detail));
       await patchDraftHeader("purchase", id, { supplier_invoice_number: supplierInvNo });
+      toast.success(isRTL ? "تمت إضافة البند" : "Line added");
     } catch (err) {
       if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
-      toast.error(err instanceof ApiError ? err.message : "Save failed");
+      setError(err);
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل إضافة البند" : "Failed to add line"));
     } finally {
       setSaving(false);
     }
@@ -457,6 +466,9 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   };
 
   if (!IS_MOCK_MODE && ApiError.isForbidden(error)) return <PermissionDeniedState lang={lang} />;
+  if (!IS_MOCK_MODE && ApiError.isUnauthorized(error)) {
+    return <ErrorState lang={lang} error={error} />;
+  }
   if (loadingDoc || loadingSuppliers || loadingProducts) return <LoadingState lang={lang} />;
   if (notFound) {
     return (

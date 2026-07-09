@@ -1,5 +1,6 @@
 import { IS_MOCK_MODE } from "@/services/config";
 import { resolveApiBase } from "@/services/tenantUrl";
+import { notifySessionExpired } from "./session";
 import { ApiError } from "./errors";
 
 const ACCESS_KEY = "poultry_hero_access_token";
@@ -100,6 +101,7 @@ async function refreshAccessToken(): Promise<string | null> {
         });
         if (!res.ok) {
           clearTokens();
+          notifySessionExpired();
           return null;
         }
         const data = (await res.json()) as { access: string };
@@ -107,6 +109,7 @@ async function refreshAccessToken(): Promise<string | null> {
         return data.access;
       } catch {
         clearTokens();
+        notifySessionExpired();
         return null;
       } finally {
         refreshPromise = null;
@@ -168,10 +171,11 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     if (newAccess) {
       return request<T>(path, { ...options, noRefresh: true });
     }
-    throw new ApiError("Session expired. Please sign in again.", {
-      status: 401,
-      code: "session_expired",
-    });
+    notifySessionExpired();
+    throw new ApiError(
+      "Session expired. Please sign in again.",
+      { status: 401, code: "session_expired" },
+    );
   }
 
   if (res.status === 204 || res.status === 205) {

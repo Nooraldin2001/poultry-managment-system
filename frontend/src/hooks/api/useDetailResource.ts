@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { IS_MOCK_MODE } from "@/services/config";
 import { ApiError } from "@/services/api/errors";
+import { isAuthenticated } from "@/services/authService";
 
 export interface DetailResourceState<T> {
   item: T | null;
@@ -38,6 +39,13 @@ export function useDetailResource<T>(
       } finally {
         setLoading(false);
       }
+      return;
+    }
+    if (!IS_MOCK_MODE && !isAuthenticated()) {
+      setItem(null);
+      setLoading(false);
+      setError(null);
+      setForbidden(false);
       return;
     }
     setLoading(true);

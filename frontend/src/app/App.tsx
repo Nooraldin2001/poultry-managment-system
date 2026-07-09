@@ -42,6 +42,7 @@ import { AdminModuleResetPanel } from "@/features/admin/AdminModuleResetPanel";
 import { CompanyAssetUploadField, InvoiceBrandingPreview } from "@/features/company/CompanyAssetUploadField";
 import { getAppHostKind, getTenantSubdomainFromHost, getTenantUrl } from "@/services/tenantUrl";
 import { ApiError } from "@/services/api/errors";
+import { registerSessionExpiredHandler } from "@/services/api/session";
 import { T_NAV } from "@/app/navigation/tenantNavigation";
 import { getFilteredTenantNav, canViewScreen } from "@/app/navigation/permissions";
 import { ScreenGuard } from "@/shared/components/ScreenGuard";
@@ -3649,7 +3650,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
   companyId: string; lang: Lang; onLangSwitch: () => void; onBack?: () => void;
 }) {
   const { user, isSuperAdmin, permissions } = useAuth();
-  const { companies } = useAdminCompanies();
+  const { companies } = useAdminCompanies({ enabled: isSuperAdmin && !IS_MOCK_MODE });
   const [tScreen, setTScreen] = useState<TenantScreen>("dashboard");
   const [role, setRole] = useState<TenantRole>(user ? mapBackendRole(user.role) : "owner");
   useEffect(() => {
@@ -3740,7 +3741,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           )}
           {tScreen === "purchases-new" && (
             <ModuleErrorBoundary lang={lang} messageAr="حدث خطأ أثناء تحميل المشتريات" messageEn="Something went wrong while loading purchases" onBack={() => navTenant("dashboard")}>
-              <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} onSaved={setSelectedPurchaseId} />
+              <PurchNewScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} onSaved={setSelectedPurchaseId} initialSupplierId={selectedSupplierId} />
             </ModuleErrorBoundary>
           )}
           {tScreen === "purchases-edit" && selectedPurchaseId && (
@@ -3904,8 +3905,10 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
 // ── MAIN APP ───────────────────────────────────────────────────────────────────
 export default function App() {
   const { user, loading, isSuperAdmin, logout } = useAuth();
-  const { reload: reloadAdminCompanies } = useAdminCompanies();
   const [mode, setMode] = useState<AppMode>("superadmin");
+  const { reload: reloadAdminCompanies } = useAdminCompanies({
+    enabled: !IS_MOCK_MODE && mode === "superadmin",
+  });
   const [screen, setScreen] = useState<Screen>("login");
   const [lang, setLang] = useState<Lang>("ar");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -3916,6 +3919,19 @@ export default function App() {
   const isRTL = lang === "ar";
   const switchLang = () => setLang(l => l === "ar" ? "en" : "ar");
   const navigate = (s: Screen) => { setScreen(s); setSidebarOpen(false); };
+
+  useEffect(() => {
+    registerSessionExpiredHandler(() => {
+      toast.error(
+        isRTL ? "انتهت الجلسة، برجاء تسجيل الدخول مرة أخرى" : "Session expired. Please sign in again.",
+      );
+      void logout();
+      setMode("superadmin");
+      setScreen("login");
+      setTenantAccessDenied(false);
+    });
+    return () => registerSessionExpiredHandler(null);
+  }, [logout, isRTL]);
 
   const handleLogin = (loggedIn: CurrentUser) => {
     const hostKind = getAppHostKind();

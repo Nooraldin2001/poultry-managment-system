@@ -416,8 +416,8 @@ export function PurchListScreen({ lang, role, onNavigate, setSelectedPurchaseId 
 }
 
 // ── SCREEN: NEW PURCHASE INVOICE ───────────────────────────────────────────────
-export function PurchNewScreen({ lang, role, permissions, onNavigate, purchaseId, onSaved }: {
-  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; purchaseId?: string; onSaved?: (id: string) => void;
+export function PurchNewScreen({ lang, role, permissions, onNavigate, purchaseId, onSaved, initialSupplierId }: {
+  lang: Lang; role: TenantRole; permissions?: string[]; onNavigate: (s: TenantScreen) => void; purchaseId?: string; onSaved?: (id: string) => void; initialSupplierId?: string;
 }) {
   if (!IS_MOCK_MODE) {
     return (
@@ -427,6 +427,7 @@ export function PurchNewScreen({ lang, role, permissions, onNavigate, purchaseId
         permissions={permissions}
         onNavigate={onNavigate}
         invoiceId={purchaseId ?? null}
+        initialSupplierId={initialSupplierId}
         onSaved={onSaved}
       />
     );

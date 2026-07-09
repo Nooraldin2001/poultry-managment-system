@@ -4,12 +4,23 @@ import { IS_MOCK_MODE } from "@/services/config";
 import { listCompanies } from "@/services/adminService";
 import { COMPANIES } from "@/data/mock";
 
-export function useAdminCompanies() {
+export interface UseAdminCompaniesOptions {
+  /** When false, skips the admin companies API (tenant sessions must not call /admin/companies/). */
+  enabled?: boolean;
+}
+
+export function useAdminCompanies(options?: UseAdminCompaniesOptions) {
+  const enabled = options?.enabled !== false;
   const [companies, setCompanies] = useState<Company[]>(IS_MOCK_MODE ? COMPANIES : []);
-  const [loading, setLoading] = useState(!IS_MOCK_MODE);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE && enabled);
   const [error, setError] = useState<unknown>(null);
 
   const reload = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     if (IS_MOCK_MODE) {
       setCompanies(COMPANIES);
       setLoading(false);
@@ -27,7 +38,7 @@ export function useAdminCompanies() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     void reload();

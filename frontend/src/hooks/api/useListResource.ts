@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { IS_MOCK_MODE } from "@/services/config";
 import { ApiError } from "@/services/api/errors";
+import { isAuthenticated } from "@/services/authService";
 import { subscribeTenantRefresh, type TenantRefreshScope } from "@/shared/utils/tenantRefresh";
 
 export interface ListResourceState<T> {
@@ -35,6 +36,13 @@ export function useListResource<T>(
       } finally {
         setLoading(false);
       }
+      return;
+    }
+    if (!IS_MOCK_MODE && !isAuthenticated()) {
+      setItems([]);
+      setLoading(false);
+      setError(null);
+      setForbidden(false);
       return;
     }
     setLoading(true);
