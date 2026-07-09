@@ -42,8 +42,10 @@ After `POST .../lines/`, the UI appended a local line without refetching the dra
 | Area | Change |
 |------|--------|
 | `useAdminCompanies` | `enabled` option; disabled for tenant sessions |
-| `TenantApp` | `useAdminCompanies({ enabled: isSuperAdmin })` only |
-| Root `App` | `useAdminCompanies({ enabled: mode === "superadmin" })` |
+| `listCompaniesLive` | Hard block on tenant host — returns `[]` without HTTP call |
+| Root `App` | `initialAppMode()` = `tenant` when host is tenant subdomain |
+| Root `App` | Admin companies enabled only when `host !== tenant` AND superuser AND not loading |
+| `TenantApp` | `useAdminCompanies({ enabled: isSuperAdmin && host !== tenant })` |
 | `services/api/session.ts` | Single-flight `notifySessionExpired()` |
 | `services/api/client.ts` | Calls `notifySessionExpired()` when refresh fails |
 | `App` | Registers handler: toast AR/EN + logout + login screen once |
