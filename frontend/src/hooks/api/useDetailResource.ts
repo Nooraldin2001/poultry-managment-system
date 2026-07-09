@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IS_MOCK_MODE } from "@/services/config";
 import { ApiError } from "@/services/api/errors";
 import { isAuthenticated } from "@/services/authService";
@@ -20,6 +20,8 @@ export function useDetailResource<T>(
   const [loading, setLoading] = useState(!!id);
   const [error, setError] = useState<unknown>(null);
   const [forbidden, setForbidden] = useState(false);
+  const mockFetcherRef = useRef(mockFetcher);
+  mockFetcherRef.current = mockFetcher;
 
   const reload = useCallback(async () => {
     if (!id) {
@@ -27,12 +29,13 @@ export function useDetailResource<T>(
       setLoading(false);
       return;
     }
-    if (IS_MOCK_MODE && mockFetcher) {
+    const mockFn = mockFetcherRef.current;
+    if (IS_MOCK_MODE && mockFn) {
       setLoading(true);
       setError(null);
       setForbidden(false);
       try {
-        setItem(await mockFetcher(id));
+        setItem(await mockFn(id));
       } catch (err) {
         setItem(null);
         setError(err);
@@ -60,7 +63,7 @@ export function useDetailResource<T>(
     } finally {
       setLoading(false);
     }
-  }, [id, IS_MOCK_MODE, liveFetcher, mockFetcher]);
+  }, [id, liveFetcher]);
 
   useEffect(() => {
     void reload();

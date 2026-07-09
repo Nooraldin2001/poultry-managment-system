@@ -37,6 +37,14 @@ On 401, `request()` attempted token refresh once per call. When refresh failed, 
 
 After `POST .../lines/`, the UI appended a local line without refetching the draft from the server. On 401 or partial failure, lines appeared to vanish or never persisted.
 
+### 6. Supplier profile / detail screens stuck on infinite loading
+
+`useDetailResource` included `mockFetcher` in the `useCallback` dependency array. Supplier profile passes an **inline** `async (id) => ...` mock fetcher on every render → `reload` identity changes every render → `useEffect([reload])` refires endlessly → perpetual `LoadingState` ("جارِ تحميل البيانات...").
+
+`useTenantDashboard` could also refetch before auth resolved (no `isAuthenticated()` guard).
+
+`authStore.login()` did not call `setLoading(false)` after a successful login, so `App` could keep `auth.loading === true` and block tenant content behind the global loading gate.
+
 ## Fixes applied
 
 | Area | Change |
@@ -53,6 +61,9 @@ After `POST .../lines/`, the UI appended a local line without refetching the dra
 | `getSupplierRow` | Propagates API errors to `useSupplierDetail` |
 | `LivePurchaseInvoiceScreen` | `initialSupplierId` prop; refetch lines after add; session-expired UI |
 | `PurchNewScreen` / `App` | Pass `selectedSupplierId` as `initialSupplierId` |
+| `useDetailResource` | Store `mockFetcher` in `useRef`; stable `reload` deps `[id, liveFetcher]` only |
+| `useTenantDashboard` | Skip fetch when not authenticated; stable `dateFrom` / `dateTo` deps |
+| `authStore.login` | `setLoading(false)` after successful login |
 
 ## Expected network on tenant session (after fix)
 
@@ -71,6 +82,11 @@ After `POST .../lines/`, the UI appended a local line without refetching the dra
 4. Add product line → `POST .../lines/` 201 → line visible.
 5. Save draft → refresh → line persists.
 6. Let session expire (or revoke token) → single toast + login screen; no refetch loop.
+7. Supplier profile loads without infinite spinner; Network shows one `GET .../suppliers/{id}/` per navigation.
+
+## Unrelated console noise
+
+`feature_collector.js:23 — using deprecated parameters for the initialization function` is **not** from Poultry Hero. It comes from a **browser extension** (e.g. Cursor, analytics, or devtools helper) injected into the page. Safe to ignore; it does not affect tenant API behavior.
 
 ## Automated checks (local 2026-07-09)
 

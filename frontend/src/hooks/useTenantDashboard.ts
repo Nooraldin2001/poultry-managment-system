@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DashboardSummary } from "@/shared/types/reports";
 import { IS_MOCK_MODE } from "@/services/config";
+import { isAuthenticated } from "@/services/authService";
 import { getTenantDashboardSummary } from "@/services/reportsService";
 
 export function useTenantDashboard(query?: { date_from?: string; date_to?: string }) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(!IS_MOCK_MODE);
   const [error, setError] = useState<unknown>(null);
+  const dateFrom = query?.date_from;
+  const dateTo = query?.date_to;
 
   const reload = useCallback(async () => {
     if (IS_MOCK_MODE) {
@@ -15,10 +18,16 @@ export function useTenantDashboard(query?: { date_from?: string; date_to?: strin
       setError(null);
       return;
     }
+    if (!isAuthenticated()) {
+      setSummary(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const data = await getTenantDashboardSummary(query);
+      const data = await getTenantDashboardSummary({ date_from: dateFrom, date_to: dateTo });
       setSummary(data);
     } catch (err) {
       setSummary(null);
@@ -26,7 +35,7 @@ export function useTenantDashboard(query?: { date_from?: string; date_to?: strin
     } finally {
       setLoading(false);
     }
-  }, [query?.date_from, query?.date_to]);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     void reload();

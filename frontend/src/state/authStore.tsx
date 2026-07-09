@@ -88,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const loggedIn = await authService.login({ email, password });
     resetSessionExpiredFlag();
     setUser(loggedIn);
+    setLoading(false);
     setError(null);
     return loggedIn;
   }, []);
