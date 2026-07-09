@@ -1,6 +1,8 @@
 import type { LoginRequest, LoginResponse, CurrentUser } from "@/shared/types/auth";
+import { ApiError } from "./api/errors";
 import { clearTokens, request, setTokens } from "./api/client";
 import { ENDPOINTS } from "./api/endpoints";
+import { getAppHostKind } from "./tenantUrl";
 
 export async function login(credentials: LoginRequest): Promise<CurrentUser> {
   const data = await request<LoginResponse>(ENDPOINTS.auth.login, {
@@ -14,6 +16,9 @@ export async function login(credentials: LoginRequest): Promise<CurrentUser> {
 }
 
 export async function fetchCurrentUser(): Promise<CurrentUser> {
+  if (!isAuthenticated()) {
+    throw new ApiError("Not authenticated", { status: 401, code: "unauthorized" });
+  }
   return request<CurrentUser>(ENDPOINTS.auth.me);
 }
 

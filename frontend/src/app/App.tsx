@@ -3650,7 +3650,10 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
   companyId: string; lang: Lang; onLangSwitch: () => void; onBack?: () => void;
 }) {
   const { user, isSuperAdmin, permissions } = useAuth();
-  const { companies } = useAdminCompanies({ enabled: isSuperAdmin && !IS_MOCK_MODE });
+  const hostKind = getAppHostKind();
+  const { companies } = useAdminCompanies({
+    enabled: isSuperAdmin && !IS_MOCK_MODE && hostKind !== "tenant",
+  });
   const [tScreen, setTScreen] = useState<TenantScreen>("dashboard");
   const [role, setRole] = useState<TenantRole>(user ? mapBackendRole(user.role) : "owner");
   useEffect(() => {
@@ -3673,7 +3676,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
   const isRTL = lang === "ar";
   const company = IS_MOCK_MODE
     ? (COMPANIES.find(c => c.id === companyId) ?? null)
-    : resolveTenantCompany(user, companyId, companies);
+    : resolveTenantCompany(user, companyId, companies.length ? companies : []);
   // Tenant navigation boundary: screens declare `onNavigate: (s: string) => void`,
   // so wrap the typed setter once here instead of casting at every call site.
   const navTenant = (s: string) => {
@@ -3902,12 +3905,23 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
   );
 }
 
+function initialAppMode(): AppMode {
+  if (IS_MOCK_MODE) return "superadmin";
+  return getAppHostKind() === "tenant" ? "tenant" : "superadmin";
+}
+
 // ── MAIN APP ───────────────────────────────────────────────────────────────────
 export default function App() {
   const { user, loading, isSuperAdmin, logout } = useAuth();
-  const [mode, setMode] = useState<AppMode>("superadmin");
+  const hostKind = getAppHostKind();
+  const [mode, setMode] = useState<AppMode>(initialAppMode);
   const { reload: reloadAdminCompanies } = useAdminCompanies({
-    enabled: !IS_MOCK_MODE && mode === "superadmin",
+    enabled:
+      !IS_MOCK_MODE &&
+      hostKind !== "tenant" &&
+      mode === "superadmin" &&
+      !loading &&
+      !!user?.is_superuser,
   });
   const [screen, setScreen] = useState<Screen>("login");
   const [lang, setLang] = useState<Lang>("ar");
@@ -3926,12 +3940,12 @@ export default function App() {
         isRTL ? "انتهت الجلسة، برجاء تسجيل الدخول مرة أخرى" : "Session expired. Please sign in again.",
       );
       void logout();
-      setMode("superadmin");
+      setMode(hostKind === "tenant" ? "tenant" : "superadmin");
       setScreen("login");
       setTenantAccessDenied(false);
     });
     return () => registerSessionExpiredHandler(null);
-  }, [logout, isRTL]);
+  }, [logout, isRTL, hostKind]);
 
   const handleLogin = (loggedIn: CurrentUser) => {
     const hostKind = getAppHostKind();

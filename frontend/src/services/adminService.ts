@@ -3,6 +3,7 @@ import { IS_MOCK_MODE } from "@/services/config";
 import { request } from "./api/client";
 import { ENDPOINTS } from "./api/endpoints";
 import type { PaginatedResponse } from "./api/types";
+import { getAppHostKind } from "./tenantUrl";
 import * as companyMock from "./mock/companyService.mock";
 
 /** Raw company row from `GET /admin/companies/`. */
@@ -178,6 +179,10 @@ export async function listCompaniesLive(params?: {
   page?: number;
   pageSize?: number;
 }): Promise<Company[]> {
+  // Tenant subdomains must never call Super Admin APIs (403 for tenant JWT).
+  if (getAppHostKind() === "tenant") {
+    return [];
+  }
   const data = await request<PaginatedResponse<ApiCompany>>(ENDPOINTS.admin.companies, {
     query: {
       search: params?.search,

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Company } from "@/shared/types/tenant";
 import { IS_MOCK_MODE } from "@/services/config";
+import { isAuthenticated } from "@/services/authService";
+import { getAppHostKind } from "@/services/tenantUrl";
 import { listCompanies } from "@/services/adminService";
 import { COMPANIES } from "@/data/mock";
 
@@ -17,6 +19,18 @@ export function useAdminCompanies(options?: UseAdminCompaniesOptions) {
 
   const reload = useCallback(async () => {
     if (!enabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    if (!IS_MOCK_MODE && getAppHostKind() === "tenant") {
+      setCompanies([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    if (!IS_MOCK_MODE && !isAuthenticated()) {
+      setCompanies([]);
       setLoading(false);
       setError(null);
       return;

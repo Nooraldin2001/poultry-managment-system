@@ -17,6 +17,8 @@ Tenant: `https://firstview.poultryhero.solutions` (`VITE_USE_MOCK_DATA=false`)
 
 `TenantApp` and root `App` mounted `useAdminCompanies()` unconditionally. That hook always fetched `GET /api/v1/admin/companies/` on mount — forbidden (403) for tenant JWTs.
 
+**Additional race (2026-07-09 evening):** root `App` initialized `mode` to `"superadmin"` on every host. On `firstview.poultryhero.solutions`, the first paint enabled `useAdminCompanies` **before** auth resolved and mode switched to `"tenant"`, so `/admin/companies/` still fired once per page load even after the hook `enabled` guard.
+
 Tenant company context is already available from `GET /api/v1/auth/me/` (`user.company`). `resolveTenantCompany()` uses `briefToUiCompany(user.company)` for non–super-admin users and does **not** need the admin companies list.
 
 ### 2. No single-flight session expiry handling

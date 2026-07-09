@@ -42,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!authService.isAuthenticated()) {
       setUser(null);
       setLoading(false);
+      setError(null);
       return;
     }
     setLoading(true);
@@ -51,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(me);
     } catch (err) {
       setUser(null);
-      if (err instanceof ApiError && err.status === 401) {
+      if (err instanceof ApiError && (err.status === 401 || err.code === "session_expired")) {
         setError(null);
       } else {
         setError(err instanceof Error ? err.message : "Failed to load session");
