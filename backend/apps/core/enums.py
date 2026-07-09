@@ -19,6 +19,9 @@ class Unit(models.TextChoices):
 
 class PaymentMethod(models.TextChoices):
     CASH = "cash", "Cash"
+    BANK = "bank", "Bank"
+    CREDIT = "credit", "Credit / On Account"
+    # Legacy values (still accepted for existing rows / payment movements)
     BANK_TRANSFER = "bank_transfer", "Bank Transfer"
     CHEQUE = "cheque", "Cheque"
     OTHER = "other", "Other"

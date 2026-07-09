@@ -28,7 +28,8 @@ import { BackdateInvoiceFields, isBackdatedDate, todayIso } from "./BackdateInvo
 import { parseAmount } from "@/services/crud/parse";
 import type { ProductRow } from "@/shared/types/entities";
 import { listMoneyAccounts, type MoneyAccountRow } from "@/services/treasuryService";
-import { listSlaughterhouseSuppliers, listTransportSuppliers } from "@/services/supplierService";
+import { listSlaughterhouseSuppliers, listTransportSuppliers, getSupplierDetail } from "@/services/supplierService";
+import { mapSupplierPaymentToPurchase } from "@/shared/utils/supplierPaymentMethod";
 import type { SupplierRow } from "@/shared/types/entities";
 
 function recalcLineFromProduct(line: InvoiceLineDraft, prod: ProductRow | undefined): InvoiceLineDraft {
@@ -190,6 +191,21 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     void listSlaughterhouseSuppliers().then(setSlaughterSuppliers).catch(() => setSlaughterSuppliers([]));
     void listTransportSuppliers().then(setTransportSuppliers).catch(() => setTransportSuppliers([]));
   }, []);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE || invoiceId || !supplierId) return;
+    let cancelled = false;
+    void getSupplierDetail(supplierId)
+      .then((detail) => {
+        if (cancelled || !detail) return;
+        setPaymentMethod(mapSupplierPaymentToPurchase(detail.defaultPaymentMethod));
+        setMoneyAccountId("");
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [supplierId, invoiceId]);
 
   const totals = useMemo(() => {
     const subtotal = lines.reduce((s, l) => s + l.lineSubtotal, 0);

@@ -4,8 +4,10 @@ import pytest
 from django.db import IntegrityError
 
 from apps.audit.models import AuditLog
+from apps.core.enums import PaymentMethod
 from apps.products.models import Product, ProductCategory, ProductType
-from apps.suppliers.models import Supplier, SupplierSpecialPrice
+from apps.suppliers.constants import CATEGORY_SLAUGHTERHOUSE, CATEGORY_TRANSPORT
+from apps.suppliers.models import Supplier, SupplierCategory, SupplierSpecialPrice
 
 pytestmark = pytest.mark.django_db
 
@@ -133,3 +135,72 @@ def test_supplier_sensitive_action_audit(api, owner):
     assert AuditLog.objects.filter(
         company=owner.company, action="supplier_agreement_change"
     ).exists()
+
+
+def _category(company, code, name_ar):
+    return SupplierCategory.objects.create(
+        company=company, code=code, name_ar=name_ar, name_en=code,
+    )
+
+
+def test_create_supplier_with_bank_default_payment_method(api, owner):
+    api.force_authenticate(user=owner)
+    resp = _create_supplier(api, default_payment_method="bank")
+    assert resp.status_code == 201, resp.content
+    body = resp.json()
+    detail = api.get(f"/api/v1/tenant/suppliers/{body['id']}/").json()
+    assert detail["default_payment_method"] == PaymentMethod.BANK
+
+
+def test_edit_supplier_to_bank_default_payment_method(api, owner):
+    api.force_authenticate(user=owner)
+    sid = _create_supplier(api, default_payment_method="cash").json()["id"]
+    patch = api.patch(
+        f"/api/v1/tenant/suppliers/{sid}/",
+        {"default_payment_method": "bank"},
+        format="json",
+    )
+    assert patch.status_code == 200, patch.content
+    assert patch.json()["default_payment_method"] == PaymentMethod.BANK
+
+
+def test_create_slaughterhouse_supplier_with_bank(api, owner):
+    api.force_authenticate(user=owner)
+    cat = _category(owner.company, CATEGORY_SLAUGHTERHOUSE, "مسلخ")
+    resp = _create_supplier(
+        api, category=cat.id, default_payment_method="bank", name_ar="مسلخ العين",
+    )
+    assert resp.status_code == 201, resp.content
+    assert resp.json()["default_payment_method"] == PaymentMethod.BANK
+
+
+def test_create_transport_supplier_with_bank(api, owner):
+    api.force_authenticate(user=owner)
+    cat = _category(owner.company, CATEGORY_TRANSPORT, "نقل")
+    resp = _create_supplier(
+        api, category=cat.id, default_payment_method="bank", name_ar="نقل الإمارات",
+    )
+    assert resp.status_code == 201, resp.content
+    assert resp.json()["default_payment_method"] == PaymentMethod.BANK
+
+
+def test_invalid_supplier_default_payment_method_rejected(api, owner):
+    api.force_authenticate(user=owner)
+    resp = _create_supplier(api, default_payment_method="bank_account")
+    assert resp.status_code == 400
+    assert "default_payment_method" in resp.json()
+
+
+def test_bank_transfer_alias_normalized_to_bank(api, owner):
+    api.force_authenticate(user=owner)
+    resp = _create_supplier(api, default_payment_method="bank_transfer")
+    assert resp.status_code == 201, resp.content
+    assert resp.json()["default_payment_method"] == PaymentMethod.BANK
+
+
+def test_supplier_bank_default_maps_to_purchase_bank_transfer():
+    from apps.core.payment_methods import supplier_default_to_purchase_payment_method
+
+    assert supplier_default_to_purchase_payment_method("bank") == "bank_transfer"
+    assert supplier_default_to_purchase_payment_method("credit") == "credit"
+    assert supplier_default_to_purchase_payment_method("cash") == "cash"

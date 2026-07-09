@@ -5,6 +5,7 @@ import type { ApiListFilters } from "@/services/crud/types";
 import { request } from "./api/client";
 import { ENDPOINTS } from "./api/endpoints";
 import type { SupplierLedgerEntry, SupplierRow } from "@/shared/types/entities";
+import { normalizeSupplierPaymentMethod } from "@/shared/utils/supplierPaymentMethod";
 import * as supplierMock from "./mock/supplierService.mock";
 
 const crud = createCrudService<ApiSupplierList, ApiSupplierDetail>(ENDPOINTS.tenant.suppliers);
@@ -121,7 +122,7 @@ export function mapApiSupplierDetailToForm(row: ApiSupplierDetail): SupplierForm
     openingBalance: parseAmount(row.opening_balance),
     openingBalanceType: reverseOpeningBalanceType(row.opening_balance_type ?? "zero"),
     paymentTermsDays: row.payment_terms_days ?? 0,
-    defaultPaymentMethod: row.default_payment_method ?? "bank_transfer",
+    defaultPaymentMethod: normalizeSupplierPaymentMethod(row.default_payment_method),
     trackBalance: row.track_balance !== false,
     notes: row.notes ?? "",
     isActive: row.is_active !== false,

@@ -21,6 +21,7 @@ import { FormErrors } from "@/shared/components/FormErrors";
 import { ApiError } from "@/services/api/errors";
 import { createSupplier, updateSupplier, getSupplierDetail, buildSupplierCreatePayload, buildSupplierUpdatePayload } from "@/services/supplierService";
 import { canCreateSupplier, canEditSupplier } from "@/shared/utils/permissions";
+import { supplierPaymentMethodOptions } from "@/shared/utils/supplierPaymentMethod";
 import { getSupplierStatementReport } from "@/services/reportsService";
 import { getDefaultStatementDateRange } from "@/shared/utils/dateRanges";
 import { parseAmount } from "@/services/crud/parse";
@@ -526,6 +527,7 @@ export function CreateSupplierScreen({ lang, role, permissions = [], onNavigate,
     }
   };
   const EMIRATES = ["دبي", "أبوظبي", "الشارقة", "عجمان", "رأس الخيمة", "أم القيوين", "الفجيرة"].map(e => ({ value: e, label: e }));
+  const PAYMENT_METHOD_OPTIONS = supplierPaymentMethodOptions(lang);
   const CATEGORIES = [
     { value: "food_company", label: isRTL ? "شركة مواد غذائية" : "Food Company" },
     { value: "farm",         label: isRTL ? "مزرعة دواجن" : "Poultry Farm" },
@@ -602,7 +604,7 @@ export function CreateSupplierScreen({ lang, role, permissions = [], onNavigate,
           <FSelect label={isRTL ? "شروط الدفع الافتراضية" : "Default Payment Terms"} value={payTerms} onChange={v => canSetFinancials && setPayTerms(v)}
             options={[{ value: "0", label: isRTL ? "فوري" : "Immediate" }, { value: "7", label: isRTL ? "7 أيام" : "7 days" }, { value: "15", label: isRTL ? "15 يوم" : "15 days" }, { value: "30", label: isRTL ? "30 يوم" : "30 days" }]} />
           <FSelect label={isRTL ? "طريقة الدفع الافتراضية" : "Default Payment Method"} value={payMethod} onChange={v => canSetFinancials && setPayMethod(v)}
-            options={[{ value: "bank", label: isRTL ? "حساب بنكي" : "Bank Transfer" }, { value: "cash", label: isRTL ? "كاش" : "Cash" }, { value: "cheque", label: isRTL ? "شيك" : "Cheque" }, { value: "other", label: isRTL ? "أخرى" : "Other" }]} />
+            options={PAYMENT_METHOD_OPTIONS} />
         </div>
         <div className="mt-4 flex items-center justify-between py-2.5 border-t border-slate-100">
           <div><div className="text-sm font-bold text-slate-700">{isRTL ? "متابعة رصيد المورد" : "Track Supplier Balance"}</div><div className="text-xs text-slate-400 font-semibold">{isRTL ? "يمكن إيقافه لمورد الكاش إذا لم تكن هناك مستحقات" : "Can disable for cash suppliers with no payables"}</div></div>
@@ -628,7 +630,7 @@ export function CreateSupplierScreen({ lang, role, permissions = [], onNavigate,
           <FSelect label={isRTL ? "شروط الدفع الافتراضية" : "Default Payment Terms"} value={payTerms} onChange={v => canAccess && setPayTerms(v)}
             options={[{ value: "0", label: isRTL ? "فوري" : "Immediate" }, { value: "7", label: isRTL ? "7 أيام" : "7 days" }, { value: "15", label: isRTL ? "15 يوم" : "15 days" }, { value: "30", label: isRTL ? "30 يوم" : "30 days" }]} />
           <FSelect label={isRTL ? "طريقة الدفع الافتراضية" : "Default Payment Method"} value={payMethod} onChange={v => canAccess && setPayMethod(v)}
-            options={[{ value: "bank", label: isRTL ? "حساب بنكي" : "Bank Transfer" }, { value: "cash", label: isRTL ? "كاش" : "Cash" }, { value: "cheque", label: isRTL ? "شيك" : "Cheque" }, { value: "other", label: isRTL ? "أخرى" : "Other" }]} />
+            options={PAYMENT_METHOD_OPTIONS} />
         </div>
         <div className="mt-4"><FInput label={isRTL ? "ملاحظات" : "Notes"} value={notes} onChange={setNotes} /></div>
       </Card>

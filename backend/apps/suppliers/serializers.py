@@ -2,6 +2,8 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
+from apps.core.enums import PaymentMethod
+
 from .models import (
     OpeningBalanceType,
     Supplier,
@@ -81,6 +83,16 @@ class SupplierCreateUpdateSerializer(serializers.ModelSerializer):
                         {f: "Use the opening-balance edit action (requires reason)."}
                     )
         return attrs
+
+    def validate_default_payment_method(self, value):
+        from apps.core.payment_methods import normalize_supplier_default_payment_method
+
+        if not value:
+            return PaymentMethod.CASH
+        try:
+            return normalize_supplier_default_payment_method(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
 
 
 class SupplierLedgerEntrySerializer(serializers.ModelSerializer):
