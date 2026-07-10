@@ -345,6 +345,91 @@ def test_backdated_purchase_approve_via_api(api, company, owner):
     assert resp.data["invoice_date"] == str(past)
 
 
+def test_frontend_style_backdated_purchase_approve_flow(api, company, owner):
+    """Mimics LivePurchaseInvoiceScreen: PATCH header/lines then approve."""
+    from apps.payments.models import MoneyAccount
+
+    supplier = _supplier(company)
+    product = _product(company, sku="PBD-FLOW", purchase_price_type="piece")
+    past = date.today() - timedelta(days=7)
+    api.force_authenticate(owner)
+    resp = api.post(
+        PURCHASES_URL,
+        _purchase_payload(supplier, product, past, backdate_reason="سبب متأخر"),
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    inv_id = resp.data["id"]
+    line_id = resp.data["lines"][0]["id"]
+    resp = api.patch(
+        f"{PURCHASES_URL}{inv_id}/",
+        {
+            "supplier": supplier.id,
+            "invoice_date": str(past),
+            "backdate_reason": "سبب متأخر",
+            "payment_method": "credit",
+            "money_account": None,
+            "amount_paid": "0",
+            "vat_rate": "0.00",
+            "slaughterhouse_supplier": None,
+            "slaughterhouse_deduction_amount": "0",
+            "transport_supplier": None,
+            "transport_deduction_amount": "0",
+            "deduction_notes": "",
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    resp = api.patch(
+        f"{PURCHASES_URL}{inv_id}/lines/{line_id}/",
+        {
+            "quantity_cartons": "0",
+            "quantity_pieces": "100",
+            "quantity_kg": "0",
+            "unit_price": "10",
+            "price_type": "piece",
+            "vat_rate": "0",
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    resp = api.post(
+        f"{PURCHASES_URL}{inv_id}/approve/",
+        {"reason": "اعتماد فاتورة الشراء", "backdate_reason": "سبب متأخر"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    assert resp.data["status"] == "approved"
+
+    cashbox = MoneyAccount.objects.create(
+        company=company, name="Cash", account_type="cashbox",
+        opening_balance=Decimal("1000"), current_balance=Decimal("1000"), currency="AED",
+    )
+    resp = api.post(
+        PURCHASES_URL,
+        _purchase_payload(supplier, product, past, backdate_reason="سبب كاش"),
+        format="json",
+    )
+    inv_id2 = resp.data["id"]
+    api.patch(
+        f"{PURCHASES_URL}{inv_id2}/",
+        {
+            "payment_method": "cash",
+            "money_account": cashbox.id,
+            "amount_paid": "500",
+            "vat_rate": "0.00",
+            "backdate_reason": "سبب كاش",
+        },
+        format="json",
+    )
+    resp = api.post(
+        f"{PURCHASES_URL}{inv_id2}/approve/",
+        {"reason": "اعتماد كاش", "backdate_reason": "سبب كاش"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+
+
 def test_backdated_sales_approve_via_api(api, company, owner):
     customer = _customer(company)
     product = _product(company, sku="SBD11")
