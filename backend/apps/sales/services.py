@@ -543,7 +543,7 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None,
     reason = require_reason_for_sensitive_action("approve_sales_invoice", reason)
 
     invoice = (
-        SalesInvoice.objects.select_for_update()
+        SalesInvoice.objects.select_for_update(of=("self",))
         .select_related("customer")
         .get(pk=invoice.pk)
     )
@@ -682,7 +682,7 @@ def cancel_sales_invoice(*, invoice, user, reason) -> SalesInvoice:
     reason = require_reason_for_sensitive_action("cancel_sales_invoice", reason)
 
     invoice = (
-        SalesInvoice.objects.select_for_update()
+        SalesInvoice.objects.select_for_update(of=("self",))
         .select_related("customer")
         .get(pk=invoice.pk)
     )
@@ -767,7 +767,7 @@ def create_collection_adjustment(*, invoice, user, amount, reason,
     if amount <= 0:
         raise ValidationError({"amount": "Amount must be positive."})
 
-    invoice = SalesInvoice.objects.select_for_update().select_related("customer").get(
+    invoice = SalesInvoice.objects.select_for_update(of=("self",)).select_related("customer").get(
         pk=invoice.pk
     )
     if invoice.status not in (

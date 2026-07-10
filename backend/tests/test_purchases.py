@@ -840,6 +840,42 @@ def test_bank_purchase_approve_deducts_bank_account(company, owner):
     assert supplier.current_balance == Decimal("75.00")
 
 
+def test_approve_backdated_credit_purchase_null_optional_fks(company, owner):
+    """PostgreSQL regression: null money_account / deduction suppliers must not 500 on approve.
+
+    PINV-00019 on firstview failed with:
+    NotSupportedError: FOR UPDATE cannot be applied to the nullable side of an outer join
+  """
+    from datetime import timedelta
+
+    supplier = _supplier(company, sku="PREG")
+    product = _product(company, sku="PREG-P")
+    past = date.today() - timedelta(days=6)
+    inv = services.create_purchase_invoice(
+        company=company,
+        supplier=supplier,
+        created_by=owner,
+        invoice_date=past,
+        backdate_reason="سبب تاريخ سابق",
+        payment_method="credit",
+        amount_paid=Decimal("0"),
+        money_account=None,
+        vat_rate=Decimal("0"),
+        slaughterhouse_supplier=None,
+        transport_supplier=None,
+        lines=[_line(product, quantity_kg="15", unit_price="10", price_type="kg")],
+    )
+    approved = services.approve_purchase_invoice(
+        invoice=inv,
+        user=owner,
+        reason="اعتماد فاتورة آجلة",
+        backdate_reason="سبب تاريخ سابق",
+    )
+    assert approved.status == PurchaseStatus.APPROVED
+    supplier.refresh_from_db()
+    assert supplier.current_balance == Decimal("150.00")
+
+
 def test_credit_purchase_posts_supplier_payable_only(company, owner):
     supplier = _supplier(company, sku="SCRED")
     product = _product(company, sku="PCRED")

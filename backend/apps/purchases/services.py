@@ -704,7 +704,7 @@ def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> Pu
     reason = require_reason_for_sensitive_action("approve_purchase_invoice", reason)
 
     invoice = (
-        PurchaseInvoice.objects.select_for_update()
+        PurchaseInvoice.objects.select_for_update(of=("self",))
         .select_related("supplier", "money_account", "slaughterhouse_supplier", "transport_supplier")
         .get(pk=invoice.pk)
     )
@@ -890,7 +890,7 @@ def cancel_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
     reason = require_reason_for_sensitive_action("cancel_purchase_invoice", reason)
 
     invoice = (
-        PurchaseInvoice.objects.select_for_update()
+        PurchaseInvoice.objects.select_for_update(of=("self",))
         .select_related("supplier", "slaughterhouse_supplier", "transport_supplier")
         .get(pk=invoice.pk)
     )

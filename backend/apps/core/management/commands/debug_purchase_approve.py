@@ -7,6 +7,7 @@ import traceback
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.accounts.models import TenantRole
 from apps.purchases import services as purchase_services
 from apps.purchases.models import PurchaseInvoice, PurchaseStatus
 from apps.tenants.models import Company
@@ -49,7 +50,7 @@ class Command(BaseCommand):
         if invoice is None:
             raise CommandError(f"Invoice {invoice_number} not found for {subdomain}")
 
-        self.stdout.write(f"Company: {company.id} {company.name}")
+        self.stdout.write(f"Company: {company.id} {company.name_ar} ({company.subdomain})")
         self.stdout.write(
             f"Invoice: {invoice.id} {invoice.invoice_number} status={invoice.status} "
             f"date={invoice.invoice_date} vat_rate={invoice.vat_rate} "
@@ -75,7 +76,11 @@ class Command(BaseCommand):
 
         User = get_user_model()
         user = (
-            User.objects.filter(company=company, is_active=True, role__in=("owner", "admin"))
+            User.objects.filter(
+                company=company,
+                is_active=True,
+                role__in=(TenantRole.OWNER_ADMIN, TenantRole.ACCOUNTANT),
+            )
             .order_by("id")
             .first()
         )
