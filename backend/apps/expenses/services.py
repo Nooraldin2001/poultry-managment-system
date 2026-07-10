@@ -37,6 +37,7 @@ from . import calculations as calc
 from .models import (
     Expense,
     ExpenseCategory,
+    ExpensePaymentMethod,
     ExpenseScope,
     ExpenseStatus,
     ExpenseStatusHistory,
@@ -197,6 +198,7 @@ def create_expense(
     purchase_link_behavior=PurchaseLinkBehavior.NONE,
     notes="",
     reason="",
+    money_account=None,
 ) -> Expense:
     _check_category(company, category)
     linked_purchase_invoice = _check_purchase(company, linked_purchase_invoice)
@@ -228,6 +230,7 @@ def create_expense(
         vat_amount=vat_amount,
         total_amount=total_amount,
         payment_method=payment_method,
+        money_account=money_account,
         reference_number=reference_number,
         vendor_name=vendor_name,
         employee_name=employee_name,
@@ -253,6 +256,31 @@ def create_expense(
         )
         expense.related_purchase_adjustment = adjustment
         expense.save(update_fields=["related_purchase_adjustment", "updated_at"])
+
+    if payment_method != ExpensePaymentMethod.OTHER:
+        from apps.payments import services as payment_services
+        from apps.payments.models import MoneyDirection, MoneyMovementType
+        from apps.payments.treasury_integration import validate_money_account_for_flow
+
+        validate_money_account_for_flow(
+            payment_method=payment_method,
+            money_account=money_account,
+            amount=total_amount,
+        )
+        if money_account:
+            payment_services.post_money_movement(
+                company=company,
+                money_account=money_account,
+                movement_type=MoneyMovementType.EXPENSE_PAYMENT,
+                direction=MoneyDirection.OUT,
+                amount=total_amount,
+                reference_type="expense",
+                reference_id=expense.id,
+                description=f"Expense {expense.expense_number}",
+                reason=reason or "expense payment",
+                user=created_by,
+                movement_date=expense_date,
+            )
 
     _record_status_history(expense, "", ExpenseStatus.POSTED, "", created_by)
 
@@ -285,7 +313,7 @@ def create_expense(
 def cancel_expense(*, expense, user, reason) -> Expense:
     reason = require_reason_for_sensitive_action("expense_cancel", reason)
 
-    expense = Expense.objects.select_for_update().get(pk=expense.pk)
+    expense = Expense.objects.select_for_update().select_related("money_account").get(pk=expense.pk)
     if expense.status == ExpenseStatus.CANCELLED:
         raise ValidationError("Expense is already cancelled.")
 
@@ -301,6 +329,34 @@ def cancel_expense(*, expense, user, reason) -> Expense:
         adj.delete()
         recalculate_purchase_invoice(invoice)
         expense.related_purchase_adjustment = None
+
+    if expense.payment_method != ExpensePaymentMethod.OTHER and expense.money_account_id:
+        from apps.payments import services as payment_services
+        from apps.payments.models import MoneyDirection, MoneyMovement, MoneyMovementType
+        from django.db.models import Sum
+
+        paid_out = (
+            MoneyMovement.objects.filter(
+                company=expense.company,
+                movement_type=MoneyMovementType.EXPENSE_PAYMENT,
+                direction=MoneyDirection.OUT,
+                reference_type="expense",
+                reference_id=str(expense.id),
+            ).aggregate(s=Sum("amount"))["s"] or ZERO
+        )
+        if paid_out > 0:
+            payment_services.post_money_movement(
+                company=expense.company,
+                money_account=expense.money_account,
+                movement_type=MoneyMovementType.REFUND,
+                direction=MoneyDirection.IN,
+                amount=paid_out,
+                reference_type="expense_cancel",
+                reference_id=expense.id,
+                description=f"Cancel expense {expense.expense_number}",
+                reason=reason,
+                user=user,
+            )
 
     expense.status = ExpenseStatus.CANCELLED
     expense.cancellation_reason = reason
@@ -387,6 +443,7 @@ def generate_expense_from_recurring(
     recurring_expense,
     user,
     target_date=None,
+    money_account=None,
 ) -> Expense:
     recurring = RecurringExpense.objects.select_for_update().get(pk=recurring_expense.pk)
     if not recurring.is_active:
@@ -422,6 +479,7 @@ def generate_expense_from_recurring(
         reference_number=ref,
         vendor_name=recurring.vendor_name,
         notes=recurring.notes,
+        money_account=money_account,
     )
 
     recurring.next_due_date = _advance_due_date(target_date, recurring.recurrence)

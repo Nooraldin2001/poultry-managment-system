@@ -204,10 +204,14 @@ def recalculate_purchase_invoice(invoice) -> PurchaseInvoice:
     lines = list(invoice.lines.all())
     adjustments = list(invoice.adjustments.all())
 
-    header_vat_enabled = _d(invoice.vat_rate) > 0
+    header_vat_rate = _d(invoice.vat_rate)
+    header_vat_enabled = header_vat_rate > 0
     subtotal = ZERO
     for line in lines:
-        line_vat_rate = line.vat_rate if header_vat_enabled else ZERO
+        if header_vat_enabled:
+            line_vat_rate = _d(line.vat_rate) if _d(line.vat_rate) > 0 else header_vat_rate
+        else:
+            line_vat_rate = ZERO
         line.line_subtotal, line.vat_amount, line.line_total = _line_money(
             price_type=line.price_type, unit_price=line.unit_price,
             cartons=line.quantity_cartons, pieces=line.quantity_pieces,
@@ -398,7 +402,7 @@ def _create_line(company, invoice, data, *, default_sort=0, user=None) -> Purcha
         quantity_kg=_d(data.get("quantity_kg")),
         unit_price=unit_price,
         price_type=price_type,
-        vat_rate=_d(data.get("vat_rate")),
+        vat_rate=_d(data.get("vat_rate", invoice.vat_rate)),
         notes=data.get("notes", ""),
         sort_order=data.get("sort_order", default_sort),
     )
@@ -1234,7 +1238,10 @@ def build_purchase_print_preview(invoice, request=None) -> dict:
                 "unit_price": str(ln.unit_price),
                 "price_type": ln.price_type,
                 "line_subtotal": str(ln.line_subtotal),
+                "line_vat_amount": str(ln.vat_amount),
                 "line_total": str(ln.line_total),
+                # Print table Total column = ex-VAT subtotal (footer shows VAT once).
+                "display_total": str(ln.line_subtotal),
             }
             for ln in lines
         ],

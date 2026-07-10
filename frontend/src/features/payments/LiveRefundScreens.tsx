@@ -12,6 +12,13 @@ import {
   getPaymentMovementPrintPreviewRaw,
   listPaymentMovementRows,
 } from "@/services/paymentService";
+import {
+  eligibleMoneyAccounts,
+  formatMoneyAccountLabel,
+  listMoneyAccounts,
+  mapTreasuryPaymentMethod,
+  type MoneyAccountRow,
+} from "@/services/treasuryService";
 import { ApiError } from "@/services/api/errors";
 import { LoadingState } from "@/shared/components/ApiStates";
 import { FormErrors } from "@/shared/components/FormErrors";
@@ -65,6 +72,8 @@ export function LiveCustomerRefundScreen({
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [method, setMethod] = useState<PayMethod>("cash");
+  const [moneyAccountId, setMoneyAccountId] = useState("");
+  const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccountRow[]>([]);
   const [date, setDate] = useState(todayIso());
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
@@ -75,6 +84,18 @@ export function LiveCustomerRefundScreen({
       .then((rows) => setCustomers(rows.map((c) => ({ id: c.id, name: c.nameAr ?? c.name, balance: c.balance }))))
       .finally(() => setLoadingParties(false));
   }, []);
+
+  useEffect(() => {
+    void listMoneyAccounts()
+      .then(setMoneyAccounts)
+      .catch(() => setMoneyAccounts([]));
+  }, []);
+
+  useEffect(() => {
+    setMoneyAccountId("");
+  }, [method]);
+
+  const eligibleAccounts = eligibleMoneyAccounts(moneyAccounts, method);
 
   const cust = customers.find((c) => c.id === custId);
 
@@ -93,14 +114,15 @@ export function LiveCustomerRefundScreen({
 
   const submit = async () => {
     const amtNum = parseFloat(amount) || 0;
-    if (!custId || amtNum <= 0 || !reason) return;
+    if (!custId || amtNum <= 0 || !reason || !moneyAccountId) return;
     setSubmitting(true);
     setFieldErrors({});
     try {
       const row = await createCustomerRefund({
         customer: Number(custId),
         amount: String(amtNum),
-        payment_method: method,
+        payment_method: mapTreasuryPaymentMethod(method),
+        money_account: Number(moneyAccountId),
         movement_date: date,
         reason,
         notes: reason,
@@ -150,14 +172,31 @@ export function LiveCustomerRefundScreen({
                 { value: "cash", label: isRTL ? "كاش" : "Cash" },
                 { value: "bank", label: isRTL ? "تحويل بنكي" : "Bank" },
                 { value: "cheque", label: isRTL ? "شيك" : "Cheque" },
-                { value: "other", label: isRTL ? "أخرى" : "Other" },
               ]} />
               <FInput label={isRTL ? "التاريخ" : "Date"} type="date" value={date} onChange={setDate} />
             </div>
+            {eligibleAccounts.length === 0 ? (
+              <p className="text-xs font-bold text-amber-600">
+                {method === "cash"
+                  ? (isRTL ? "لا توجد خزنة نشطة" : "No active cashbox found")
+                  : (isRTL ? "لا توجد حسابات بنكية نشطة" : "No active bank account found")}
+              </p>
+            ) : (
+              <FSelect
+                label={method === "cash" ? (isRTL ? "الخزنة *" : "Cashbox *") : (isRTL ? "الحساب البنكي *" : "Bank Account *")}
+                value={moneyAccountId}
+                onChange={setMoneyAccountId}
+                required
+                options={[
+                  { value: "", label: method === "cash" ? (isRTL ? "اختر الخزنة" : "Select cashbox") : (isRTL ? "اختر الحساب" : "Select account") },
+                  ...eligibleAccounts.map((acc) => ({ value: acc.id, label: formatMoneyAccountLabel(acc) })),
+                ]}
+              />
+            )}
           </Card>
           <div className="flex gap-3 justify-between flex-wrap">
             <Btn variant="outline" onClick={() => onNavigate("payments")}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
-            <Btn variant="amber" disabled={!custId || !amount || !reason || submitting} onClick={() => void submit()}>
+            <Btn variant="amber" disabled={!custId || !amount || !reason || !moneyAccountId || submitting} onClick={() => void submit()}>
               <Check size={15} />
               {isRTL ? "تسجيل الاسترجاع" : "Record Refund"}
             </Btn>
@@ -190,6 +229,8 @@ export function LiveSupplierRefundScreen({
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [method, setMethod] = useState<PayMethod>("bank");
+  const [moneyAccountId, setMoneyAccountId] = useState("");
+  const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccountRow[]>([]);
   const [date, setDate] = useState(todayIso());
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
@@ -200,6 +241,18 @@ export function LiveSupplierRefundScreen({
       .then((rows) => setSuppliers(rows.map((s) => ({ id: s.id, name: s.name, balance: s.balance }))))
       .finally(() => setLoadingParties(false));
   }, []);
+
+  useEffect(() => {
+    void listMoneyAccounts()
+      .then(setMoneyAccounts)
+      .catch(() => setMoneyAccounts([]));
+  }, []);
+
+  useEffect(() => {
+    setMoneyAccountId("");
+  }, [method]);
+
+  const eligibleAccounts = eligibleMoneyAccounts(moneyAccounts, method);
 
   if (successId) {
     return (
@@ -216,14 +269,15 @@ export function LiveSupplierRefundScreen({
 
   const submit = async () => {
     const amtNum = parseFloat(amount) || 0;
-    if (!suppId || amtNum <= 0 || !reason) return;
+    if (!suppId || amtNum <= 0 || !reason || !moneyAccountId) return;
     setSubmitting(true);
     setFieldErrors({});
     try {
       const row = await createSupplierRefund({
         supplier: Number(suppId),
         amount: String(amtNum),
-        payment_method: method,
+        payment_method: mapTreasuryPaymentMethod(method),
+        money_account: Number(moneyAccountId),
         movement_date: date,
         reason,
         notes: reason,
@@ -263,10 +317,28 @@ export function LiveSupplierRefundScreen({
               ]} />
               <FInput label={isRTL ? "التاريخ" : "Date"} type="date" value={date} onChange={setDate} />
             </div>
+            {eligibleAccounts.length === 0 ? (
+              <p className="text-xs font-bold text-amber-600">
+                {method === "cash"
+                  ? (isRTL ? "لا توجد خزنة نشطة" : "No active cashbox found")
+                  : (isRTL ? "لا توجد حسابات بنكية نشطة" : "No active bank account found")}
+              </p>
+            ) : (
+              <FSelect
+                label={method === "cash" ? (isRTL ? "الخزنة *" : "Cashbox *") : (isRTL ? "الحساب البنكي *" : "Bank Account *")}
+                value={moneyAccountId}
+                onChange={setMoneyAccountId}
+                required
+                options={[
+                  { value: "", label: method === "cash" ? (isRTL ? "اختر الخزنة" : "Select cashbox") : (isRTL ? "اختر الحساب" : "Select account") },
+                  ...eligibleAccounts.map((acc) => ({ value: acc.id, label: formatMoneyAccountLabel(acc) })),
+                ]}
+              />
+            )}
           </Card>
           <div className="flex gap-3 justify-between flex-wrap">
             <Btn variant="outline" onClick={() => onNavigate("payments")}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
-            <Btn variant="amber" disabled={!suppId || !amount || !reason || submitting} onClick={() => void submit()}>
+            <Btn variant="amber" disabled={!suppId || !amount || !reason || !moneyAccountId || submitting} onClick={() => void submit()}>
               <Check size={15} />
               {isRTL ? "تسجيل الاسترجاع" : "Record Refund"}
             </Btn>

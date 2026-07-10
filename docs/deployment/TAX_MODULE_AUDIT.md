@@ -3,6 +3,15 @@
 **Date:** 2026-07-05  
 **Tenant:** `firstview` (`https://firstview.poultryhero.solutions`)
 
+## 2026-07-10 VAT calculation alignment
+
+- Purchase/sales invoices use **VAT-exclusive** unit prices; VAT applied once at line + invoice level.
+- Tax reports read `invoice.vat_amount` from approved documents — not duplicated line display totals.
+- Print preview table shows ex-VAT line totals; footer shows VAT once (`INVOICE_PRINT_TEMPLATES.md`).
+- VAT disabled (`vat_rate=0`): `vat_amount=0`; missing supplier TRN does not double-apply VAT.
+
+**Tests:** `test_purchase_kg_line_subtotal_before_vat`, `test_sales_kg_line_subtotal_before_vat`, `test_tax_report_uses_corrected_*_vat` in `tests/test_invoice_line_pricing.py`.
+
 ## Root cause
 
 1. **Missing date filters:** `TaxDashboardScreen` called `GET /api/v1/tenant/tax/summary/` without `date_from` / `date_to`. Backend `_date_params()` returns HTTP 400: `"date_from and date_to are required."`

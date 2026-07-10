@@ -18,6 +18,7 @@ from apps.expenses.models import (
     RecurrencePeriod,
     RecurringExpense,
 )
+from apps.payments.models import MoneyAccount, MoneyMovement, MoneyMovementType
 from apps.products.models import Product, ProductCategory, ProductType
 from apps.purchases import services as purchase_services
 from apps.purchases.models import (
@@ -80,6 +81,24 @@ def _draft_purchase(company, owner, **kwargs):
     )
 
 
+_treasury_seq = 0
+
+
+def _treasury_account(company, payment_method="cash"):
+    global _treasury_seq
+    _treasury_seq += 1
+    account_type = "bank" if payment_method in ("bank_transfer", "cheque") else "cashbox"
+    return MoneyAccount.objects.create(
+        company=company,
+        name=f"Treasury {account_type} {_treasury_seq}",
+        account_type=account_type,
+        opening_balance=Decimal("10000"),
+        current_balance=Decimal("10000"),
+        currency="AED",
+        is_active=True,
+    )
+
+
 def _create_expense(company, owner, category=None, **kwargs):
     if category is None:
         category, _ = ExpenseCategory.objects.get_or_create(
@@ -90,6 +109,9 @@ def _create_expense(company, owner, category=None, **kwargs):
                 category_type=ExpenseCategoryType.DAILY, is_active=True,
             ),
         )
+    payment_method = kwargs.get("payment_method", "cash")
+    if payment_method != "other" and "money_account" not in kwargs:
+        kwargs.setdefault("money_account", _treasury_account(company, payment_method))
     defaults = dict(
         company=company, category=category, created_by=owner,
         title="Fuel", expense_date=date.today(), amount=Decimal("100"),
@@ -169,9 +191,10 @@ def test_cross_tenant_purchase_rejected(company, owner, other_company, other_own
     with pytest.raises(ValidationError):
         services.create_expense(
             company=company, category=cat, created_by=owner,
-            title="Bad link", expense_date=date.today(), amount=Decimal("50"),
+        title="Bad link", expense_date=date.today(), amount=Decimal("50"),
             linked_purchase_invoice=inv,
             purchase_link_behavior=PurchaseLinkBehavior.EXPENSE_ONLY,
+            money_account=_treasury_account(company),
         )
 
 
@@ -196,6 +219,7 @@ def test_expense_only_counts_in_totals(company, owner):
         title="Transport", expense_date=date.today(), amount=Decimal("150"),
         linked_purchase_invoice=inv,
         purchase_link_behavior=PurchaseLinkBehavior.EXPENSE_ONLY,
+        money_account=_treasury_account(company),
     )
     summary = services.get_expense_summary(company)
     assert summary["total_expenses"] == Decimal("150.00")
@@ -204,7 +228,7 @@ def test_expense_only_counts_in_totals(company, owner):
 def test_reduce_payable_draft_creates_adjustment(company, owner):
     inv = _draft_purchase(company, owner)
     exp = services.create_expense(
-        company=company, category=_category(company, code="PL2"), created_by=owner,
+        company=company, category=_category(company, code="PL2"), created_by=owner, money_account=_treasury_account(company),
         title="Deduction", expense_date=date.today(), amount=Decimal("50"),
         linked_purchase_invoice=inv,
         purchase_link_behavior=PurchaseLinkBehavior.REDUCE_SUPPLIER_PAYABLE,
@@ -224,8 +248,8 @@ def test_reduce_payable_approved_blocked(company, owner):
     )
     with pytest.raises(ValidationError):
         services.create_expense(
-            company=company, category=_category(company, code="PL3"), created_by=owner,
-            title="Late deduction", expense_date=date.today(), amount=Decimal("50"),
+            company=company, category=_category(company, code="PL3"), created_by=owner, money_account=_treasury_account(company),
+        title="Late deduction", expense_date=date.today(), amount=Decimal("50"),
             linked_purchase_invoice=inv,
             purchase_link_behavior=PurchaseLinkBehavior.REDUCE_SUPPLIER_PAYABLE,
             reason="too late",
@@ -235,7 +259,7 @@ def test_reduce_payable_approved_blocked(company, owner):
 def test_increase_inventory_cost_draft_creates_adjustment(company, owner):
     inv = _draft_purchase(company, owner)
     exp = services.create_expense(
-        company=company, category=_category(company, code="PL4"), created_by=owner,
+        company=company, category=_category(company, code="PL4"), created_by=owner, money_account=_treasury_account(company),
         title="Transport cost", expense_date=date.today(), amount=Decimal("75"),
         linked_purchase_invoice=inv,
         purchase_link_behavior=PurchaseLinkBehavior.INCREASE_INVENTORY_COST,
@@ -253,8 +277,8 @@ def test_increase_inventory_cost_approved_blocked(company, owner):
     )
     with pytest.raises(ValidationError):
         services.create_expense(
-            company=company, category=_category(company, code="PL5"), created_by=owner,
-            title="Late cost", expense_date=date.today(), amount=Decimal("75"),
+            company=company, category=_category(company, code="PL5"), created_by=owner, money_account=_treasury_account(company),
+        title="Late cost", expense_date=date.today(), amount=Decimal("75"),
             linked_purchase_invoice=inv,
             purchase_link_behavior=PurchaseLinkBehavior.INCREASE_INVENTORY_COST,
             reason="too late",
@@ -264,7 +288,7 @@ def test_increase_inventory_cost_approved_blocked(company, owner):
 def test_purchase_linked_expense_audited(company, owner):
     inv = _draft_purchase(company, owner)
     exp = services.create_expense(
-        company=company, category=_category(company, code="PL6"), created_by=owner,
+        company=company, category=_category(company, code="PL6"), created_by=owner, money_account=_treasury_account(company),
         title="Deduction", expense_date=date.today(), amount=Decimal("30"),
         linked_purchase_invoice=inv,
         purchase_link_behavior=PurchaseLinkBehavior.REDUCE_SUPPLIER_PAYABLE,
@@ -318,7 +342,7 @@ def test_cancel_twice_blocked(company, owner):
 def test_cancel_removes_draft_purchase_adjustment(company, owner):
     inv = _draft_purchase(company, owner)
     exp = services.create_expense(
-        company=company, category=_category(company, code="CN1"), created_by=owner,
+        company=company, category=_category(company, code="CN1"), created_by=owner, money_account=_treasury_account(company),
         title="Deduction", expense_date=date.today(), amount=Decimal("40"),
         linked_purchase_invoice=inv,
         purchase_link_behavior=PurchaseLinkBehavior.REDUCE_SUPPLIER_PAYABLE,
@@ -348,7 +372,9 @@ def test_generate_expense_from_recurring(company, owner):
         title="Rent", amount=Decimal("2000"), recurrence=RecurrencePeriod.MONTHLY,
         start_date=date.today(),
     )
-    exp = services.generate_expense_from_recurring(recurring_expense=rec, user=owner)
+    exp = services.generate_expense_from_recurring(
+        recurring_expense=rec, user=owner, money_account=_treasury_account(company),
+    )
     assert exp.expense_scope == ExpenseScope.RECURRING_GENERATED
     assert exp.total_amount == Decimal("2000.00")
 
@@ -361,7 +387,9 @@ def test_next_due_date_advances(company, owner):
         title="Rent", amount=Decimal("1000"), recurrence=RecurrencePeriod.MONTHLY,
         start_date=start,
     )
-    services.generate_expense_from_recurring(recurring_expense=rec, user=owner)
+    services.generate_expense_from_recurring(
+        recurring_expense=rec, user=owner, money_account=_treasury_account(company),
+    )
     rec.refresh_from_db()
     assert rec.next_due_date == date(2026, 2, 15)
 
@@ -376,10 +404,12 @@ def test_duplicate_generation_blocked(company, owner):
     )
     services.generate_expense_from_recurring(
         recurring_expense=rec, user=owner, target_date=target,
+        money_account=_treasury_account(company),
     )
     with pytest.raises(ValidationError):
         services.generate_expense_from_recurring(
             recurring_expense=rec, user=owner, target_date=target,
+            money_account=_treasury_account(company),
         )
 
 
@@ -393,7 +423,9 @@ def test_inactive_recurring_cannot_generate(company, owner):
     rec.is_active = False
     rec.save(update_fields=["is_active"])
     with pytest.raises(ValidationError):
-        services.generate_expense_from_recurring(recurring_expense=rec, user=owner)
+        services.generate_expense_from_recurring(
+        recurring_expense=rec, user=owner, money_account=_treasury_account(company),
+    )
 
 
 # ── Voucher preview ───────────────────────────────────────────────────────────
@@ -469,20 +501,24 @@ def test_cancelled_excluded_from_profit_impact(company, owner):
 # ── Permissions / API ─────────────────────────────────────────────────────────
 def test_owner_can_create(api, company, owner):
     cat = _category(company, code="AP1")
+    cashbox = _treasury_account(company, "cash")
     api.force_authenticate(user=owner)
     resp = api.post(EXPENSES_URL, {
         "category": cat.id, "title": "Fuel", "expense_date": str(date.today()),
         "amount": "100.00", "expense_scope": "daily", "payment_method": "cash",
+        "money_account": cashbox.id,
     }, format="json")
     assert resp.status_code == 201
 
 
 def test_accountant_can_create(api, company, accountant):
     cat = _category(company, code="AP2")
+    cashbox = _treasury_account(company, "cash")
     api.force_authenticate(user=accountant)
     resp = api.post(EXPENSES_URL, {
         "category": cat.id, "title": "Rent", "expense_date": str(date.today()),
         "amount": "2000.00", "expense_scope": "monthly",
+        "payment_method": "cash", "money_account": cashbox.id,
     }, format="json")
     assert resp.status_code == 201
 

@@ -7,6 +7,12 @@ import type { TenantScreen } from "@/shared/types";
 import { IS_MOCK_MODE } from "@/services/config";
 import { useCustomers, useProducts } from "@/hooks/api/useTenantResources";
 import { getSalesDetail, salesPricePreview, salesStockCheck, approveSale, cancelSale } from "@/services/salesService";
+import {
+  eligibleMoneyAccounts,
+  formatMoneyAccountLabel,
+  listMoneyAccounts,
+  type MoneyAccountRow,
+} from "@/services/treasuryService";
 import { LoadingState, ErrorState, EmptyState, PermissionDeniedState, NotFoundState } from "@/shared/components/ApiStates";
 import { FormErrors } from "@/shared/components/FormErrors";
 import { ApiError } from "@/services/api/errors";
@@ -55,6 +61,8 @@ type Props = {
   onSaved?: (id: string) => void;
 };
 
+const DEFAULT_VAT_RATE = 5;
+
 export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigate, invoiceId, onSaved }: Props) {
   const isRTL = lang === "ar";
   const canApprove = role === "owner" || role === "accountant";
@@ -69,6 +77,8 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
   const [status, setStatus] = useState("draft");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [moneyAccountId, setMoneyAccountId] = useState("");
+  const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccountRow[]>([]);
   const [amountPaid, setAmountPaid] = useState("0");
   const [notes, setNotes] = useState("");
   const [vatEnabled, setVatEnabled] = useState(true);
@@ -92,6 +102,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
     setStatus("draft");
     setInvoiceNumber("");
     setPaymentMethod("cash");
+    setMoneyAccountId("");
     setAmountPaid("0");
     setNotes("");
     setVatEnabled(true);
@@ -113,10 +124,17 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
       kg: l.kg ?? l.qty,
       unitPrice: l.price,
       priceType: parsePriceType(l.unit),
-      vatRate: 5,
-      lineSubtotal: l.total,
+      vatRate: detail.invoice.vat > 0 ? DEFAULT_VAT_RATE : 0,
+      lineSubtotal: l.subtotal,
       lineTotal: l.total,
     }));
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    void listMoneyAccounts()
+      .then(setMoneyAccounts)
+      .catch(() => setMoneyAccounts([]));
+  }, []);
 
   const loadDoc = useCallback(async () => {
     if (!invoiceId || IS_MOCK_MODE) return;
@@ -132,6 +150,8 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
       setInvoiceDate(detail.invoice.date?.slice(0, 10) || todayIso());
       setBackdateReason(detail.backdateReason ?? "");
       setAmountPaid(String(detail.invoice.paid));
+      setPaymentMethod(detail.invoice.paymentMethod ?? "cash");
+      setMoneyAccountId(detail.invoice.moneyAccountId ?? "");
       setVatEnabled(detail.invoice.vat > 0);
       setLines(mapDetailLines(detail));
     } catch (err) {
@@ -157,7 +177,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
 
   const totals = useMemo(() => {
     const subtotal = lines.reduce((s, l) => s + l.lineSubtotal, 0);
-    const vat = vatEnabled ? Math.round(subtotal * 5) / 100 : 0;
+    const vat = vatEnabled ? Math.round(subtotal * DEFAULT_VAT_RATE) / 100 : 0;
     const total = subtotal + vat;
     const paid = parseAmount(amountPaid);
     return { subtotal, vat, total, paid, balance: Math.max(0, total - paid) };
@@ -169,6 +189,50 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
       payload.backdate_reason = backdateReason.trim();
     }
     return payload;
+  };
+
+  const validateSalesHeader = (): boolean => {
+    if (!customerId) {
+      toast.error(isRTL ? "اختر العميل أولاً" : "Select a customer first");
+      return false;
+    }
+    if (isBackdatedDate(invoiceDate) && canBackdate && !backdateReason.trim()) {
+      const msg = isRTL ? "سبب إدخال تاريخ سابق مطلوب" : "Backdate reason is required for backdated invoices";
+      setFieldErrors({ backdate_reason: [msg] });
+      toast.error(msg);
+      return false;
+    }
+    const paid = parseAmount(amountPaid || "0");
+    if (paid > totals.total) {
+      toast.error(isRTL ? "المبلغ المدفوع لا يمكن أن يتجاوز الإجمالي" : "Paid amount cannot exceed total");
+      return false;
+    }
+    if (paymentMethod === "cash" && paid > 0 && !moneyAccountId) {
+      toast.error(isRTL ? "اختر الخزنة" : "Select a cashbox");
+      return false;
+    }
+    if (paymentMethod === "bank_transfer" && paid > 0 && !moneyAccountId) {
+      toast.error(isRTL ? "اختر الحساب البنكي" : "Select a bank account");
+      return false;
+    }
+    return true;
+  };
+
+  const paymentPayload = (): Record<string, unknown> => {
+    if (paymentMethod === "credit") {
+      return { payment_method: "credit", money_account: null, amount_paid: "0" };
+    }
+    const selected = customers.find((c) => c.id === customerId);
+    const isCashCustomer = selected?.customerType === "cash";
+    const paidValue =
+      isCashCustomer || paymentMethod === "cash"
+        ? totals.total.toFixed(2)
+        : amountPaid || "0";
+    return {
+      payment_method: paymentMethod,
+      money_account: moneyAccountId ? Number(moneyAccountId) : null,
+      amount_paid: paidValue,
+    };
   };
 
   const ensureDraft = async (): Promise<string> => {
@@ -183,8 +247,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
     const created = await createDraftHeader("sales", {
       customer: Number(customerId),
       ...headerDatePayload(),
-      payment_method: paymentMethod,
-      amount_paid: amountPaid || "0",
+      ...paymentPayload(),
       notes,
       vat_rate: vatEnabled ? "5.00" : "0.00",
     });
@@ -194,24 +257,18 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
     return created.id;
   };
 
-  const saveHeader = async (id: string, overrides?: { amountPaid?: string }) => {
-    const selected = customers.find((c) => c.id === customerId);
-    const isCashCustomer = selected?.customerType === "cash";
-    const paidValue =
-      overrides?.amountPaid ??
-      (isCashCustomer || paymentMethod === "cash"
-        ? totals.total.toFixed(2)
-        : amountPaid || "0");
+  const saveHeader = async (id: string) => {
+    const payload = paymentPayload();
     await patchDraftHeader("sales", id, {
       customer: Number(customerId),
       ...headerDatePayload(),
-      payment_method: paymentMethod,
-      amount_paid: paidValue,
+      ...payload,
       vat_rate: vatEnabled ? "5.00" : "0.00",
       notes,
     });
-    if (paidValue !== amountPaid) {
-      setAmountPaid(paidValue);
+    const paidStr = String(payload.amount_paid ?? amountPaid);
+    if (paidStr !== amountPaid) {
+      setAmountPaid(paidStr);
     }
   };
 
@@ -231,7 +288,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
         kg: 0,
         unitPrice: prod.saleP,
         priceType: defaultLinePriceType(prod, "sales"),
-        vatRate: 5,
+        vatRate: vatEnabled ? DEFAULT_VAT_RATE : 0,
         lineSubtotal: 0,
         lineTotal: 0,
       };
@@ -335,10 +392,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
   };
 
   const handleSaveDraft = async () => {
-    if (!customerId) {
-      toast.error(isRTL ? "اختر العميل أولاً" : "Select a customer first");
-      return;
-    }
+    if (!validateSalesHeader()) return;
     setSaving(true);
     setFieldErrors({});
     setError(null);
@@ -357,6 +411,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
 
   const handleApprove = async (reason: string) => {
     if (!docId) return;
+    if (!validateSalesHeader()) return;
     setSaving(true);
     setFieldErrors({});
     setError(null);
@@ -422,6 +477,15 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
   if (error && !docId && invoiceId) return <ErrorState lang={lang} error={error} onRetry={() => void loadDoc()} />;
 
   const isDraft = status === "draft";
+  const accountSourceType: "cashbox" | "bank" | "" =
+    paymentMethod === "cash" ? "cashbox" : paymentMethod === "bank_transfer" ? "bank" : "";
+  const eligibleAccounts = eligibleMoneyAccounts(moneyAccounts, paymentMethod);
+
+  const handlePaymentMethodChange = (method: string) => {
+    setPaymentMethod(method);
+    setMoneyAccountId("");
+    if (method === "credit") setAmountPaid("0");
+  };
 
   return (
     <div className="p-3 lg:p-6 max-w-screen-xl mx-auto space-y-4 pb-24">
@@ -490,8 +554,8 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
                     <th className="p-2">{isRTL ? "كرتون" : "Ct"}</th>
                     <th className="p-2">{isRTL ? "كجم" : "KG"}</th>
                     <th className="p-2">{isRTL ? "نوع السعر" : "Price type"}</th>
-                    <th className="p-2">{isRTL ? "السعر" : "Unit price"}</th>
-                    <th className="p-2">{isRTL ? "الإجمالي" : "Total"}</th>
+                    <th className="p-2">{isRTL ? "السعر قبل الضريبة" : "Price before VAT"}</th>
+                    <th className="p-2">{isRTL ? "الإجمالي قبل الضريبة" : "Subtotal before VAT"}</th>
                     <th className="p-2" />
                   </tr>
                 </thead>
@@ -557,7 +621,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
                           />
                         </div>
                       </td>
-                      <td className="p-2 font-mono font-bold">{line.lineTotal.toFixed(2)}</td>
+                      <td className="p-2 font-mono font-bold">{line.lineSubtotal.toFixed(2)}</td>
                       <td className="p-2">
                         {isDraft && canDeleteLine && (
                           <button type="button" onClick={() => void removeLine(line)} className="text-red-500">
@@ -597,25 +661,83 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
         <div className="space-y-4">
           <div className="bg-white rounded-2xl border p-4 space-y-2 text-sm">
             <div className="flex justify-between font-bold">
-              <span>{isRTL ? "المجموع" : "Subtotal"}</span>
+              <span>{isRTL ? "الإجمالي قبل الضريبة" : "Subtotal before VAT"}</span>
               <span className="font-mono">AED {totals.subtotal.toFixed(2)}</span>
             </div>
             <div className="flex justify-between font-bold">
-              <span>{isRTL ? "ض.ق.م" : "VAT"}</span>
+              <span>
+                {vatEnabled
+                  ? isRTL ? "ضريبة القيمة المضافة" : "VAT"
+                  : isRTL ? "بدون ضريبة" : "VAT disabled"}
+              </span>
               <span className="font-mono">AED {totals.vat.toFixed(2)}</span>
             </div>
             <div className="flex justify-between font-black text-[#0F2C59]">
-              <span>{isRTL ? "الإجمالي" : "Total"}</span>
+              <span>{isRTL ? "الإجمالي شامل الضريبة" : "Total incl. VAT"}</span>
               <span className="font-mono">AED {totals.total.toFixed(2)}</span>
             </div>
             <label className="block pt-2 font-bold">{isRTL ? "طريقة الدفع" : "Payment"}</label>
-            <select value={paymentMethod} disabled={!isDraft} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full rounded-xl border px-2 py-2">
+            <select
+              value={paymentMethod}
+              disabled={!isDraft}
+              onChange={(e) => handlePaymentMethodChange(e.target.value)}
+              className="w-full rounded-xl border px-2 py-2"
+            >
               <option value="cash">{isRTL ? "نقدي" : "Cash"}</option>
               <option value="bank_transfer">{isRTL ? "تحويل" : "Bank"}</option>
               <option value="credit">{isRTL ? "آجل" : "Credit"}</option>
             </select>
-            <label className="block font-bold">{isRTL ? "المبلغ المدفوع" : "Amount paid"}</label>
-            <input value={amountPaid} disabled={!isDraft} onChange={(e) => setAmountPaid(e.target.value)} className="w-full rounded-xl border px-2 py-2 font-mono" />
+            {accountSourceType && parseAmount(amountPaid || "0") > 0 && (
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">
+                  {accountSourceType === "cashbox"
+                    ? (isRTL ? "الخزنة" : "Cashbox")
+                    : (isRTL ? "الحساب البنكي" : "Bank Account")}
+                </label>
+                {eligibleAccounts.length === 0 ? (
+                  <p className="text-xs font-bold text-amber-600">
+                    {accountSourceType === "cashbox"
+                      ? (isRTL ? "لا توجد خزنة نشطة" : "No active cashbox found")
+                      : (isRTL ? "لا توجد حسابات بنكية نشطة" : "No active bank account found")}
+                  </p>
+                ) : (
+                  <select
+                    value={moneyAccountId}
+                    disabled={!isDraft}
+                    onChange={(e) => setMoneyAccountId(e.target.value)}
+                    className="w-full rounded-xl border px-2 py-2 text-sm"
+                  >
+                    <option value="">
+                      {accountSourceType === "cashbox"
+                        ? (isRTL ? "— اختر الخزنة —" : "— Select cashbox —")
+                        : (isRTL ? "— اختر الحساب البنكي —" : "— Select bank account —")}
+                    </option>
+                    {eligibleAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {formatMoneyAccountLabel(acc)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+            {paymentMethod === "credit" ? (
+              <p className="text-xs text-slate-500">
+                {isRTL
+                  ? "بيع آجل — يُسجّل المبلغ كاملاً على رصيد العميل"
+                  : "Credit sale — the full amount goes to the customer balance"}
+              </p>
+            ) : (
+              <>
+                <label className="block font-bold">{isRTL ? "المبلغ المدفوع" : "Amount paid"}</label>
+                <input
+                  value={amountPaid}
+                  disabled={!isDraft}
+                  onChange={(e) => setAmountPaid(e.target.value)}
+                  className="w-full rounded-xl border px-2 py-2 font-mono"
+                />
+              </>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             {isDraft && (

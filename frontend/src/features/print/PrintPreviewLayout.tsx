@@ -179,14 +179,14 @@ export function PrintPreviewLayout({
                 {isRTL ? "الوحدة" : "Unit"}
               </th>
               <th className="py-2 font-black text-slate-500 text-center">
-                {isRTL ? "السعر" : "Price"}
+                {isRTL ? "السعر قبل الضريبة" : "Price before VAT"}
               </th>
               <th
                 className={`py-2 font-black text-slate-500 ${
                   isRTL ? "text-left" : "text-right"
                 }`}
               >
-                {isRTL ? "الإجمالي" : "Total"}
+                {isRTL ? "الإجمالي قبل الضريبة" : "Subtotal before VAT"}
               </th>
             </tr>
           </thead>

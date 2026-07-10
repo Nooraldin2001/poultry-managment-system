@@ -103,6 +103,7 @@ class _PaymentBaseSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
     reason = serializers.CharField(required=False, allow_blank=True)
     allocations = _AllocationInputSerializer(many=True, required=False)
+    money_account = serializers.IntegerField(required=False, allow_null=True)
 
     def validate_amount(self, value):
         if value <= 0:
@@ -148,6 +149,14 @@ class _PaymentBaseSerializer(serializers.Serializer):
             attrs["_resolved_allocations"] = resolved
         else:
             attrs["_resolved_allocations"] = []
+        account_id = attrs.pop("money_account", serializers.empty)
+        if account_id is not serializers.empty:
+            from apps.payments.treasury_integration import get_money_account
+
+            if account_id is None:
+                attrs["money_account"] = None
+            else:
+                attrs["money_account"] = get_money_account(self.context["company"], account_id)
         return attrs
 
 

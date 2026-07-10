@@ -25,6 +25,8 @@ interface ApiSalesList {
   total_amount: string;
   amount_paid: string;
   balance_due: string;
+  payment_method?: string;
+  money_account?: number | null;
   gross_profit?: string;
 }
 
@@ -45,6 +47,8 @@ interface ApiSalesLine {
   unit_price?: string;
   price_type?: string;
   price_source?: string;
+  line_subtotal?: string;
+  line_vat_amount?: string;
   line_total?: string;
 }
 
@@ -69,8 +73,10 @@ export function mapApiSalesToRow(row: ApiSalesList): SalesInvoiceRow {
     subtotal: parseAmount(row.subtotal),
     vat: parseAmount(row.vat_amount),
     total: parseAmount(row.total_amount),
+    paymentMethod: row.payment_method ?? "credit",
     paid: parseAmount(row.amount_paid),
     balance: parseAmount(row.balance_due),
+    moneyAccountId: row.money_account != null ? String(row.money_account) : "",
     grossProfit: parseAmount(row.gross_profit),
   };
 }
@@ -89,6 +95,7 @@ function mapSalesLine(line: ApiSalesLine): SalesInvoiceLineRow {
     kg,
     unit: line.price_type ?? line.unit ?? "kg",
     price: parseAmount(line.unit_price),
+    subtotal: parseAmount(line.line_subtotal ?? line.line_total),
     total: parseAmount(line.line_total),
   };
 }

@@ -155,6 +155,7 @@ class ExpenseViewSet(TenantScopedViewSet):
             purchase_link_behavior=vd.get("purchase_link_behavior", "none"),
             notes=vd.get("notes", ""),
             reason=vd.get("reason", ""),
+            money_account=vd.get("money_account"),
         )
         return Response(ExpenseDetailSerializer(expense).data, status=status.HTTP_201_CREATED)
 
@@ -292,12 +293,16 @@ class RecurringExpenseViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["post"])
     def generate(self, request, pk=None):
         recurring = self.get_object()
-        serializer = RecurringExpenseGenerateSerializer(data=request.data)
+        serializer = RecurringExpenseGenerateSerializer(
+            data=request.data, context={"company": request.user.company},
+        )
         serializer.is_valid(raise_exception=True)
+        vd = serializer.validated_data
         expense = services.generate_expense_from_recurring(
             recurring_expense=recurring,
             user=request.user,
-            target_date=serializer.validated_data.get("target_date"),
+            target_date=vd.get("target_date"),
+            money_account=vd.get("money_account"),
         )
         return Response(ExpenseDetailSerializer(expense).data, status=status.HTTP_201_CREATED)
 

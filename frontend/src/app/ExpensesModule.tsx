@@ -21,6 +21,12 @@ import { toModuleExpense } from "./moduleMappers";
 import { IS_MOCK_MODE } from "@/services/config";
 import { LivePrintPreviewScreen } from "@/features/print/LivePrintPreviewScreen";
 import { getExpenseVoucherPreview, getExpensesSummary, listRecurringExpenses, listExpenseCategories, createExpense, createExpenseCategory } from "@/services/expenseService";
+import {
+  eligibleMoneyAccounts,
+  formatMoneyAccountLabel,
+  listMoneyAccounts,
+  type MoneyAccountRow,
+} from "@/services/treasuryService";
 import { getDefaultTaxDateRange, getDefaultStatementDateRange, lastNDaysIso, todayIsoDate } from "@/shared/utils/dateRanges";
 import { LiveExpenseDetailScreen } from "@/features/documents/LiveExpenseDetailScreen";
 import { ApiError } from "@/services/api/errors";
@@ -607,6 +613,8 @@ export function AddExpenseModal({ lang, defaultType = "daily", onClose, onSucces
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("cash");
+  const [moneyAccountId, setMoneyAccountId] = useState("");
+  const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccountRow[]>([]);
   const [paidFrom, setPaidFrom] = useState("خزنة");
   const [ref, setRef] = useState("");
   const [notes, setNotes] = useState("");
@@ -637,6 +645,24 @@ export function AddExpenseModal({ lang, defaultType = "daily", onClose, onSucces
     reloadCategories();
   }, []);
 
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    void listMoneyAccounts()
+      .then(setMoneyAccounts)
+      .catch(() => setMoneyAccounts([]));
+  }, []);
+
+  useEffect(() => {
+    setMoneyAccountId("");
+  }, [method, monthlyStatus]);
+
+  const requiresTreasuryAccount =
+    !IS_MOCK_MODE &&
+    method !== "other" &&
+    !(expType === "monthly" && monthlyStatus === "unpaid");
+
+  const eligibleAccounts = eligibleMoneyAccounts(moneyAccounts, method);
+
   const mockCategories = expType === "daily" ? DAILY_CATS_AR : expType === "monthly" ? MONTHLY_CATS_AR : PURCHASE_CATS_AR;
   const categoryOptions = IS_MOCK_MODE
     ? mockCategories.map((c) => ({ value: c, label: c }))
@@ -645,7 +671,10 @@ export function AddExpenseModal({ lang, defaultType = "daily", onClose, onSucces
         label: isRTL ? c.nameAr : (c.nameEn || c.nameAr),
       }));
 
-  const mapPaymentMethod = (m: string) => (m === "bank" ? "bank_transfer" : m);
+  const mapPaymentMethod = (m: string) => {
+    if (expType === "monthly" && monthlyStatus === "unpaid") return "other";
+    return m === "bank" ? "bank_transfer" : m;
+  };
   const mapPurchaseBehavior = (t: string) => {
     if (t === "add-cost") return "increase_inventory_cost";
     if (t === "deduct-supplier") return "reduce_supplier_payable";
@@ -656,6 +685,10 @@ export function AddExpenseModal({ lang, defaultType = "daily", onClose, onSucces
   const submitExpense = async (andAddAnother: boolean) => {
     if (!amount || !category || !description.trim()) {
       toast.error(isRTL ? "يرجى إكمال الحقول المطلوبة" : "Fill required fields");
+      return;
+    }
+    if (requiresTreasuryAccount && !moneyAccountId) {
+      toast.error(isRTL ? "اختر الخزنة أو الحساب البنكي" : "Select a cashbox or bank account");
       return;
     }
     if (IS_MOCK_MODE) {
@@ -683,6 +716,9 @@ export function AddExpenseModal({ lang, defaultType = "daily", onClose, onSucces
         notes: notes.trim(),
         vendor_name: paidFrom.trim(),
       };
+      if (requiresTreasuryAccount && moneyAccountId) {
+        payload.money_account = Number(moneyAccountId);
+      }
       if (expType === "purchase") {
         payload.purchase_link_behavior = mapPurchaseBehavior(treatment);
         if (purchaseInv) payload.linked_purchase_invoice = Number(purchaseInv);
@@ -808,10 +844,31 @@ export function AddExpenseModal({ lang, defaultType = "daily", onClose, onSucces
 
           <div className="grid grid-cols-2 gap-3">
             <FSelect label={isRTL ? "طريقة الدفع *" : "Payment Method *"} value={method} onChange={setMethod}
-              options={[{ value: "cash", label: isRTL ? "كاش" : "Cash" }, { value: "bank", label: isRTL ? "حساب بنكي" : "Bank" }, { value: "cheque", label: isRTL ? "شيك" : "Cheque" }, { value: "other", label: isRTL ? "أخرى" : "Other" }]} />
+              options={[{ value: "cash", label: isRTL ? "كاش" : "Cash" }, { value: "bank", label: isRTL ? "حساب بنكي" : "Bank" }, { value: "cheque", label: isRTL ? "شيك" : "Cheque" }, { value: "other", label: isRTL ? "أخرى / غير مدفوع" : "Other / Unpaid" }]} />
             <FSelect label={isRTL ? "مدفوع من" : "Paid From"} value={paidFrom} onChange={setPaidFrom}
               options={[{ value: "خزنة", label: isRTL ? "خزنة" : "Safe" }, { value: "بنك", label: isRTL ? "حساب بنكي" : "Bank Account" }, { value: "موظف", label: isRTL ? "موظف" : "Employee" }, { value: "أخرى", label: isRTL ? "أخرى" : "Other" }]} />
           </div>
+
+          {requiresTreasuryAccount && (
+            eligibleAccounts.length === 0 ? (
+              <p className="text-xs font-bold text-amber-600">
+                {method === "cash"
+                  ? (isRTL ? "لا توجد خزنة نشطة" : "No active cashbox found")
+                  : (isRTL ? "لا توجد حسابات بنكية نشطة" : "No active bank account found")}
+              </p>
+            ) : (
+              <FSelect
+                label={method === "cash" ? (isRTL ? "الخزنة *" : "Cashbox *") : (isRTL ? "الحساب البنكي *" : "Bank Account *")}
+                value={moneyAccountId}
+                onChange={setMoneyAccountId}
+                required
+                options={[
+                  { value: "", label: method === "cash" ? (isRTL ? "اختر الخزنة" : "Select cashbox") : (isRTL ? "اختر الحساب" : "Select account") },
+                  ...eligibleAccounts.map((acc) => ({ value: acc.id, label: formatMoneyAccountLabel(acc) })),
+                ]}
+              />
+            )
+          )}
 
           {expType === "monthly" && (
             <FSelect label={isRTL ? "الحالة" : "Status"} value={monthlyStatus} onChange={setMonthlyStatus}

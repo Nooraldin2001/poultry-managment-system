@@ -74,9 +74,11 @@ GROUP_ACTIONS = {
         "view",
         "create",
         "update",
+        "delete",
         "adjust",
         "transfer",
         "movements.view",
+        "statement.view",
     ],
     "receipts": ["view", "print"],
     "expenses": [
@@ -222,9 +224,11 @@ ACCOUNTANT_DEFAULTS = [
     "treasury.view",
     "treasury.create",
     "treasury.update",
+    "treasury.delete",
     "treasury.adjust",
     "treasury.transfer",
     "treasury.movements.view",
+    "treasury.statement.view",
     "audit.view",
 ]
 

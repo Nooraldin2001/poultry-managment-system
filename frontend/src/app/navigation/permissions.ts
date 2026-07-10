@@ -58,7 +58,7 @@ const SCREEN_PERMISSION: Partial<Record<TenantScreen, string>> = {
   "accounts-new": "treasury.create",
   "accounts-edit": "treasury.update",
   "accounts-detail": "treasury.view",
-  "accounts-statement": "treasury.movements.view",
+  "accounts-statement": "treasury.statement.view",
   "accounts-list": "treasury.view",
 };
 

@@ -35,10 +35,10 @@ export function InvoiceLineTable({
               {label("الوحدة", "Unit")}
             </th>
             <th className={`${thBase} text-center`} style={thStyle}>
-              {label("السعر", "Price")}
+              {label("السعر قبل الضريبة", "Price before VAT")}
             </th>
             <th className={`${thBase} ${isRTL ? "text-left" : "text-right"}`} style={thStyle}>
-              {label("الإجمالي", "Total")}
+              {label("الإجمالي قبل الضريبة", "Subtotal before VAT")}
             </th>
           </tr>
         </thead>

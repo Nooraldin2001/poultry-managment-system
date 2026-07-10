@@ -4,6 +4,18 @@
 - **Tenant:** `firstview` — `https://firstview.poultryhero.solutions`
 - **Issue (AR):** `المبيعات بقت صفحة بيضة بس` — Sales page blank white screen (mobile Safari reported)
 
+## 2026-07-10 VAT duplication fix
+
+| Issue | Root cause | Fix |
+| --- | --- | --- |
+| Sales line reload showed VAT-inclusive total; footer added VAT again | `mapDetailLines` set `lineSubtotal = line_total`; `salesService` omitted `line_subtotal` | Map `subtotal` from API `line_subtotal`; grid/footer use ex-VAT subtotal; print uses `display_total`; bilingual labels |
+
+**Tests:** `tests/test_invoice_line_pricing.py` ? sales VAT-once + print preview.
+
+**Print:** `INVOICE_PRINT_TEMPLATES.md`.
+
+---
+
 ## 2026-07-10 client blockers
 
 | Issue | Root cause | Fix |

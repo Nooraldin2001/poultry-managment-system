@@ -211,6 +211,223 @@ def test_sales_invalid_price_type_rejected_via_api(api, company, owner):
     assert resp.data["lines"][0]["price_type"]
 
 
+# ── VAT: applied once (ex-VAT unit price, footer VAT separate) ───────────────
+def test_purchase_kg_line_subtotal_before_vat(company, owner):
+    """7.5 kg × 13.75 = 103.13 before VAT (client-reported duplication case)."""
+    supplier = _supplier(company, "PVAT1")
+    product = _product(company, "PVAT1", purchase_price=Decimal("13.75"))
+    inv = purchase_services.create_purchase_invoice(
+        company=company, supplier=supplier, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("5"),
+        lines=[{
+            "product": product, "line_type": PurchaseLineType.PRODUCT,
+            "quantity_kg": "7.5", "unit_price": "13.75", "price_type": "kg",
+        }],
+    )
+    line = inv.lines.first()
+    assert line.line_subtotal == Decimal("103.12")
+    assert line.vat_amount == Decimal("5.16")
+    assert line.line_total == Decimal("108.28")
+    assert inv.subtotal == Decimal("103.12")
+    assert inv.vat_amount == Decimal("5.16")
+    assert inv.gross_total == Decimal("108.28")
+
+
+def test_purchase_vat_disabled_has_zero_vat(company, owner):
+    supplier = _supplier(company, "PVAT0")
+    product = _product(company, "PVAT0")
+    inv = purchase_services.create_purchase_invoice(
+        company=company, supplier=supplier, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": PurchaseLineType.PRODUCT,
+            "quantity_kg": "10", "unit_price": "12", "price_type": "kg",
+        }],
+    )
+    line = inv.lines.first()
+    assert line.vat_amount == Decimal("0.00")
+    assert line.line_total == line.line_subtotal == Decimal("120.00")
+    assert inv.vat_amount == Decimal("0.00")
+    assert inv.gross_total == Decimal("120.00")
+
+
+def test_purchase_print_preview_line_total_excludes_vat_when_footer_vat(company, owner, api):
+    supplier = _supplier(company, "PPVAT")
+    product = _product(company, "PPVAT", purchase_price=Decimal("13.75"))
+    inv = purchase_services.create_purchase_invoice(
+        company=company, supplier=supplier, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("5"),
+        lines=[{
+            "product": product, "line_type": PurchaseLineType.PRODUCT,
+            "quantity_kg": "7.5", "unit_price": "13.75", "price_type": "kg",
+        }],
+    )
+    preview = build_purchase_print_preview(inv)
+    pline = preview["lines"][0]
+    assert Decimal(pline["display_total"]) == Decimal("103.12")
+    assert Decimal(pline["line_subtotal"]) == Decimal("103.12")
+    assert Decimal(pline["line_total"]) == Decimal("108.28")
+    assert Decimal(preview["totals"]["vat_amount"]) == Decimal("5.16")
+    assert Decimal(preview["totals"]["gross_total"]) == Decimal("108.28")
+
+    api.force_authenticate(owner)
+    resp = api.get(f"{PURCHASES_URL}{inv.id}/print-preview/")
+    assert resp.status_code == 200
+    api_line = resp.data["lines"][0]
+    assert Decimal(api_line["display_total"]) == Decimal("103.12")
+    assert Decimal(resp.data["totals"]["vat_amount"]) == Decimal("5.16")
+
+
+def test_purchase_deductions_apply_after_gross_total(company, owner):
+    from apps.suppliers.models import SupplierCategory
+
+    supplier = _supplier(company, "PDED")
+    slaughter_cat, _ = SupplierCategory.objects.get_or_create(
+        company=company, code="slaughterhouse",
+        defaults={"name_ar": "مسلخ", "name_en": "slaughterhouse"},
+    )
+    transport_cat, _ = SupplierCategory.objects.get_or_create(
+        company=company, code="transport",
+        defaults={"name_ar": "نقل", "name_en": "transport"},
+    )
+    slaughter = Supplier.objects.create(
+        company=company, name_ar="مسلخ", phone="0501111",
+        supplier_type=SupplierType.CREDIT, category=slaughter_cat,
+    )
+    transport = Supplier.objects.create(
+        company=company, name_ar="نقل", phone="0502222",
+        supplier_type=SupplierType.CREDIT, category=transport_cat,
+    )
+    product = _product(company, "PDED")
+    inv = purchase_services.create_purchase_invoice(
+        company=company, supplier=supplier, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("5"),
+        slaughterhouse_supplier=slaughter,
+        slaughterhouse_deduction_amount=Decimal("10"),
+        transport_supplier=transport,
+        transport_deduction_amount=Decimal("5"),
+        lines=[{
+            "product": product, "line_type": PurchaseLineType.PRODUCT,
+            "quantity_kg": "10", "unit_price": "100", "price_type": "kg",
+        }],
+    )
+    assert inv.gross_total == Decimal("1050.00")  # 1000 + 5% VAT
+    assert inv.total_amount == Decimal("1035.00")  # gross - 15 deductions
+
+
+def test_sales_kg_line_subtotal_before_vat(company, owner):
+    customer = _customer(company, phone="0505555001")
+    product = _product(company, "SVAT1", sales_price=Decimal("13.75"))
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("5"),
+        lines=[{
+            "product": product, "line_type": SalesLineType.PRODUCT,
+            "quantity_kg": "7.5", "unit_price": "13.75", "price_type": "kg",
+        }],
+    )
+    line = inv.lines.first()
+    assert line.line_subtotal == Decimal("103.12")
+    assert line.vat_amount == Decimal("5.16")
+    assert line.line_total == Decimal("108.28")
+    assert inv.subtotal == Decimal("103.12")
+    assert inv.vat_amount == Decimal("5.16")
+    assert inv.total_amount == Decimal("108.28")
+
+
+def test_sales_vat_disabled_has_zero_vat(company, owner):
+    customer = _customer(company, phone="0505555002")
+    product = _product(company, "SVAT0", sales_price=Decimal("12"))
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": SalesLineType.PRODUCT,
+            "quantity_kg": "10", "unit_price": "12", "price_type": "kg",
+        }],
+    )
+    line = inv.lines.first()
+    assert line.vat_amount == Decimal("0.00")
+    assert line.line_total == line.line_subtotal == Decimal("120.00")
+    assert inv.vat_amount == Decimal("0.00")
+    assert inv.total_amount == Decimal("120.00")
+
+
+def test_sales_print_preview_line_total_excludes_vat_when_footer_vat(company, owner, api):
+    customer = _customer(company, phone="0505555003")
+    product = _product(company, "SPVAT", sales_price=Decimal("13.75"))
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("5"),
+        lines=[{
+            "product": product, "line_type": SalesLineType.PRODUCT,
+            "quantity_kg": "7.5", "unit_price": "13.75", "price_type": "kg",
+        }],
+    )
+    preview = build_print_preview(inv)
+    pline = preview["lines"][0]
+    assert Decimal(pline["display_total"]) == Decimal("103.12")
+    assert Decimal(pline["line_subtotal"]) == Decimal("103.12")
+    assert Decimal(pline["line_total"]) == Decimal("108.28")
+    assert Decimal(preview["totals"]["vat_amount"]) == Decimal("5.16")
+    assert Decimal(preview["totals"]["total_amount"]) == Decimal("108.28")
+
+    api.force_authenticate(owner)
+    resp = api.get(f"{SALES_URL}{inv.id}/print-preview/")
+    assert resp.status_code == 200
+    assert Decimal(resp.data["lines"][0]["display_total"]) == Decimal("103.12")
+    assert Decimal(resp.data["totals"]["vat_amount"]) == Decimal("5.16")
+
+
+def test_tax_report_uses_corrected_purchase_vat(company, owner):
+    from apps.tax import services as tax_services
+
+    supplier = _supplier(company, "TRPT")
+    product = _product(company, "TRPT")
+    inv = purchase_services.create_purchase_invoice(
+        company=company, supplier=supplier, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("5"),
+        lines=[{
+            "product": product, "line_type": PurchaseLineType.PRODUCT,
+            "quantity_kg": "7.5", "unit_price": "13.75", "price_type": "kg",
+        }],
+    )
+    purchase_services.approve_purchase_invoice(invoice=inv, user=owner, reason="ok")
+    inv.refresh_from_db()
+    report = tax_services.get_purchase_vat_report(
+        company, date_from=date.today(), date_to=date.today(),
+    )
+    assert report["totals"]["purchase_vat_amount"] == inv.vat_amount == Decimal("5.16")
+
+
+def test_tax_report_uses_corrected_sales_vat(company, owner):
+    from apps.inventory import services as inventory_services
+    from apps.inventory.models import StockSourceType
+    from apps.tax import services as tax_services
+
+    customer = _customer(company, phone="0505555004")
+    product = _product(company, "TRSL", sales_price=Decimal("13.75"))
+    inventory_services.add_stock(
+        company=company, product=product, kg=Decimal("100"),
+        unit_cost_per_kg=Decimal("8"), source_type=StockSourceType.OPENING_INVENTORY,
+        source_id=0, source_reference="opening", reason="stock", user=owner,
+    )
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("5"),
+        lines=[{
+            "product": product, "line_type": SalesLineType.PRODUCT,
+            "quantity_kg": "7.5", "unit_price": "13.75", "price_type": "kg",
+        }],
+    )
+    sales_services.approve_sales_invoice(invoice=inv, user=owner, reason="ok")
+    inv.refresh_from_db()
+    report = tax_services.get_sales_vat_report(
+        company, date_from=date.today(), date_to=date.today(),
+    )
+    assert report["totals"]["sales_vat_amount"] == inv.vat_amount == Decimal("5.16")
+
+
 # ── Print preview uses backend line totals ───────────────────────────────────
 def test_purchase_print_preview_kg_line_total(api, company, owner):
     supplier = _supplier(company, "PPV1")
@@ -232,7 +449,7 @@ def test_purchase_print_preview_kg_line_total(api, company, owner):
     assert Decimal(line["line_subtotal"]) == Decimal("1200.00")
     assert Decimal(line["line_total"]) == Decimal("1200.00")
     preview = build_purchase_print_preview(inv)
-    assert Decimal(preview["lines"][0]["line_total"]) == Decimal("1200.00")
+    assert Decimal(preview["lines"][0]["display_total"]) == Decimal("1200.00")
 
 
 def test_sales_print_preview_kg_line_total(api, company, owner):
@@ -254,7 +471,7 @@ def test_sales_print_preview_kg_line_total(api, company, owner):
     assert line["price_type"] == "kg"
     assert Decimal(line["line_subtotal"]) == Decimal("1000.00")
     preview = build_print_preview(inv)
-    assert Decimal(preview["lines"][0]["line_total"]) == Decimal("1000.00")
+    assert Decimal(preview["lines"][0]["display_total"]) == Decimal("1000.00")
 
 
 # ── Reports / profit use corrected invoice totals ────────────────────────────

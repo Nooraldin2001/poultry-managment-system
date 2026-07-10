@@ -31,6 +31,7 @@ from apps.sales.models import (
     SalesPriceSource,
     SalesStatus,
 )
+from apps.payments.models import MoneyAccount
 
 pytestmark = pytest.mark.django_db
 
@@ -441,6 +442,10 @@ def test_create_rejects_manual_invoice_number(api, company, owner):
 def test_cash_customer_approve_requires_full_amount_paid(api, company, owner):
     customer = _customer(company, customer_type=CustomerType.CASH)
     product = _product(company)
+    cashbox = MoneyAccount.objects.create(
+        company=company, name="Sales Cash", account_type="cashbox",
+        opening_balance=Decimal("10000"), current_balance=Decimal("10000"), currency="AED",
+    )
     _seed_stock(company, owner, product, kg="100")
     api.force_authenticate(owner)
     resp = api.post(SALES_URL, _payload(customer, product), format="json")
@@ -452,7 +457,11 @@ def test_cash_customer_approve_requires_full_amount_paid(api, company, owner):
 
     resp = api.patch(
         f"{SALES_URL}{inv_id}/",
-        {"amount_paid": api.get(f"{SALES_URL}{inv_id}/").data["total_amount"]},
+        {
+            "amount_paid": api.get(f"{SALES_URL}{inv_id}/").data["total_amount"],
+            "payment_method": "cash",
+            "money_account": cashbox.id,
+        },
         format="json",
     )
     assert resp.status_code == 200

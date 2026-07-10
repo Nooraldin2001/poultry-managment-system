@@ -669,8 +669,8 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
                   <th className="p-2">{isRTL ? "مقطعات" : "Pieces"}</th>
                   <th className="p-2">{isRTL ? "الكمية بالكيلو" : "Quantity KG"}</th>
                   <th className="p-2">{isRTL ? "نوع السعر" : "Price type"}</th>
-                  <th className="p-2">{isRTL ? "السعر" : "Unit price"}</th>
-                  <th className="p-2">{isRTL ? "الإجمالي" : "Total"}</th>
+                  <th className="p-2">{isRTL ? "السعر قبل الضريبة" : "Price before VAT"}</th>
+                  <th className="p-2">{isRTL ? "الإجمالي قبل الضريبة" : "Subtotal before VAT"}</th>
                   <th className="p-2" />
                 </tr>
               </thead>
@@ -842,7 +842,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
         </div>
         <div className="bg-white rounded-2xl border p-4 space-y-2 text-sm">
           <div className="flex justify-between font-bold">
-            <span>{isRTL ? "المجموع" : "Subtotal"}</span>
+            <span>{isRTL ? "الإجمالي قبل الضريبة" : "Subtotal before VAT"}</span>
             <span className="font-mono">AED {totals.subtotal.toFixed(2)}</span>
           </div>
           <div className="border-t border-slate-100 pt-2 space-y-2">
@@ -850,7 +850,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
               <span className="font-bold text-slate-600">
                 {vatEnabled
                   ? isRTL ? "ضريبة القيمة المضافة 5%" : "VAT 5%"
-                  : isRTL ? "بدون ضريبة" : "No VAT"}
+                  : isRTL ? "بدون ضريبة" : "VAT disabled"}
               </span>
               {isDraft && (
                 <button
@@ -864,12 +864,12 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
               )}
             </div>
             <div className="flex justify-between font-bold">
-              <span>{isRTL ? "ض.ق.م" : "VAT"}</span>
+              <span>{isRTL ? "ضريبة القيمة المضافة" : "VAT"}</span>
               <span className="font-mono">AED {totals.vat.toFixed(2)}</span>
             </div>
           </div>
           <div className="flex justify-between font-bold text-slate-700">
-            <span>{isRTL ? "إجمالي الفاتورة" : "Gross Total"}</span>
+            <span>{isRTL ? "الإجمالي شامل الضريبة" : "Total incl. VAT"}</span>
             <span className="font-mono">AED {totals.gross.toFixed(2)}</span>
           </div>
           {(totals.slaughter > 0 || slaughterDeduction !== "0") && (

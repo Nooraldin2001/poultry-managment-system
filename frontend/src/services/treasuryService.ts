@@ -180,6 +180,33 @@ export async function listMoneyAccountMovements(
   return (data ?? []).map(mapMovement);
 }
 
+/** Map UI payment labels to API payment_method values. */
+export function mapTreasuryPaymentMethod(method: string): string {
+  return method === "bank" ? "bank_transfer" : method;
+}
+
+/** Active accounts matching cash vs bank payment methods. */
+export function eligibleMoneyAccounts(
+  accounts: MoneyAccountRow[],
+  paymentMethod: string,
+): MoneyAccountRow[] {
+  const active = accounts.filter((a) => a.isActive);
+  if (paymentMethod === "cash") return active.filter((a) => a.accountType === "cashbox");
+  if (["bank", "bank_transfer", "cheque"].includes(paymentMethod)) {
+    return active.filter((a) => a.accountType === "bank");
+  }
+  return [];
+}
+
+export function formatMoneyAccountLabel(acc: MoneyAccountRow): string {
+  const balance = `${acc.currentBalance.toFixed(2)} ${acc.currency}`;
+  if (acc.accountType === "bank") {
+    const bankInfo = [acc.bankName, acc.accountNumber].filter(Boolean).join(" ");
+    return `${acc.name}${bankInfo ? ` — ${bankInfo}` : ""} (${balance})`;
+  }
+  return `${acc.name} (${balance})`;
+}
+
 export async function getAccountStatement(
   accountId: string,
   filters?: {
@@ -262,6 +289,7 @@ export async function getTreasurySummary(): Promise<TreasurySummary> {
 
 export const MOVEMENT_TYPE_LABELS: Record<string, { ar: string; en: string }> = {
   purchase_payment: { ar: "دفع شراء", en: "Purchase payment" },
+  sales_payment: { ar: "تحصيل مبيعات", en: "Sales payment" },
   supplier_payment: { ar: "دفع مورد", en: "Supplier payment" },
   customer_collection: { ar: "تحصيل عميل", en: "Customer collection" },
   expense_payment: { ar: "دفع مصروف", en: "Expense payment" },

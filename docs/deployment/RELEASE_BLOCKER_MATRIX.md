@@ -26,14 +26,14 @@
 | Supplier create (code) | **Fixed** | No | `c7d747a` | Deploy + smoke |
 | Sales invoice create (code) | **Fixed** | No | Live screen + Save draft + approve `{reason}` | Deploy + smoke |
 | Purchase invoice create (code) | **Fixed** | No | Same pattern as sales | Deploy + smoke |
-| Purchase no-VAT + inventory (code) | **Fixed** | No | VAT optional; KG normalize on approve; list refresh | Deploy + smoke |
+| VAT duplication in purchase/sales print (code) | **Fixed** | No | Print table ex-VAT; footer VAT once | Deploy + smoke 7.5×13.75 line |
 | Inventory UI field mapping (code) | **Fixed** | No | `available_*` API fields mapped correctly | Deploy + smoke |
 | Poultry cuts on purchase (code) | **Fixed** | No | `chicken_part` KG-primary lines; no cartons required | Deploy + smoke |
 | Invoice branding & tax identity (code) | **Fixed** | No | Company assets + customer TRN on print preview | Deploy + smoke |
 | Invoice template & color themes (code) | **Fixed** | No | `InvoiceDesignSettings` + 4 templates + 7 themes + Settings UI | Deploy + smoke |
 | Super Admin company edit (code) | **Fixed** | No | `AdminCompanyEditScreen` + PATCH company profile | Deploy + smoke |
 | Repair command for approved purchases | **Fixed** | No | `repair_purchase_inventory_side_effects` dry-run/confirm | Deploy + run on firstview |
-| Payment Methods Summary (code) | **Fixed** | No | Live API wired; mock only in dev | Deploy + smoke |
+| Accounts / treasury integration (code) | **Fixed** | No | money-accounts API, statement, transfer, purchases/sales/payments/expenses | Deploy + `seed_permissions` + smoke |
 | Auto invoice numbering (code) | **Fixed** | No | PUR-/SAL- yearly server-side generation | Deploy + smoke |
 | Purchase demo data (DB) | Unknown | **Yes** | WESTLAND / Wataniya may be DB seed | VPS purge dry-run + confirm |
 | Reports demo data (code) | **Fixed** | No | `bff86fe` — `liveOrMockRows` guards | Verify empty states on First View |

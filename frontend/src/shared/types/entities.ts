@@ -171,6 +171,8 @@ export interface SalesInvoiceRow {
   total: number;
   paid: number;
   balance: number;
+  paymentMethod?: string;
+  moneyAccountId?: string;
   grossProfit?: number;
 }
 
@@ -184,6 +186,7 @@ export interface SalesInvoiceLineRow {
   kg?: number;
   unit: string;
   price: number;
+  subtotal: number;
   total: number;
 }
 

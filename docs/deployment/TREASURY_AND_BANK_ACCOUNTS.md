@@ -15,16 +15,18 @@ Implemented tenant-scoped treasury with real balances (no frontend-only values).
 
 ### `MoneyMovement` (`apps.payments.models`)
 - `company`, `money_account`
-- `movement_type`: `purchase_payment`, `supplier_payment`, `customer_collection`, `expense_payment`, `manual_adjustment`, `refund`, `opening_balance`
+- `movement_type`: `purchase_payment`, `sales_payment`, `supplier_payment`, `customer_collection`, `expense_payment`, `account_transfer`, `manual_adjustment`, `refund`, `opening_balance`
 - `direction`: `in|out`
 - `amount`, `reference_type`, `reference_id`, `description`, `reason`, `created_by`
 
 ## APIs
 
 - `GET/POST /api/v1/tenant/money-accounts/`
-- `GET/PATCH /api/v1/tenant/money-accounts/{id}/`
+- `GET/PATCH/DELETE /api/v1/tenant/money-accounts/{id}/`
 - `GET /api/v1/tenant/money-accounts/{id}/movements/`
+- `GET /api/v1/tenant/money-accounts/{id}/statement/` (`treasury.statement.view`)
 - `POST /api/v1/tenant/money-accounts/{id}/adjustments/`
+- `POST /api/v1/tenant/treasury/transfer/` (`treasury.transfer`)
 - `GET /api/v1/tenant/treasury/summary/`
 
 ### List filters (added 2026-07-10)
@@ -70,10 +72,15 @@ Added `treasury` permission group:
 - `treasury.view`
 - `treasury.create`
 - `treasury.update`
+- `treasury.delete`
 - `treasury.adjust`
+- `treasury.transfer`
 - `treasury.movements.view`
+- `treasury.statement.view`
 
 Defaults:
 - Owner/Admin: full
-- Accountant: full treasury ops
+- Accountant: view, create, update, delete, adjust, transfer, movements, statement
 - Cashier: `treasury.view` only
+
+Tests: `tests/test_accounts.py` (15 integration scenarios), `tests/test_payments.py`, `tests/test_purchases.py`.

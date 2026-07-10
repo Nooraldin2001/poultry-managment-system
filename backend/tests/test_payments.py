@@ -77,6 +77,16 @@ def _money_account(company, *, name="Main Cash", account_type="cashbox", opening
     )
 
 
+_treasury_seq = 0
+
+
+def _treasury_account(company, payment_method="cash"):
+    global _treasury_seq
+    _treasury_seq += 1
+    account_type = "bank" if payment_method in ("bank_transfer", "cheque") else "cashbox"
+    return _money_account(company, name=f"Treasury {account_type} {_treasury_seq}", account_type=account_type)
+
+
 def test_create_cashbox_and_opening_movement(api, owner):
     api.force_authenticate(owner)
     res = api.post(
@@ -225,7 +235,7 @@ def test_collection_creates_movement_and_ledger(company, owner):
     inv = _approved_sale(company, customer, owner, product)
     movement = payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("500"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
         allocations=[{"sales_invoice": inv, "allocated_amount": Decimal("500")}],
     )
     assert movement.movement_type == PaymentMovementType.CUSTOMER_COLLECTION
@@ -244,7 +254,7 @@ def test_collection_updates_sales_invoice_payment_status(company, owner):
     inv = _approved_sale(company, customer, owner, product)  # total 1000
     payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("400"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
         allocations=[{"sales_invoice": inv, "allocated_amount": Decimal("400")}],
     )
     inv.refresh_from_db()
@@ -255,7 +265,7 @@ def test_collection_updates_sales_invoice_payment_status(company, owner):
 
     payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("600"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
         allocations=[{"sales_invoice": inv, "allocated_amount": Decimal("600")}],
     )
     inv.refresh_from_db()
@@ -270,7 +280,7 @@ def test_over_allocation_rejected(company, owner):
     with pytest.raises(ValidationError):
         payment_services.record_customer_collection(
             company=company, customer=customer, amount=Decimal("100"),
-            payment_method="cash", user=owner,
+            payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
             allocations=[{"sales_invoice": inv, "allocated_amount": Decimal("200")}],
         )
 
@@ -284,7 +294,7 @@ def test_collection_to_cancelled_invoice_rejected(company, owner):
     with pytest.raises(ValidationError):
         payment_services.record_customer_collection(
             company=company, customer=customer, amount=Decimal("100"),
-            payment_method="cash", user=owner,
+            payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
             allocations=[{"sales_invoice": inv, "allocated_amount": Decimal("100")}],
         )
 
@@ -294,7 +304,7 @@ def test_customer_cross_tenant_rejected(company, owner, other_company):
     with pytest.raises(ValidationError):
         payment_services.record_customer_collection(
             company=company, customer=other_customer, amount=Decimal("100"),
-            payment_method="cash", user=owner,
+            payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
         )
 
 
@@ -305,7 +315,7 @@ def test_supplier_payment_creates_movement_and_ledger(company, owner):
     inv = _approved_purchase(company, supplier, owner, product)
     movement = payment_services.record_supplier_payment(
         company=company, supplier=supplier, amount=Decimal("50"),
-        payment_method="bank_transfer", user=owner,
+        payment_method="bank_transfer", user=owner, money_account=_treasury_account(company, "bank_transfer"),
         allocations=[{"purchase_invoice": inv, "allocated_amount": Decimal("50")}],
     )
     assert movement.receipt_number.startswith("PAY-")
@@ -323,7 +333,7 @@ def test_supplier_payment_updates_purchase_status(company, owner):
     inv = _approved_purchase(company, supplier, owner, product)  # 100 total
     payment_services.record_supplier_payment(
         company=company, supplier=supplier, amount=Decimal("100"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
         allocations=[{"purchase_invoice": inv, "allocated_amount": Decimal("100")}],
     )
     inv.refresh_from_db()
@@ -339,7 +349,7 @@ def test_payment_to_cancelled_purchase_rejected(company, owner):
     with pytest.raises(ValidationError):
         payment_services.record_supplier_payment(
             company=company, supplier=supplier, amount=Decimal("50"),
-            payment_method="cash", user=owner,
+            payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
             allocations=[{"purchase_invoice": inv, "allocated_amount": Decimal("50")}],
         )
 
@@ -354,7 +364,7 @@ def test_customer_refund_requires_reason(company, owner):
     with pytest.raises(ValidationError):
         payment_services.record_customer_refund(
             company=company, customer=customer, amount=Decimal("50"),
-            payment_method="cash", user=owner, reason="",
+            payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"), reason="",
         )
 
 
@@ -366,7 +376,7 @@ def test_customer_refund_with_credit_balance(company, owner):
     )
     movement = payment_services.record_customer_refund(
         company=company, customer=customer, amount=Decimal("100"),
-        payment_method="cash", user=owner, reason="return overpayment",
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"), reason="return overpayment",
     )
     assert movement.movement_type == PaymentMovementType.CUSTOMER_REFUND
     customer.refresh_from_db()
@@ -378,7 +388,7 @@ def test_supplier_refund_requires_reason(company, owner):
     with pytest.raises(ValidationError):
         payment_services.record_supplier_refund(
             company=company, supplier=supplier, amount=Decimal("10"),
-            payment_method="cash", user=owner, reason="",
+            payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"), reason="",
         )
 
 
@@ -387,7 +397,7 @@ def test_cancel_collection_requires_reason(company, owner):
     customer = _customer(company)
     movement = payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("100"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
     )
     with pytest.raises(ValidationError):
         payment_services.cancel_payment_movement(movement=movement, user=owner, reason="")
@@ -399,7 +409,7 @@ def test_cancel_collection_reverses_ledger_and_invoice(company, owner):
     inv = _approved_sale(company, customer, owner, product)
     movement = payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("300"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
         allocations=[{"sales_invoice": inv, "allocated_amount": Decimal("300")}],
     )
     payment_services.cancel_payment_movement(
@@ -421,7 +431,7 @@ def test_cancel_cannot_run_twice(company, owner):
     customer = _customer(company)
     movement = payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("50"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
     )
     payment_services.cancel_payment_movement(movement=movement, user=owner, reason="x")
     movement.refresh_from_db()
@@ -434,7 +444,7 @@ def test_receipt_print_preview(company, owner):
     customer = _customer(company)
     movement = payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("100"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
     )
     preview = payment_services.build_receipt_preview(movement)
     assert preview["title_en"] == "RECEIPT VOUCHER"
@@ -455,9 +465,11 @@ def test_customer_reconciliation_matched(company, owner):
 # ── API / permissions ───────────────────────────────────────────────────────
 def test_owner_can_create_collection(api, company, owner):
     customer = _customer(company)
+    cashbox = _treasury_account(company, "cash")
     api.force_authenticate(owner)
     resp = api.post(COLLECTIONS_URL, {
         "customer": customer.id, "amount": "100", "payment_method": "cash",
+        "money_account": cashbox.id,
     }, format="json")
     assert resp.status_code == 201, resp.data
     assert resp.data["receipt_number"].startswith("REC-")
@@ -479,7 +491,7 @@ def test_payment_summary_tenant_isolation(api, company, owner, other_owner):
     customer = _customer(company)
     payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("100"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
     )
     api.force_authenticate(other_owner)
     resp = api.get(SUMMARY_URL)
@@ -491,7 +503,7 @@ def test_accountant_can_create_but_not_cancel(api, company, owner, accountant):
     customer = _customer(company)
     movement = payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("50"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
     )
     api.force_authenticate(accountant)
     resp = api.post(f"{MOVEMENTS_URL}{movement.id}/cancel/", {"reason": "no"}, format="json")
@@ -500,9 +512,11 @@ def test_accountant_can_create_but_not_cancel(api, company, owner, accountant):
 
 def test_cashier_can_create_collection(api, company, cashier):
     customer = _customer(company)
+    cashbox = _treasury_account(company, "cash")
     api.force_authenticate(cashier)
     resp = api.post(COLLECTIONS_URL, {
         "customer": customer.id, "amount": "50", "payment_method": "cash",
+        "money_account": cashbox.id,
     }, format="json")
     assert resp.status_code == 201
 
@@ -520,7 +534,7 @@ def test_tenant_isolation(api, company, owner, other_owner):
     customer = _customer(company)
     movement = payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("50"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
     )
     api.force_authenticate(other_owner)
     resp = api.get(f"{MOVEMENTS_URL}{movement.id}/")
@@ -531,7 +545,7 @@ def test_receipt_preview_cross_tenant(api, company, owner, other_owner):
     customer = _customer(company)
     movement = payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("50"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
     )
     api.force_authenticate(other_owner)
     resp = api.get(f"/api/v1/tenant/receipts/{movement.id}/print-preview/")

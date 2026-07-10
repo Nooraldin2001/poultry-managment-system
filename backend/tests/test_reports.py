@@ -13,7 +13,7 @@ from apps.expenses.models import ExpenseCategory, ExpenseCategoryType, ExpenseSt
 from apps.inventory import services as inventory_services
 from apps.inventory.models import MovementType, StockSourceType
 from apps.payments import services as payment_services
-from apps.payments.models import PaymentMovementType
+from apps.payments.models import MoneyAccount, PaymentMovementType
 from apps.products.models import Product, ProductCategory, ProductType
 from apps.purchases import services as purchase_services
 from apps.purchases.models import PurchaseLineType, PurchaseStatus
@@ -27,6 +27,26 @@ from apps.suppliers.models import Supplier, SupplierType
 pytestmark = pytest.mark.django_db
 
 DASHBOARD_URL = "/api/v1/tenant/reports/dashboard/"
+
+
+_treasury_seq = 0
+
+
+def _treasury_account(company, payment_method="cash"):
+    global _treasury_seq
+    _treasury_seq += 1
+    account_type = "bank" if payment_method in ("bank_transfer", "cheque") else "cashbox"
+    return MoneyAccount.objects.create(
+        company=company,
+        name=f"Treasury {account_type} {_treasury_seq}",
+        account_type=account_type,
+        opening_balance=Decimal("10000"),
+        current_balance=Decimal("10000"),
+        currency="AED",
+        is_active=True,
+    )
+
+
 SALES_URL = "/api/v1/tenant/reports/sales/"
 PURCHASES_URL = "/api/v1/tenant/reports/purchases/"
 INVENTORY_URL = "/api/v1/tenant/reports/inventory/"
@@ -252,7 +272,7 @@ def test_customer_statement_opening_and_closing(company, owner):
     inv, customer, _ = _approved_sale(company, owner)
     payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("200"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
         allocations=[{"sales_invoice": inv, "allocated_amount": Decimal("200")}],
     )
     stmt = services.get_customer_statement(
@@ -305,7 +325,7 @@ def test_payments_report_collections(company, owner):
     inv, customer, _ = _approved_sale(company, owner)
     payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("300"),
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
         allocations=[{"sales_invoice": inv, "allocated_amount": Decimal("300")}],
     )
     report = services.get_payments_report(

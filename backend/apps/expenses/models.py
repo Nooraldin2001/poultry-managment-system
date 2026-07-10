@@ -121,6 +121,13 @@ class Expense(TenantOwnedModel):
         max_length=16, choices=ExpensePaymentMethod.choices,
         default=ExpensePaymentMethod.CASH,
     )
+    money_account = models.ForeignKey(
+        "payments.MoneyAccount",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="expenses",
+    )
     reference_number = models.CharField(max_length=64, blank=True)
     vendor_name = models.CharField(max_length=255, blank=True)
     employee_name = models.CharField(max_length=255, blank=True)

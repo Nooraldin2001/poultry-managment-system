@@ -14,9 +14,28 @@ from apps.purchases.models import PurchaseLineType, PurchaseStatus
 from apps.sales import services as sales_services
 from apps.sales.models import SalesInvoice, SalesLineType, SalesStatus
 from apps.payments import services as payment_services
+from apps.payments.models import MoneyAccount
 from apps.tenants.module_reset.service import ModuleResetService, required_confirmation_text
 
 pytestmark = pytest.mark.django_db
+
+
+_treasury_seq = 0
+
+
+def _treasury_account(company, payment_method="cash"):
+    global _treasury_seq
+    _treasury_seq += 1
+    account_type = "bank" if payment_method in ("bank_transfer", "cheque") else "cashbox"
+    return MoneyAccount.objects.create(
+        company=company,
+        name=f"Treasury {account_type} {_treasury_seq}",
+        account_type=account_type,
+        opening_balance=Decimal("10000"),
+        current_balance=Decimal("10000"),
+        currency="AED",
+        is_active=True,
+    )
 
 CATALOG_URL = "/api/v1/admin/companies/{}/module-reset/catalog/"
 DRY_RUN_URL = "/api/v1/admin/companies/{}/module-reset/dry-run/"
@@ -197,7 +216,7 @@ def test_sales_reset_blocked_when_payment_allocations_exist(api, super_admin, co
     inv = _approved_sale(company, owner, customer, product)
     payment_services.record_customer_collection(
         company=company, customer=customer, amount=inv.total_amount,
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
         allocations=[{"sales_invoice": inv, "allocated_amount": inv.total_amount}],
     )
     api.force_authenticate(super_admin)
@@ -228,7 +247,7 @@ def test_confirm_revalidates_dependencies(api, super_admin, company, owner):
     token = dry.data["dry_run_token"]
     payment_services.record_customer_collection(
         company=company, customer=customer, amount=inv.total_amount,
-        payment_method="cash", user=owner,
+        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
         allocations=[{"sales_invoice": inv, "allocated_amount": inv.total_amount}],
     )
     resp = api.post(

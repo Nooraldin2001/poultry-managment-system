@@ -90,6 +90,7 @@ class ExpenseCreateUpdateSerializer(serializers.Serializer):
         max_digits=5, decimal_places=2, required=False, default=Decimal("0"),
     )
     payment_method = serializers.CharField(required=False, default="cash")
+    money_account = serializers.IntegerField(required=False, allow_null=True)
     reference_number = serializers.CharField(required=False, allow_blank=True, default="")
     vendor_name = serializers.CharField(required=False, allow_blank=True, default="")
     employee_name = serializers.CharField(required=False, allow_blank=True, default="")
@@ -124,6 +125,14 @@ class ExpenseCreateUpdateSerializer(serializers.Serializer):
         vat_rate = attrs.get("vat_rate", Decimal("0"))
         if vat_rate is not None and vat_rate < 0:
             raise serializers.ValidationError({"vat_rate": "VAT rate cannot be negative."})
+
+        if "money_account" in attrs:
+            account_id = attrs.get("money_account")
+            if account_id is None:
+                attrs["money_account"] = None
+            else:
+                from apps.payments.treasury_integration import get_money_account
+                attrs["money_account"] = get_money_account(company, account_id)
 
         behavior = attrs.get("purchase_link_behavior", PurchaseLinkBehavior.NONE)
         if behavior in (
@@ -207,6 +216,15 @@ class RecurringExpenseCreateUpdateSerializer(serializers.Serializer):
 
 class RecurringExpenseGenerateSerializer(serializers.Serializer):
     target_date = serializers.DateField(required=False)
+    money_account = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        account_id = attrs.get("money_account")
+        if account_id is not None:
+            from apps.payments.treasury_integration import get_money_account
+
+            attrs["money_account"] = get_money_account(self.context["company"], account_id)
+        return attrs
 
 
 class ExpenseSummarySerializer(serializers.Serializer):

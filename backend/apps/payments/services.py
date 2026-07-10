@@ -276,6 +276,20 @@ def post_account_transfer(
         user=user,
         movement_date=movement_date,
     )
+    create_audit_log(
+        action="treasury_transfer",
+        user=user,
+        company=company,
+        module="treasury",
+        reference_type="account_transfer",
+        reference_id=transfer_ref,
+        reason=reason,
+        new_value={
+            "from_account_id": from_account.id,
+            "to_account_id": to_account.id,
+            "amount": str(amount),
+        },
+    )
     return out_movement, in_movement
 
 
@@ -418,11 +432,50 @@ def _create_allocations(company, movement, allocation_payloads, *, party_custome
 
 
 # ── Customer collection ─────────────────────────────────────────────────────
+def _post_party_treasury_movement(
+    *,
+    company,
+    money_account,
+    payment_method,
+    amount,
+    movement_type,
+    direction,
+    reference_type,
+    reference_id,
+    description,
+    reason,
+    user,
+    movement_date,
+):
+    from apps.payments.treasury_integration import validate_money_account_for_flow
+
+    validate_money_account_for_flow(
+        payment_method=payment_method,
+        money_account=money_account,
+        amount=amount,
+    )
+    if not money_account:
+        return None
+    return post_money_movement(
+        company=company,
+        money_account=money_account,
+        movement_type=movement_type,
+        direction=direction,
+        amount=amount,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        description=description,
+        reason=reason,
+        user=user,
+        movement_date=movement_date,
+    )
+
+
 @transaction.atomic
 def record_customer_collection(
     *, company, customer, amount, payment_method, allocations=None,
     reference_number="", bank_name="", cheque_number="", cheque_date=None,
-    movement_date=None, notes="", user, reason="",
+    movement_date=None, notes="", user, reason="", money_account=None,
 ):
     amount = _d(amount)
     if amount <= 0:
@@ -471,6 +524,21 @@ def record_customer_collection(
         entry_date=movement.movement_date,
     )
 
+    _post_party_treasury_movement(
+        company=company,
+        money_account=money_account,
+        payment_method=payment_method,
+        amount=amount,
+        movement_type=MoneyMovementType.CUSTOMER_COLLECTION,
+        direction=MoneyDirection.IN,
+        reference_type="payment_movement",
+        reference_id=movement.id,
+        description=f"Customer collection {receipt_number}",
+        reason=reason,
+        user=user,
+        movement_date=movement.movement_date,
+    )
+
     create_audit_log(
         action="customer_collection",
         user=user, company=company, module="payments",
@@ -486,7 +554,7 @@ def record_customer_collection(
 def record_supplier_payment(
     *, company, supplier, amount, payment_method, allocations=None,
     reference_number="", bank_name="", cheque_number="", cheque_date=None,
-    movement_date=None, notes="", user, reason="",
+    movement_date=None, notes="", user, reason="", money_account=None,
 ):
     amount = _d(amount)
     if amount <= 0:
@@ -535,6 +603,21 @@ def record_supplier_payment(
         entry_date=movement.movement_date,
     )
 
+    _post_party_treasury_movement(
+        company=company,
+        money_account=money_account,
+        payment_method=payment_method,
+        amount=amount,
+        movement_type=MoneyMovementType.SUPPLIER_PAYMENT,
+        direction=MoneyDirection.OUT,
+        reference_type="payment_movement",
+        reference_id=movement.id,
+        description=f"Supplier payment {receipt_number}",
+        reason=reason,
+        user=user,
+        movement_date=movement.movement_date,
+    )
+
     create_audit_log(
         action="supplier_payment",
         user=user, company=company, module="payments",
@@ -550,7 +633,7 @@ def record_supplier_payment(
 def record_customer_refund(
     *, company, customer, amount, payment_method, reference_number="",
     bank_name="", cheque_number="", cheque_date=None, movement_date=None,
-    notes="", user, reason, allow_override=False,
+    notes="", user, reason, allow_override=False, money_account=None,
 ):
     reason = require_reason_for_sensitive_action("customer_refund", reason)
     amount = _d(amount)
@@ -596,6 +679,21 @@ def record_customer_refund(
         allow_positive_balance=allow_override,
     )
 
+    _post_party_treasury_movement(
+        company=company,
+        money_account=money_account,
+        payment_method=payment_method,
+        amount=amount,
+        movement_type=MoneyMovementType.REFUND,
+        direction=MoneyDirection.OUT,
+        reference_type="payment_movement",
+        reference_id=movement.id,
+        description=f"Customer refund {receipt_number}",
+        reason=reason,
+        user=user,
+        movement_date=movement.movement_date,
+    )
+
     create_audit_log(
         action="customer_refund",
         user=user, company=company, module="payments",
@@ -610,7 +708,7 @@ def record_customer_refund(
 def record_supplier_refund(
     *, company, supplier, amount, payment_method, reference_number="",
     bank_name="", cheque_number="", cheque_date=None, movement_date=None,
-    notes="", user, reason, allow_override=False,
+    notes="", user, reason, allow_override=False, money_account=None,
 ):
     reason = require_reason_for_sensitive_action("supplier_refund", reason)
     amount = _d(amount)
@@ -654,6 +752,21 @@ def record_supplier_refund(
         reason=reason,
         entry_date=movement.movement_date,
         allow_negative_balance=allow_override,
+    )
+
+    _post_party_treasury_movement(
+        company=company,
+        money_account=money_account,
+        payment_method=payment_method,
+        amount=amount,
+        movement_type=MoneyMovementType.REFUND,
+        direction=MoneyDirection.IN,
+        reference_type="payment_movement",
+        reference_id=movement.id,
+        description=f"Supplier refund {receipt_number}",
+        reason=reason,
+        user=user,
+        movement_date=movement.movement_date,
     )
 
     create_audit_log(

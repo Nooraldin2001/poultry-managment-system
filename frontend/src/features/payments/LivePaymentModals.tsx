@@ -6,6 +6,13 @@ import { IS_MOCK_MODE } from "@/services/config";
 import { listCustomerRows, listCustomerSalesInvoices } from "@/services/customerService";
 import { listSupplierRows, listSupplierPurchases } from "@/services/supplierService";
 import { createCustomerCollection, createSupplierPayment } from "@/services/paymentService";
+import {
+  eligibleMoneyAccounts,
+  formatMoneyAccountLabel,
+  listMoneyAccounts,
+  mapTreasuryPaymentMethod,
+  type MoneyAccountRow,
+} from "@/services/treasuryService";
 import { ApiError } from "@/services/api/errors";
 import { LoadingState } from "@/shared/components/ApiStates";
 
@@ -39,6 +46,8 @@ export function LiveCustomerCollectionModal({
   const [selInv, setSelInv] = useState(invoiceId);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PayMethod>("cash");
+  const [moneyAccountId, setMoneyAccountId] = useState("");
+  const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccountRow[]>([]);
   const [date, setDate] = useState(todayIso());
   const [ref, setRef] = useState("");
   const [notes, setNotes] = useState("");
@@ -68,8 +77,25 @@ export function LiveCustomerCollectionModal({
   const allocTotal = selectedInvoice ? Math.min(amtNum, selectedInvoice.remaining) : 0;
   const unallocated = Math.max(0, amtNum - allocTotal);
 
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    void listMoneyAccounts()
+      .then(setMoneyAccounts)
+      .catch(() => setMoneyAccounts([]));
+  }, []);
+
+  useEffect(() => {
+    setMoneyAccountId("");
+  }, [method]);
+
+  const eligibleAccounts = eligibleMoneyAccounts(moneyAccounts, method);
+
   const submit = async () => {
     if (!custId || amtNum <= 0) return;
+    if (!moneyAccountId) {
+      toast.error(isRTL ? "اختر الخزنة أو الحساب البنكي" : "Select a cashbox or bank account");
+      return;
+    }
     setSubmitting(true);
     try {
       const allocations = selInv && selectedInvoice
@@ -78,7 +104,8 @@ export function LiveCustomerCollectionModal({
       const row = await createCustomerCollection({
         customer: Number(custId),
         amount: String(amtNum),
-        payment_method: method,
+        payment_method: mapTreasuryPaymentMethod(method),
+        money_account: Number(moneyAccountId),
         movement_date: date,
         reference_number: ref,
         notes,
@@ -151,7 +178,6 @@ export function LiveCustomerCollectionModal({
                 <option value="cash">{isRTL ? "كاش" : "Cash"}</option>
                 <option value="bank">{isRTL ? "تحويل بنكي" : "Bank"}</option>
                 <option value="cheque">{isRTL ? "شيك" : "Cheque"}</option>
-                <option value="other">{isRTL ? "أخرى" : "Other"}</option>
               </select>
             </div>
             <div>
@@ -159,6 +185,30 @@ export function LiveCustomerCollectionModal({
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-xl border px-2 py-2 text-sm" />
             </div>
           </div>
+          {eligibleAccounts.length === 0 ? (
+            <p className="text-xs font-bold text-amber-600">
+              {method === "cash"
+                ? (isRTL ? "لا توجد خزنة نشطة" : "No active cashbox found")
+                : (isRTL ? "لا توجد حسابات بنكية نشطة" : "No active bank account found")}
+            </p>
+          ) : (
+            <select
+              value={moneyAccountId}
+              onChange={(e) => setMoneyAccountId(e.target.value)}
+              className="w-full rounded-xl border px-3 py-2 text-sm"
+            >
+              <option value="">
+                {method === "cash"
+                  ? (isRTL ? "— اختر الخزنة —" : "— Select cashbox —")
+                  : (isRTL ? "— اختر الحساب البنكي —" : "— Select bank account —")}
+              </option>
+              {eligibleAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {formatMoneyAccountLabel(acc)}
+                </option>
+              ))}
+            </select>
+          )}
           {(method === "bank" || method === "cheque") && (
             <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder={isRTL ? "رقم المرجع" : "Reference"} className="w-full rounded-xl border px-3 py-2 text-sm" />
           )}
@@ -166,7 +216,7 @@ export function LiveCustomerCollectionModal({
         </div>
         <div className="p-6 border-t flex gap-3 justify-end">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border font-bold">{isRTL ? "إلغاء" : "Cancel"}</button>
-          <button type="button" disabled={!custId || amtNum <= 0 || submitting} onClick={() => void submit()} className="px-4 py-2 rounded-xl bg-emerald-500 text-white font-bold disabled:opacity-50">
+          <button type="button" disabled={!custId || amtNum <= 0 || !moneyAccountId || submitting} onClick={() => void submit()} className="px-4 py-2 rounded-xl bg-emerald-500 text-white font-bold disabled:opacity-50">
             {isRTL ? "تسجيل التحصيل" : "Record collection"}
           </button>
         </div>
@@ -194,6 +244,8 @@ export function LiveSupplierPaymentModal({
   const [selInv, setSelInv] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PayMethod>("bank");
+  const [moneyAccountId, setMoneyAccountId] = useState("");
+  const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccountRow[]>([]);
   const [date, setDate] = useState(todayIso());
   const [ref, setRef] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -215,8 +267,25 @@ export function LiveSupplierPaymentModal({
   const amtNum = parseFloat(amount) || 0;
   const selectedInvoice = openInvoices.find((i) => i.id === selInv);
 
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    void listMoneyAccounts()
+      .then(setMoneyAccounts)
+      .catch(() => setMoneyAccounts([]));
+  }, []);
+
+  useEffect(() => {
+    setMoneyAccountId("");
+  }, [method]);
+
+  const eligibleAccounts = eligibleMoneyAccounts(moneyAccounts, method);
+
   const submit = async () => {
     if (!suppId || amtNum <= 0) return;
+    if (!moneyAccountId) {
+      toast.error(isRTL ? "اختر الخزنة أو الحساب البنكي" : "Select a cashbox or bank account");
+      return;
+    }
     setSubmitting(true);
     try {
       const allocations = selInv && selectedInvoice
@@ -225,7 +294,8 @@ export function LiveSupplierPaymentModal({
       const row = await createSupplierPayment({
         supplier: Number(suppId),
         amount: String(amtNum),
-        payment_method: method,
+        payment_method: mapTreasuryPaymentMethod(method),
+        money_account: Number(moneyAccountId),
         movement_date: date,
         reference_number: ref,
         allocations,
@@ -284,10 +354,34 @@ export function LiveSupplierPaymentModal({
           {(method === "bank" || method === "cheque") && (
             <input value={ref} onChange={(e) => setRef(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" placeholder={isRTL ? "المرجع" : "Reference"} />
           )}
+          {eligibleAccounts.length === 0 ? (
+            <p className="text-xs font-bold text-amber-600">
+              {method === "cash"
+                ? (isRTL ? "لا توجد خزنة نشطة" : "No active cashbox found")
+                : (isRTL ? "لا توجد حسابات بنكية نشطة" : "No active bank account found")}
+            </p>
+          ) : (
+            <select
+              value={moneyAccountId}
+              onChange={(e) => setMoneyAccountId(e.target.value)}
+              className="w-full rounded-xl border px-3 py-2 text-sm"
+            >
+              <option value="">
+                {method === "cash"
+                  ? (isRTL ? "— اختر الخزنة —" : "— Select cashbox —")
+                  : (isRTL ? "— اختر الحساب البنكي —" : "— Select bank account —")}
+              </option>
+              {eligibleAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {formatMoneyAccountLabel(acc)}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="p-6 border-t flex gap-3 justify-end">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border font-bold">{isRTL ? "إلغاء" : "Cancel"}</button>
-          <button type="button" disabled={!suppId || amtNum <= 0 || submitting} onClick={() => void submit()} className="px-4 py-2 rounded-xl bg-[#0F2C59] text-white font-bold disabled:opacity-50">
+          <button type="button" disabled={!suppId || amtNum <= 0 || !moneyAccountId || submitting} onClick={() => void submit()} className="px-4 py-2 rounded-xl bg-[#0F2C59] text-white font-bold disabled:opacity-50">
             {isRTL ? "تسجيل الدفعة" : "Record payment"}
           </button>
         </div>

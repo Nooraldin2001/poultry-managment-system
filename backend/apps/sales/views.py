@@ -170,6 +170,7 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
             amount_paid=vd.get("amount_paid", 0),
             notes=vd.get("notes", ""),
             backdate_reason=vd.get("backdate_reason", ""),
+            money_account=vd.get("money_account"),
         )
         from apps.core.document_dates import log_backdated_invoice
 
@@ -212,7 +213,7 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
                 ]
             for field in (
                 "invoice_date", "due_date", "payment_method",
-                "vat_rate", "amount_paid", "notes", "backdate_reason",
+                "vat_rate", "amount_paid", "notes", "backdate_reason", "money_account",
             ):
                 if field in vd:
                     setattr(invoice, field, vd[field])

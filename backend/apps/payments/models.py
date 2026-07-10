@@ -173,6 +173,7 @@ class MoneyDirection(models.TextChoices):
 
 class MoneyMovementType(models.TextChoices):
     PURCHASE_PAYMENT = "purchase_payment", "Purchase Payment"
+    SALES_PAYMENT = "sales_payment", "Sales Payment"
     SUPPLIER_PAYMENT = "supplier_payment", "Supplier Payment"
     CUSTOMER_COLLECTION = "customer_collection", "Customer Collection"
     EXPENSE_PAYMENT = "expense_payment", "Expense Payment"

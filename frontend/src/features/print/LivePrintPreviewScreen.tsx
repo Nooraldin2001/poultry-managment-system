@@ -7,6 +7,17 @@ import { InvoiceTemplateRenderer } from "./InvoiceTemplateRenderer";
 import { resolveTheme } from "./theme";
 import { parseBranding, parseCompanyIdentity, parsePartyIdentity } from "./types";
 
+function lineDisplayTotal(line: Record<string, unknown>): string | undefined {
+  const exVat =
+    line.display_total ??
+    line.line_subtotal ??
+    null;
+  if (exVat != null && exVat !== "") return String(exVat);
+  if (line.line_total != null) return String(line.line_total);
+  if (line.amount != null) return String(line.amount);
+  return undefined;
+}
+
 function mapPrintLines(data: Record<string, unknown>): PrintLineRow[] {
   const raw = (data.lines ?? data.items ?? data.line_items ?? []) as Record<string, unknown>[];
   if (!Array.isArray(raw)) return [];
@@ -21,13 +32,19 @@ function mapPrintLines(data: Record<string, unknown>): PrintLineRow[] {
       qty: cartonsRaw != null ? String(cartonsRaw) : undefined,
       unit: kgRaw != null ? String(kgRaw) : String(line.unit ?? line.price_type ?? ""),
       price: line.unit_price != null ? String(line.unit_price) : undefined,
-      total: line.line_total != null ? String(line.line_total) : line.amount != null ? String(line.amount) : undefined,
+      total: lineDisplayTotal(line),
     };
   });
 }
 
-function mapTotals(data: Record<string, unknown>): { label: string; value: string }[] {
+function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; value: string }[] {
   const totals = (data.totals ?? {}) as Record<string, unknown>;
+  const isRTL = lang === "ar";
+  const L = (ar: string, en: string) => (isRTL ? ar : en);
+  const isPurchase =
+    totals.gross_total != null ||
+    totals.net_supplier_payable != null ||
+    totals.slaughterhouse_deduction != null;
   const pairs: [string, string][] = [];
   const subtotal = data.subtotal ?? totals.subtotal;
   const vat = data.vat_amount ?? data.vat ?? totals.vat_amount;
@@ -37,18 +54,27 @@ function mapTotals(data: Record<string, unknown>): { label: string; value: strin
   const total = data.total_amount ?? data.total ?? totals.total_amount ?? totals.net_supplier_payable;
   const paid = data.amount_paid ?? totals.amount_paid;
   const balance = data.balance ?? totals.balance_due;
-  if (subtotal != null) pairs.push(["Subtotal", String(subtotal)]);
-  if (vat != null && String(vat) !== "0" && String(vat) !== "0.00") pairs.push(["VAT", String(vat)]);
-  if (gross != null) pairs.push(["Gross Total", String(gross)]);
+  if (subtotal != null) pairs.push([L("الإجمالي قبل الضريبة", "Subtotal before VAT"), String(subtotal)]);
+  if (vat != null && String(vat) !== "0" && String(vat) !== "0.00") {
+    pairs.push([L("ضريبة القيمة المضافة", "VAT"), String(vat)]);
+  }
+  if (gross != null && isPurchase) {
+    pairs.push([L("الإجمالي شامل الضريبة", "Total incl. VAT"), String(gross)]);
+  }
   if (slaughter != null && parseFloat(String(slaughter)) > 0) {
-    pairs.push(["Slaughterhouse Deduction", `-${slaughter}`]);
+    pairs.push([L("خصم المسلخ", "Slaughterhouse Deduction"), `-${slaughter}`]);
   }
   if (transport != null && parseFloat(String(transport)) > 0) {
-    pairs.push(["Transport Deduction", `-${transport}`]);
+    pairs.push([L("خصم النقل", "Transport Deduction"), `-${transport}`]);
   }
-  if (total != null) pairs.push(["Net Supplier Payable", String(total)]);
-  if (paid != null) pairs.push(["Paid", String(paid)]);
-  if (balance != null) pairs.push(["Balance", String(balance)]);
+  if (total != null) {
+    pairs.push([
+      isPurchase ? L("صافي المستحق للمورد", "Net Supplier Payable") : L("الإجمالي شامل الضريبة", "Total incl. VAT"),
+      String(total),
+    ]);
+  }
+  if (paid != null) pairs.push([L("المدفوع", "Paid"), String(paid)]);
+  if (balance != null) pairs.push([L("الرصيد", "Balance"), String(balance)]);
   return pairs.map(([label, value]) => ({
     label,
     value: value.startsWith("-") ? `AED ${value}` : `AED ${value}`,
@@ -110,7 +136,7 @@ export function LivePrintPreviewScreen({ lang, onNavigate, backScreen, titleAr, 
   }, [fetchPreview]);
 
   const lines = useMemo(() => (data ? mapPrintLines(data) : []), [data]);
-  const totals = useMemo(() => (data ? mapTotals(data) : []), [data]);
+  const totals = useMemo(() => (data ? mapTotals(data, lang) : []), [data, lang]);
 
   if (loading) return <LoadingState lang={lang} />;
   if (error) return <ErrorState lang={lang} error={error} onRetry={() => void fetchPreview()} />;

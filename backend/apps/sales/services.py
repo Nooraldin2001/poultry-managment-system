@@ -287,14 +287,19 @@ def recalculate_sales_invoice(invoice) -> SalesInvoice:
     lines = list(invoice.lines.all())
     adjustments = list(invoice.adjustments.all())
 
+    header_vat_rate = _d(invoice.vat_rate)
     subtotal = ZERO
     line_discount = ZERO
     vat_sum = ZERO
     for line in lines:
+        if header_vat_rate > 0:
+            line_vat_rate = _d(line.vat_rate) if _d(line.vat_rate) > 0 else header_vat_rate
+        else:
+            line_vat_rate = _d(line.vat_rate)
         sub, taxable, vat, total = _line_money(
             price_type=line.price_type, unit_price=line.unit_price,
             cartons=line.quantity_cartons, pieces=line.quantity_pieces,
-            kg=line.quantity_kg, vat_rate=line.vat_rate,
+            kg=line.quantity_kg, vat_rate=line_vat_rate,
             is_free=line.is_free, discount=line.discount_amount,
         )
         line.line_subtotal = sub
@@ -319,7 +324,10 @@ def recalculate_sales_invoice(invoice) -> SalesInvoice:
     invoice.taxable_amount = taxable
 
     if _d(invoice.vat_rate) > 0:
-        invoice.vat_amount = calc.vat_amount(taxable, invoice.vat_rate)
+        if inv_discount > 0:
+            invoice.vat_amount = calc.vat_amount(taxable, invoice.vat_rate)
+        else:
+            invoice.vat_amount = vat_sum.quantize(MONEY_Q)
     else:
         invoice.vat_amount = vat_sum.quantize(MONEY_Q)
 
@@ -354,7 +362,7 @@ def create_sales_invoice(*, company, customer, created_by, invoice_date, lines,
                            adjustments=None, due_date=None, payment_method=None,
                            vat_rate=None, amount_paid=ZERO, notes="",
                            invoice_number=None, preserve_pricing=False,
-                           backdate_reason=""):
+                           backdate_reason="", money_account=None):
     _check_customer(company, customer)
     adjustments = adjustments or []
 
@@ -376,6 +384,7 @@ def create_sales_invoice(*, company, customer, created_by, invoice_date, lines,
         payment_method=payment_method or SalesPaymentMethod.CREDIT,
         vat_rate=_d(vat_rate),
         amount_paid=_d(amount_paid),
+        money_account=money_account,
         notes=notes or "",
         backdate_reason=backdate_reason or "",
         customer_name_snapshot=customer.name_ar,
@@ -511,6 +520,34 @@ def _validate_cash_customer_payment(customer, total_amount, amount_paid):
         )
 
 
+def _validate_sales_payment_for_approval(invoice) -> Decimal:
+    """Validate treasury account before stock side effects. Returns paid amount."""
+    from apps.payments.treasury_integration import validate_money_account_for_flow
+
+    paid_amount = _d(invoice.amount_paid)
+    if paid_amount > _d(invoice.total_amount):
+        raise ValidationError({"amount_paid": "Amount paid cannot exceed total."})
+
+    if invoice.payment_method == SalesPaymentMethod.CREDIT:
+        if paid_amount > 0:
+            raise ValidationError({"amount_paid": "Credit sale must have zero paid amount."})
+        if invoice.money_account_id:
+            raise ValidationError({
+                "money_account": (
+                    "Credit sale cannot use a cashbox/bank account / "
+                    "البيع الآجل لا يستخدم خزنة أو حساب بنكي"
+                )
+            })
+        return ZERO
+
+    validate_money_account_for_flow(
+        payment_method=invoice.payment_method,
+        money_account=invoice.money_account if invoice.money_account_id else None,
+        amount=paid_amount,
+    )
+    return paid_amount
+
+
 # ── Stock check ─────────────────────────────────────────────────────────────
 def check_stock_availability(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO):
     balance = InventoryBalance.objects.filter(company=company, product=product).first()
@@ -544,7 +581,7 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None,
 
     invoice = (
         SalesInvoice.objects.select_for_update(of=("self",))
-        .select_related("customer")
+        .select_related("customer", "money_account")
         .get(pk=invoice.pk)
     )
     if invoice.status != SalesStatus.DRAFT:
@@ -568,6 +605,8 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None,
         customer=customer, balance_due=invoice.balance_due,
         user=user, credit_override=credit_override,
     )
+
+    paid_amount = _validate_sales_payment_for_approval(invoice)
 
     fifo_total = ZERO
     for line in lines:
@@ -646,6 +685,24 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None,
         entry_date=invoice.invoice_date,
     )
 
+    if paid_amount > 0 and invoice.money_account_id:
+        from apps.payments import services as payment_services
+        from apps.payments.models import MoneyDirection, MoneyMovementType
+
+        payment_services.post_money_movement(
+            company=company,
+            money_account=invoice.money_account,
+            movement_type=MoneyMovementType.SALES_PAYMENT,
+            direction=MoneyDirection.IN,
+            amount=paid_amount,
+            reference_type="sales_invoice",
+            reference_id=invoice.id,
+            description=f"Sales payment {invoice.invoice_number}",
+            reason=reason,
+            user=user,
+            movement_date=invoice.invoice_date,
+        )
+
     from_status = invoice.status
     invoice.status = SalesStatus.APPROVED
     invoice.approval_reason = reason
@@ -683,7 +740,7 @@ def cancel_sales_invoice(*, invoice, user, reason) -> SalesInvoice:
 
     invoice = (
         SalesInvoice.objects.select_for_update(of=("self",))
-        .select_related("customer")
+        .select_related("customer", "money_account")
         .get(pk=invoice.pk)
     )
     if invoice.status == SalesStatus.CANCELLED:
@@ -740,6 +797,33 @@ def cancel_sales_invoice(*, invoice, user, reason) -> SalesInvoice:
         reason=reason,
         entry_date=timezone.now().date(),
     )
+
+    from apps.payments import services as payment_services
+    from apps.payments.models import MoneyDirection, MoneyMovement, MoneyMovementType
+    from django.db.models import Sum
+
+    paid_in = (
+        MoneyMovement.objects.filter(
+            company=company,
+            movement_type=MoneyMovementType.SALES_PAYMENT,
+            direction=MoneyDirection.IN,
+            reference_type="sales_invoice",
+            reference_id=str(invoice.id),
+        ).aggregate(s=Sum("amount"))["s"] or ZERO
+    )
+    if paid_in > 0 and invoice.money_account_id:
+        payment_services.post_money_movement(
+            company=company,
+            money_account=invoice.money_account,
+            movement_type=MoneyMovementType.REFUND,
+            direction=MoneyDirection.OUT,
+            amount=paid_in,
+            reference_type="sales_invoice_cancel",
+            reference_id=invoice.id,
+            description=f"Cancel sales {invoice.invoice_number}",
+            reason=reason,
+            user=user,
+        )
 
     invoice.status = SalesStatus.CANCELLED
     invoice.cancel_reason = reason
@@ -878,7 +962,10 @@ def build_print_preview(invoice, request=None) -> dict:
                 "unit_price": str(ln.unit_price),
                 "price_type": ln.price_type,
                 "line_subtotal": str(ln.line_subtotal),
+                "line_vat_amount": str(ln.vat_amount),
                 "line_total": str(ln.line_total),
+                # Print table Total column = ex-VAT subtotal (footer shows VAT once).
+                "display_total": str(ln.line_subtotal),
                 "is_free": ln.is_free,
             }
             for ln in lines

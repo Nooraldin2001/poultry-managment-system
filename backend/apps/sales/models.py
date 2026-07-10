@@ -115,6 +115,13 @@ class SalesInvoice(TenantOwnedModel):
     total_amount = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
     amount_paid = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
     balance_due = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
+    money_account = models.ForeignKey(
+        "payments.MoneyAccount",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="sales_invoices",
+    )
 
     fifo_cost_total = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
     gross_profit = models.DecimalField(default=ZERO, **MONEY)

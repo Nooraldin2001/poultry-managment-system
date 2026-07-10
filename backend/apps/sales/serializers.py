@@ -61,7 +61,7 @@ class SalesInvoiceListSerializer(serializers.ModelSerializer):
             "id", "invoice_number", "customer", "customer_name_snapshot",
             "invoice_date", "due_date", "status", "payment_status",
             "payment_method", "subtotal", "vat_amount", "total_amount",
-            "amount_paid", "balance_due", "gross_profit", "created_at",
+            "amount_paid", "balance_due", "money_account", "gross_profit", "created_at",
         ]
 
 
@@ -79,6 +79,7 @@ class SalesInvoiceDetailSerializer(serializers.ModelSerializer):
             "status", "payment_status", "payment_method",
             "subtotal", "discount_total", "taxable_amount",
             "vat_rate", "vat_amount", "total_amount", "amount_paid", "balance_due",
+            "money_account",
             "fifo_cost_total", "gross_profit", "posted_receivable",
             "credit_limit_snapshot", "credit_limit_override_used",
             "credit_limit_override_reason", "vat_enabled", "notes",
@@ -195,6 +196,7 @@ class SalesInvoiceCreateUpdateSerializer(
     amount_paid = serializers.DecimalField(
         max_digits=16, decimal_places=2, required=False, default=ZERO
     )
+    money_account = serializers.IntegerField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True)
     lines = SalesInvoiceLineInputSerializer(many=True, required=False)
     adjustments = SalesAdjustmentInputSerializer(many=True, required=False)
@@ -213,6 +215,14 @@ class SalesInvoiceCreateUpdateSerializer(
                 {"invoice_number": "Internal invoice number is assigned automatically."}
             )
         self._check_non_negative(attrs)
+        company = self.context["company"]
+        if "money_account" in attrs:
+            account_id = attrs.get("money_account")
+            if account_id is None:
+                attrs["money_account"] = None
+            else:
+                from apps.payments.treasury_integration import get_money_account
+                attrs["money_account"] = get_money_account(company, account_id)
         return super().validate(attrs)
 
 

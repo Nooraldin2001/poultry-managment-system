@@ -3,6 +3,7 @@
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -142,6 +143,7 @@ class CustomerCollectionCreateView(APIView):
             notes=vd.get("notes", ""),
             user=request.user,
             reason=vd.get("reason", ""),
+            money_account=vd.get("money_account"),
         )
         return Response(
             PaymentMovementDetailSerializer(movement).data,
@@ -173,6 +175,7 @@ class SupplierPaymentCreateView(APIView):
             notes=vd.get("notes", ""),
             user=request.user,
             reason=vd.get("reason", ""),
+            money_account=vd.get("money_account"),
         )
         return Response(
             PaymentMovementDetailSerializer(movement).data,
@@ -204,6 +207,7 @@ class CustomerRefundCreateView(APIView):
             user=request.user,
             reason=vd["reason"],
             allow_override=vd.get("allow_override", False),
+            money_account=vd.get("money_account"),
         )
         return Response(
             PaymentMovementDetailSerializer(movement).data,
@@ -235,6 +239,7 @@ class SupplierRefundCreateView(APIView):
             user=request.user,
             reason=vd["reason"],
             allow_override=vd.get("allow_override", False),
+            money_account=vd.get("money_account"),
         )
         return Response(
             PaymentMovementDetailSerializer(movement).data,
@@ -336,8 +341,9 @@ class MoneyAccountViewSet(TenantScopedViewSet):
         "partial_update": "treasury.update",
         "update": "treasury.update",
         "movements": "treasury.movements.view",
-        "statement": "treasury.movements.view",
+        "statement": "treasury.statement.view",
         "adjustments": "treasury.adjust",
+        "destroy": "treasury.delete",
     }
 
     def get_queryset(self):
@@ -426,6 +432,17 @@ class MoneyAccountViewSet(TenantScopedViewSet):
             user=request.user,
         )
         return Response(MoneyMovementSerializer(movement).data, status=status.HTTP_201_CREATED)
+
+    def destroy(self, request, *args, **kwargs):
+        account = self.get_object()
+        if MoneyMovement.objects.filter(money_account=account).exists():
+            raise ValidationError({
+                "detail": (
+                    "Cannot delete an account with movements. Deactivate it instead. / "
+                    "لا يمكن حذف حساب له حركات. قم بإيقافه بدلاً من ذلك"
+                )
+            })
+        return super().destroy(request, *args, **kwargs)
 
 
 class TreasurySummaryView(APIView):
