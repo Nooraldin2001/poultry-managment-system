@@ -173,8 +173,12 @@ export async function updatePurchase(id: string, payload: Record<string, unknown
   return mapApiPurchaseToRow(row);
 }
 
-export async function approvePurchase(id: string, reason?: string): Promise<PurchaseInvoiceRow> {
-  const row = await crud.action<ApiPurchaseList>(id, "approve/", { reason: reason ?? "" });
+export async function approvePurchase(
+  id: string,
+  reason?: string,
+  extra?: Record<string, unknown>,
+): Promise<PurchaseInvoiceRow> {
+  const row = await crud.action<ApiPurchaseList>(id, "approve/", { reason: reason ?? "", ...extra });
   return mapApiPurchaseToRow(row);
 }
 

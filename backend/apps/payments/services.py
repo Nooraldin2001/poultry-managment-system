@@ -106,7 +106,14 @@ def post_money_movement(
     account = MoneyAccount.objects.select_for_update().get(pk=money_account.pk)
     next_balance = _d(account.current_balance) + _account_balance_delta(direction, amount)
     if next_balance < 0 and not account.allow_negative:
-        raise ValidationError({"money_account": "Insufficient account balance."})
+        if account.account_type == MoneyAccountType.CASHBOX:
+            message = "Insufficient cashbox balance / الرصيد غير كافٍ في الخزنة"
+        else:
+            message = (
+                "Insufficient bank account balance / "
+                "الرصيد غير كافٍ في الحساب البنكي"
+            )
+        raise ValidationError({"money_account": message})
     account.current_balance = next_balance
     account.save(update_fields=["current_balance", "updated_at"])
     if movement_date is None:

@@ -4,7 +4,18 @@
 - **Tenant:** `firstview` — `https://firstview.poultryhero.solutions`
 - **Issue (AR):** `المبيعات بقت صفحة بيضة بس` — Sales page blank white screen (mobile Safari reported)
 
-## Root cause
+## 2026-07-10 client blockers
+
+| Issue | Root cause | Fix |
+| --- | --- | --- |
+| Line delete ? `Method "DELETE" not allowed` | `http_method_names` on `SalesInvoiceViewSet` excluded `delete` ? DRF 405 before the `lines/{id}/` action | Allow `delete`; block whole-invoice `destroy()` (405); draft-only line delete, bilingual 400 on approved; clear stale prefetch cache in `recalculate_sales_invoice`; frontend refetches detail after delete |
+| Backdated sales cannot be approved | Duplicate-reason validation on PATCH + approve payload without reason + UTC `todayIso()` | Stored-reason fallback in `InvoiceDateValidationMixin`; `SalesApproveSerializer` accepts `backdate_reason`; frontend sends reason on approve, local date ? see `BACKDATED_INVOICES_POLICY.md` |
+
+Tests: `tests/test_invoice_line_delete.py`, `tests/test_backdated_invoices.py`.
+
+---
+
+## Root cause (2026-07-05 white screen)
 
 | Layer | Problem |
 | --- | --- |

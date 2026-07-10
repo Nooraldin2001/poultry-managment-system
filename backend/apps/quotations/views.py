@@ -4,7 +4,7 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import MethodNotAllowed, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -54,7 +54,9 @@ class QuotationViewSet(TenantScopedViewSet):
         .all()
     )
     serializer_class = QuotationDetailSerializer
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    # "delete" is needed so DELETE reaches the line sub-resource action;
+    # deleting whole quotations stays blocked via destroy() below.
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     permission_map = {
         "list": "quotations.view",
         "retrieve": "quotations.view",
@@ -76,6 +78,11 @@ class QuotationViewSet(TenantScopedViewSet):
     @property
     def company(self):
         return self.request.user.company
+
+    def destroy(self, request, *args, **kwargs):
+        raise MethodNotAllowed(
+            "DELETE", detail="Quotations cannot be deleted. Use cancel instead."
+        )
 
     def get_serializer_class(self):
         if self.action == "list":

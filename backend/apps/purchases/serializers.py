@@ -281,6 +281,9 @@ class PurchaseInvoiceCreateUpdateSerializer(
 
 class PurchaseApproveSerializer(serializers.Serializer):
     reason = serializers.CharField()
+    # Optional fallback so approving a backdated invoice that is missing its
+    # stored backdate reason can supply one in the approve payload.
+    backdate_reason = serializers.CharField(required=False, allow_blank=True)
 
     def validate_reason(self, value):
         if not value.strip():

@@ -193,6 +193,12 @@ def _apply_payment_state(invoice):
 
 def recalculate_purchase_invoice(invoice) -> PurchaseInvoice:
     """Recompute line totals, adjustment totals, VAT, totals and balance due."""
+    # The API fetches invoices with prefetch_related("lines", "adjustments");
+    # line/adjustment mutations happen afterwards, so the prefetched cache is
+    # stale here (e.g. it still contains a just-deleted line). Clear it so the
+    # recalculation always reads fresh rows.
+    if getattr(invoice, "_prefetched_objects_cache", None):
+        invoice._prefetched_objects_cache = {}
     lines = list(invoice.lines.all())
     adjustments = list(invoice.adjustments.all())
 
@@ -678,8 +684,10 @@ def repair_purchase_inventory_side_effects(
 
 # ── Approval ────────────────────────────────────────────────────────────────
 @transaction.atomic
-def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
+def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> PurchaseInvoice:
     """Approve a draft invoice: add FIFO stock + post supplier payable."""
+    from apps.core.document_dates import ensure_backdate_reason_for_approval
+
     reason = require_reason_for_sensitive_action("approve_purchase_invoice", reason)
 
     invoice = (
@@ -689,6 +697,8 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
     )
     if invoice.status != PurchaseStatus.DRAFT:
         raise ValidationError("Only a draft purchase invoice can be approved.")
+
+    backdate_reason_set = ensure_backdate_reason_for_approval(invoice, backdate_reason)
 
     company = invoice.company
     _check_supplier(company, invoice.supplier)
@@ -725,15 +735,32 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
     if invoice.payment_method == PurchasePaymentMethod.CREDIT:
         if paid_amount > 0:
             raise ValidationError({"amount_paid": "Credit purchase must have zero paid amount."})
+        if invoice.money_account_id:
+            raise ValidationError({
+                "money_account": (
+                    "Credit purchase cannot use a cashbox/bank account / "
+                    "الشراء الآجل لا يستخدم خزنة أو حساب بنكي"
+                )
+            })
         paid_amount = ZERO
     elif paid_amount > 0:
         if not invoice.money_account_id:
             raise ValidationError({"money_account": "Select a cashbox/bank account for paid purchases."})
         account = invoice.money_account
         if invoice.payment_method == PurchasePaymentMethod.CASH and account.account_type != MoneyAccountType.CASHBOX:
-            raise ValidationError({"money_account": "Cash payment requires a cashbox account."})
+            raise ValidationError({
+                "money_account": (
+                    "Cash payment requires a cashbox account / "
+                    "الدفع كاش يتطلب اختيار خزنة"
+                )
+            })
         if invoice.payment_method in (PurchasePaymentMethod.BANK_TRANSFER, PurchasePaymentMethod.CHEQUE) and account.account_type != MoneyAccountType.BANK:
-            raise ValidationError({"money_account": "Bank/Cheque payment requires a bank account."})
+            raise ValidationError({
+                "money_account": (
+                    "Bank/Cheque payment requires a bank account / "
+                    "الدفع البنكي يتطلب اختيار حساب بنكي"
+                )
+            })
         payment_services.post_money_movement(
             company=company,
             money_account=account,
@@ -798,12 +825,15 @@ def approve_purchase_invoice(*, invoice, user, reason) -> PurchaseInvoice:
     invoice.approved_by = user
     invoice.approved_at = timezone.now()
     _apply_payment_state(invoice)
-    invoice.save(update_fields=[
+    update_fields = [
         "status", "approval_reason", "approved_by", "approved_at",
         "payment_status", "balance_due", "supplier_payable_posted",
         "slaughterhouse_deduction_posted", "transport_deduction_posted",
         "updated_at",
-    ])
+    ]
+    if backdate_reason_set:
+        update_fields.append("backdate_reason")
+    invoice.save(update_fields=update_fields)
 
     create_audit_log(
         action="approve_purchase_invoice", user=user, company=company,

@@ -4,7 +4,7 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import MethodNotAllowed, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -72,7 +72,9 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
         .all()
     )
     serializer_class = SalesInvoiceDetailSerializer
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    # "delete" is needed so DELETE reaches the line/adjustment sub-resource
+    # actions; deleting whole invoices stays blocked via destroy() below.
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     permission_map = {
         "list": "sales.view",
         "retrieve": "sales.view",
@@ -142,6 +144,12 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         return self._detail_response(self.get_object())
+
+    def destroy(self, request, *args, **kwargs):
+        # Invoices are audit records: they are cancelled, never hard-deleted.
+        raise MethodNotAllowed(
+            "DELETE", detail="Sales invoices cannot be deleted. Use cancel instead."
+        )
 
     def create(self, request, *args, **kwargs):
         serializer = SalesInvoiceCreateUpdateSerializer(
@@ -258,6 +266,7 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
         invoice = services.approve_sales_invoice(
             invoice=invoice, user=request.user,
             reason=vd["reason"], credit_override=credit_override,
+            backdate_reason=vd.get("backdate_reason", ""),
         )
         return self._detail_response(invoice)
 
@@ -382,6 +391,13 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
             url_path="lines/(?P<line_id>[^/.]+)")
     def line_detail(self, request, pk=None, line_id=None):
         invoice = self.get_object()
+        if invoice.status != SalesStatus.DRAFT and request.method == "DELETE":
+            raise ValidationError({
+                "detail": (
+                    "Cannot delete a line from an approved invoice / "
+                    "لا يمكن حذف بند من فاتورة معتمدة"
+                ),
+            })
         _require_draft(invoice)
         line = get_object_or_404(
             SalesInvoiceLine, pk=line_id, invoice=invoice,

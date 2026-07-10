@@ -1055,3 +1055,25 @@ python manage.py ensure_service_supplier_categories --company-subdomain firstvie
 ```
 
 Automated (passed locally 2026-07-09): `pytest tests/test_suppliers.py tests/test_purchases.py` ? 83 passed; frontend typecheck + build pass.
+
+---
+
+## Four client blockers smoke (2026-07-10)
+
+Tenant: `https://firstview.poultryhero.solutions` (`VITE_USE_MOCK_DATA=false`)
+
+| # | Check | Expected | Status |
+|---|-------|----------|--------|
+| 1 | Delete a line from a draft purchase invoice | Line removed, totals recalculated, no `Method "DELETE" not allowed` | Pending deploy + manual |
+| 2 | Delete a line from a draft sales invoice | Same | Pending deploy + manual |
+| 3 | Delete a line from an approved invoice | 400 `?? ???? ??? ??? ?? ?????? ??????` | Pending deploy + manual |
+| 4 | Purchase line KG=3344.8, price/kg=14.5 | Line total = 48,499.60 (kg × price, not pieces × price) | Pending deploy + manual |
+| 5 | Create backdated purchase draft with reason, then approve | Approval succeeds; stock/ledger dated by `invoice_date` | Pending deploy + manual |
+| 6 | Create backdated sales draft with reason, then approve | Approval succeeds | Pending deploy + manual |
+| 7 | Payment method = cash | Only active cashboxes listed (`??????`), with balances | Pending deploy + manual |
+| 8 | Payment method = bank | Only active bank accounts listed (`?????? ??????`) with bank name/number/balance | Pending deploy + manual |
+| 9 | Payment method = credit | Account selector hidden, paid = 0 | Pending deploy + manual |
+| 10 | Payment method = partial | Source-type picker (cashbox/bank) then matching dropdown | Pending deploy + manual |
+| 11 | Approve cash purchase with bank account selected (API) | 400 account-type mismatch | Covered by automated tests |
+
+Automated (passed locally 2026-07-10): full backend suite `pytest tests` — **560 passed**; `python manage.py check` clean; frontend `typecheck` + `build` pass.

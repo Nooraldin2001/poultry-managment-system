@@ -9,7 +9,7 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import MethodNotAllowed, PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -64,7 +64,9 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
         .all()
     )
     serializer_class = PurchaseInvoiceDetailSerializer
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    # "delete" is needed so DELETE reaches the line/adjustment sub-resource
+    # actions; deleting whole invoices stays blocked via destroy() below.
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     permission_map = {
         "list": "purchases.view",
@@ -126,6 +128,12 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
             else:
                 qs = qs.filter(vat_rate=0)
         return qs
+
+    def destroy(self, request, *args, **kwargs):
+        # Invoices are audit records: they are cancelled, never hard-deleted.
+        raise MethodNotAllowed(
+            "DELETE", detail="Purchase invoices cannot be deleted. Use cancel instead."
+        )
 
     # --- Create / update --------------------------------------------------
     def create(self, request, *args, **kwargs):
@@ -247,6 +255,7 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
         invoice = services.approve_purchase_invoice(
             invoice=invoice, user=request.user,
             reason=serializer.validated_data["reason"],
+            backdate_reason=serializer.validated_data.get("backdate_reason", ""),
         )
         return Response(PurchaseInvoiceDetailSerializer(invoice).data)
 
@@ -317,6 +326,13 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
             url_path="lines/(?P<line_id>[^/.]+)")
     def line_detail(self, request, pk=None, line_id=None):
         invoice = self.get_object()
+        if invoice.status != PurchaseStatus.DRAFT and request.method == "DELETE":
+            raise ValidationError({
+                "detail": (
+                    "Cannot delete a line from an approved invoice / "
+                    "لا يمكن حذف بند من فاتورة معتمدة"
+                ),
+            })
         _require_draft(invoice)
         line = get_object_or_404(
             PurchaseInvoiceLine, pk=line_id, invoice=invoice,

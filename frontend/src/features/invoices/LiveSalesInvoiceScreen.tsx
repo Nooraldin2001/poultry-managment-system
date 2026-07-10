@@ -99,6 +99,22 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
     setNotFound(false);
   }, []);
 
+  const mapDetailLines = (detail: Awaited<ReturnType<typeof getSalesDetail>>): InvoiceLineDraft[] =>
+    detail.lines.map((l) => ({
+      id: l.id,
+      serverId: l.id,
+      productId: l.productId,
+      productName: l.productName,
+      cartons: l.cartons ?? 0,
+      pieces: l.pieces ?? l.qty,
+      kg: l.kg ?? l.qty,
+      unitPrice: l.price,
+      priceType: (l.unit as "kg") || "kg",
+      vatRate: 5,
+      lineSubtotal: l.total,
+      lineTotal: l.total,
+    }));
+
   const loadDoc = useCallback(async () => {
     if (!invoiceId || IS_MOCK_MODE) return;
     setLoadingDoc(true);
@@ -114,22 +130,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
       setBackdateReason(detail.backdateReason ?? "");
       setAmountPaid(String(detail.invoice.paid));
       setVatEnabled(detail.invoice.vat > 0);
-      setLines(
-        detail.lines.map((l) => ({
-          id: l.id,
-          serverId: l.id,
-          productId: l.productId,
-          productName: l.productName,
-          cartons: l.cartons ?? 0,
-          pieces: l.pieces ?? l.qty,
-          kg: l.kg ?? l.qty,
-          unitPrice: l.price,
-          priceType: (l.unit as "kg") || "kg",
-          vatRate: 5,
-          lineSubtotal: l.total,
-          lineTotal: l.total,
-        })),
-      );
+      setLines(mapDetailLines(detail));
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setNotFound(true);
@@ -289,8 +290,15 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
       return;
     }
     try {
-      if (line.serverId && docId) await removeDraftLine("sales", docId, line.serverId);
-      setLines((prev) => prev.filter((l) => l.id !== line.id));
+      if (line.serverId && docId) {
+        await removeDraftLine("sales", docId, line.serverId);
+        // Backend recalculated totals — reload lines from the server.
+        const detail = await getSalesDetail(docId);
+        setLines(mapDetailLines(detail));
+      } else {
+        setLines((prev) => prev.filter((l) => l.id !== line.id));
+      }
+      toast.success(isRTL ? "تم حذف البند" : "Line deleted");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : (isRTL ? "تعذر حذف البند" : "Unable to delete line"));
     }
@@ -349,11 +357,12 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
       // Persist payment fields before approval — backend validates stored amount_paid.
       await saveHeader(docId);
       await runStockCheck();
-      await approveSale(
-        docId,
-        reason,
-        needsCreditOverride ? { credit_override: true } : undefined,
-      );
+      await approveSale(docId, reason, {
+        ...(needsCreditOverride ? { credit_override: true } : {}),
+        ...(isBackdatedDate(invoiceDate) && backdateReason.trim()
+          ? { backdate_reason: backdateReason.trim() }
+          : {}),
+      });
       setStatus("approved");
       setShowApprove(false);
       setNeedsCreditOverride(false);

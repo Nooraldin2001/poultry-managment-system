@@ -210,6 +210,9 @@ class SalesInvoiceCreateUpdateSerializer(
 class SalesApproveSerializer(serializers.Serializer):
     reason = serializers.CharField()
     credit_override = serializers.BooleanField(required=False, default=False)
+    # Optional fallback so approving a backdated invoice that is missing its
+    # stored backdate reason can supply one in the approve payload.
+    backdate_reason = serializers.CharField(required=False, allow_blank=True)
 
 
 class SalesCancelSerializer(serializers.Serializer):

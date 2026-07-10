@@ -26,12 +26,18 @@ class InvoiceDateValidationMixin:
             instance is not None and getattr(instance, "status", "draft") != "draft"
         )
         previous_date = instance.invoice_date if instance else None
+        # Partial updates may omit backdate_reason: fall back to the reason
+        # already stored on the invoice so re-saving/approving a backdated
+        # draft does not fail with "reason required".
+        backdate_reason = (attrs.get("backdate_reason") or "").strip()
+        if not backdate_reason and instance is not None:
+            backdate_reason = (getattr(instance, "backdate_reason", "") or "").strip()
         cleaned_reason = validate_invoice_document_date(
             user=request.user,
             company=company,
             document_date=invoice_date,
             permission_code=self.backdate_permission_code,
-            backdate_reason=attrs.get("backdate_reason", ""),
+            backdate_reason=backdate_reason,
             previous_date=previous_date,
             is_approved=is_approved,
         )

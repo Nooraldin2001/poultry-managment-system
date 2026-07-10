@@ -38,6 +38,27 @@ When `invoice_date < today`:
 - `backdate_reason` is **required** on create/update (draft only)
 - An audit log entry is written (`backdate_sales_invoice` / `backdate_purchase_invoice`) with actor, document id, `invoice_date`, `created_at`, and reason
 
+### 2026-07-10 fix: approval of backdated drafts
+
+**Root cause:** partial updates (PATCH) on an already-backdated draft failed validation when the
+payload did not repeat `backdate_reason`, and the approve flow could not supply a reason at all —
+so backdated drafts were stuck (`مش بيعتمد فواتير قديمه خالص`).
+
+**Fix:**
+
+- `InvoiceDateValidationMixin` now falls back to the reason **already stored on the instance**
+  during partial updates; resaving/approving a backdated draft no longer demands a duplicate reason.
+- Approve serializers (`PurchaseApproveSerializer`, `SalesApproveSerializer`) accept an optional
+  `backdate_reason`, and `ensure_backdate_reason_for_approval()` (in `apps/core/document_dates.py`)
+  validates it at approval time: if the invoice is backdated and has no stored reason, a reason
+  must accompany the approve call, otherwise approval proceeds with the stored reason.
+- Frontend approve calls pass `backdate_reason` when the invoice is backdated, and `todayIso()` in
+  `BackdateInvoiceFields.tsx` now uses the **local** date (previously UTC, which mis-flagged
+  invoices as backdated between 00:00–04:00 UAE time).
+
+Regression tests: `backend/tests/test_backdated_invoices.py` (PATCH without duplicate reason,
+approve via API for sales + purchases, approve without stored reason requires a reason).
+
 ## Validation rules
 
 1. `invoice_date` is required

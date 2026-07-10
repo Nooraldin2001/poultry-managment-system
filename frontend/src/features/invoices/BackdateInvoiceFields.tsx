@@ -13,7 +13,12 @@ type Props = {
 };
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Local business date (matches backend TIME_ZONE=Asia/Dubai), not UTC —
+  // toISOString() would return "yesterday" between 00:00 and 04:00 UAE time.
+  const d = new Date();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
 }
 
 export function isBackdatedDate(invoiceDate: string): boolean {

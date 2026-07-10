@@ -166,6 +166,9 @@ def _record_status_history(quotation, from_status, to_status, reason, user):
 
 
 def recalculate_quotation(quotation) -> Quotation:
+    # Clear any stale prefetched lines cache (e.g. after deleting a line).
+    if getattr(quotation, "_prefetched_objects_cache", None):
+        quotation._prefetched_objects_cache = {}
     lines = list(quotation.lines.all())
     subtotal = ZERO
     line_discount = ZERO

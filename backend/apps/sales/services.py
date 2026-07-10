@@ -276,6 +276,12 @@ def _record_status_history(invoice, from_status, to_status, reason, user):
 
 # ── Recalculate ─────────────────────────────────────────────────────────────
 def recalculate_sales_invoice(invoice) -> SalesInvoice:
+    # The API fetches invoices with prefetch_related("lines", "adjustments");
+    # line/adjustment mutations happen afterwards, so the prefetched cache is
+    # stale here (e.g. it still contains a just-deleted line). Clear it so the
+    # recalculation always reads fresh rows.
+    if getattr(invoice, "_prefetched_objects_cache", None):
+        invoice._prefetched_objects_cache = {}
     lines = list(invoice.lines.all())
     adjustments = list(invoice.adjustments.all())
 
@@ -525,7 +531,10 @@ def check_stock_availability(*, company, product, cartons=ZERO, pieces=ZERO, kg=
 
 # ── Approval ────────────────────────────────────────────────────────────────
 @transaction.atomic
-def approve_sales_invoice(*, invoice, user, reason, credit_override=None) -> SalesInvoice:
+def approve_sales_invoice(*, invoice, user, reason, credit_override=None,
+                          backdate_reason="") -> SalesInvoice:
+    from apps.core.document_dates import ensure_backdate_reason_for_approval
+
     reason = require_reason_for_sensitive_action("approve_sales_invoice", reason)
 
     invoice = (
@@ -535,6 +544,8 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None) -> Sal
     )
     if invoice.status != SalesStatus.DRAFT:
         raise ValidationError("Only a draft sales invoice can be approved.")
+
+    backdate_reason_set = ensure_backdate_reason_for_approval(invoice, backdate_reason)
 
     company = invoice.company
     customer = Customer.objects.select_for_update().get(pk=invoice.customer_id)
@@ -636,7 +647,7 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None) -> Sal
     invoice.approved_by = user
     invoice.approved_at = timezone.now()
     _apply_payment_state(invoice)
-    invoice.save(update_fields=[
+    update_fields = [
         "status", "approval_reason", "approved_by", "approved_at",
         "customer_name_snapshot", "customer_trn_snapshot",
         "customer_phone_snapshot", "customer_address_snapshot",
@@ -644,7 +655,10 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None) -> Sal
         "credit_limit_snapshot", "credit_limit_override_used",
         "credit_limit_override_reason", "payment_status", "balance_due",
         "updated_at",
-    ])
+    ]
+    if backdate_reason_set:
+        update_fields.append("backdate_reason")
+    invoice.save(update_fields=update_fields)
     _record_status_history(invoice, from_status, invoice.status, reason, user)
 
     create_audit_log(

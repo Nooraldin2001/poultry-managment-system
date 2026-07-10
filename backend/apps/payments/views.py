@@ -337,6 +337,16 @@ class MoneyAccountViewSet(TenantScopedViewSet):
         "adjustments": "treasury.adjust",
     }
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p = self.request.query_params
+        if p.get("account_type") in ("cashbox", "bank"):
+            qs = qs.filter(account_type=p["account_type"])
+        if p.get("is_active") is not None:
+            is_active = str(p["is_active"]).lower() in ("1", "true", "yes")
+            qs = qs.filter(is_active=is_active)
+        return qs.order_by("account_type", "name", "id")
+
     def perform_create(self, serializer):
         account = serializer.save(
             company=self.request.user.company,

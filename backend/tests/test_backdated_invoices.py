@@ -300,6 +300,136 @@ def test_tax_report_uses_invoice_date(company, owner):
     assert summary["sales_vat"] > 0
 
 
+# ── Approval of backdated invoices ────────────────────────────────────────────
+def test_backdated_purchase_patch_without_duplicate_reason_ok(api, company, owner):
+    """Re-saving a backdated draft must not fail when the payload omits the
+    already-stored backdate_reason (the approve flow PATCHes the header first)."""
+    supplier = _supplier(company)
+    product = _product(company, sku="PBD10")
+    past = date.today() - timedelta(days=3)
+    api.force_authenticate(owner)
+    resp = api.post(
+        PURCHASES_URL,
+        _purchase_payload(supplier, product, past, backdate_reason="متأخرة"),
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    inv_id = resp.data["id"]
+    resp = api.patch(
+        f"{PURCHASES_URL}{inv_id}/",
+        {"invoice_date": str(past), "notes": "resave"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    assert resp.data["backdate_reason"] == "متأخرة"
+
+
+def test_backdated_purchase_approve_via_api(api, company, owner):
+    supplier = _supplier(company)
+    product = _product(company, sku="PBD11")
+    past = date.today() - timedelta(days=4)
+    api.force_authenticate(owner)
+    resp = api.post(
+        PURCHASES_URL,
+        _purchase_payload(supplier, product, past, backdate_reason="متأخرة"),
+        format="json",
+    )
+    inv_id = resp.data["id"]
+    resp = api.post(
+        f"{PURCHASES_URL}{inv_id}/approve/",
+        {"reason": "اعتماد فاتورة بتاريخ سابق"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    assert resp.data["status"] == "approved"
+    assert resp.data["invoice_date"] == str(past)
+
+
+def test_backdated_sales_approve_via_api(api, company, owner):
+    customer = _customer(company)
+    product = _product(company, sku="SBD11")
+    _seed_stock(company, owner, product)
+    past = date.today() - timedelta(days=4)
+    api.force_authenticate(owner)
+    resp = api.post(
+        SALES_URL,
+        _sales_payload(customer, product, past, backdate_reason="متأخرة"),
+        format="json",
+    )
+    inv_id = resp.data["id"]
+    resp = api.post(
+        f"{SALES_URL}{inv_id}/approve/",
+        {"reason": "اعتماد فاتورة بتاريخ سابق"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    assert resp.data["status"] == "approved"
+
+
+def test_backdated_purchase_without_stored_reason_requires_reason_on_approve(company, owner):
+    """Legacy backdated drafts with no stored reason must fail clearly, and
+    approve may supply the missing backdate_reason as a fallback."""
+    from apps.purchases.models import PurchaseInvoice
+    from rest_framework.exceptions import ValidationError as DRFValidationError
+
+    supplier = _supplier(company)
+    product = _product(company, sku="PBD12")
+    past = date.today() - timedelta(days=5)
+    inv = purchase_services.create_purchase_invoice(
+        company=company, supplier=supplier, created_by=owner,
+        invoice_date=past, backdate_reason="temp",
+        vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": PurchaseLineType.PRODUCT,
+            "quantity_kg": Decimal("10"), "unit_price": Decimal("10"), "price_type": "kg",
+        }],
+    )
+    # Simulate a legacy row saved without a reason.
+    PurchaseInvoice.objects.filter(pk=inv.pk).update(backdate_reason="")
+    inv.refresh_from_db()
+
+    with pytest.raises(DRFValidationError):
+        purchase_services.approve_purchase_invoice(invoice=inv, user=owner, reason="ok")
+
+    inv.refresh_from_db()
+    approved = purchase_services.approve_purchase_invoice(
+        invoice=inv, user=owner, reason="ok", backdate_reason="سبب متأخر",
+    )
+    assert approved.status == PurchaseStatus.APPROVED
+    assert approved.backdate_reason == "سبب متأخر"
+
+
+def test_backdated_sales_without_stored_reason_requires_reason_on_approve(company, owner):
+    from apps.sales.models import SalesInvoice
+    from rest_framework.exceptions import ValidationError as DRFValidationError
+
+    customer = _customer(company)
+    product = _product(company, sku="SBD12")
+    _seed_stock(company, owner, product)
+    past = date.today() - timedelta(days=5)
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=past, backdate_reason="temp",
+        vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": SalesLineType.PRODUCT,
+            "quantity_kg": Decimal("5"), "price_type": "kg",
+        }],
+    )
+    SalesInvoice.objects.filter(pk=inv.pk).update(backdate_reason="")
+    inv.refresh_from_db()
+
+    with pytest.raises(DRFValidationError):
+        sales_services.approve_sales_invoice(invoice=inv, user=owner, reason="ok")
+
+    inv.refresh_from_db()
+    approved = sales_services.approve_sales_invoice(
+        invoice=inv, user=owner, reason="ok", backdate_reason="سبب متأخر",
+    )
+    assert approved.status == SalesStatus.APPROVED
+    assert approved.backdate_reason == "سبب متأخر"
+
+
 def test_created_at_remains_system_timestamp(company, owner):
     customer = _customer(company)
     product = _product(company, sku="TS1")

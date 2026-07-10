@@ -129,6 +129,32 @@ def test_money_account_tenant_isolation(api, owner, other_owner):
     assert res.status_code == 404
 
 
+def test_money_accounts_filter_by_account_type_and_active(api, owner):
+    company = owner.company
+    _money_account(company, name="Cash A", account_type="cashbox")
+    _money_account(company, name="ADCB", account_type="bank")
+    inactive = _money_account(company, name="Old Cash", account_type="cashbox")
+    inactive.is_active = False
+    inactive.save(update_fields=["is_active"])
+
+    api.force_authenticate(owner)
+
+    res = api.get(f"{MONEY_ACCOUNTS_URL}?account_type=cashbox&is_active=true")
+    rows = res.data["results"] if isinstance(res.data, dict) else res.data
+    assert res.status_code == 200
+    assert {r["name"] for r in rows} == {"Cash A"}
+    assert all(r["account_type"] == "cashbox" for r in rows)
+
+    res = api.get(f"{MONEY_ACCOUNTS_URL}?account_type=bank&is_active=true")
+    rows = res.data["results"] if isinstance(res.data, dict) else res.data
+    assert {r["name"] for r in rows} == {"ADCB"}
+    assert all(r["account_type"] == "bank" for r in rows)
+
+    res = api.get(f"{MONEY_ACCOUNTS_URL}?is_active=false")
+    rows = res.data["results"] if isinstance(res.data, dict) else res.data
+    assert {r["name"] for r in rows} == {"Old Cash"}
+
+
 def test_negative_balance_blocked_by_default(company, owner):
     acc = _money_account(company, opening="10")
     with pytest.raises(ValidationError):

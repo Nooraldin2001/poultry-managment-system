@@ -1040,6 +1040,176 @@ def test_cash_purchase_pays_net_supplier_amount(company, owner):
     ).exists()
 
 
+# ── Payment source / account type validation ────────────────────────────────
+def _cashbox(company, name="Cash A", balance="1000"):
+    return MoneyAccount.objects.create(
+        company=company, name=name, account_type="cashbox",
+        opening_balance=Decimal(balance), current_balance=Decimal(balance),
+        currency="AED",
+    )
+
+
+def _bank(company, name="ADCB", balance="1000"):
+    return MoneyAccount.objects.create(
+        company=company, name=name, account_type="bank", bank_name=name,
+        account_number="123456", opening_balance=Decimal(balance),
+        current_balance=Decimal(balance), currency="AED",
+    )
+
+
+def test_cash_purchase_cannot_use_bank_account(company, owner):
+    supplier = _supplier(company, sku="SMIX1")
+    product = _product(company, sku="PMIX1")
+    bank = _bank(company)
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="cash", amount_paid=Decimal("50"),
+        money_account=bank, vat_rate=Decimal("0"),
+    )
+    with pytest.raises(ValidationError):
+        services.approve_purchase_invoice(invoice=inv, user=owner, reason="x")
+
+
+def test_bank_purchase_cannot_use_cashbox(company, owner):
+    supplier = _supplier(company, sku="SMIX2")
+    product = _product(company, sku="PMIX2")
+    cashbox = _cashbox(company)
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="bank_transfer", amount_paid=Decimal("50"),
+        money_account=cashbox, vat_rate=Decimal("0"),
+    )
+    with pytest.raises(ValidationError):
+        services.approve_purchase_invoice(invoice=inv, user=owner, reason="x")
+
+
+def test_credit_purchase_cannot_use_money_account(company, owner):
+    supplier = _supplier(company, sku="SMIX3")
+    product = _product(company, sku="PMIX3")
+    cashbox = _cashbox(company)
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="credit", amount_paid=Decimal("0"),
+        money_account=cashbox, vat_rate=Decimal("0"),
+    )
+    with pytest.raises(ValidationError):
+        services.approve_purchase_invoice(invoice=inv, user=owner, reason="x")
+
+
+def test_insufficient_cashbox_balance_blocks_purchase(company, owner):
+    supplier = _supplier(company, sku="SMIX4")
+    product = _product(company, sku="PMIX4")
+    cashbox = _cashbox(company, balance="10")
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="cash", amount_paid=Decimal("100"),
+        money_account=cashbox, vat_rate=Decimal("0"),
+    )
+    with pytest.raises(ValidationError):
+        services.approve_purchase_invoice(invoice=inv, user=owner, reason="x")
+    cashbox.refresh_from_db()
+    assert cashbox.current_balance == Decimal("10.00")
+
+
+# ── KG-based purchase pricing (client blocker: pieces × price bug) ──────────
+def test_kg_priced_line_ignores_pieces(company, owner):
+    """price_type=kg must use kg × unit_price even when pieces are present."""
+    supplier = _supplier(company, sku="SKG1")
+    product = _product(company, sku="PKG1")
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_cartons="10", quantity_pieces="100",
+               quantity_kg="3344.8", unit_price="14.5", price_type="kg")],
+        vat_rate=Decimal("0"),
+    )
+    line = inv.lines.first()
+    assert line.line_subtotal == Decimal("3344.8") * Decimal("14.5")
+    assert inv.total_amount == (Decimal("3344.8") * Decimal("14.5")).quantize(Decimal("0.01"))
+
+
+def test_carton_product_kg_total_via_api(api, company, owner):
+    """Fixed-weight carton product: derived KG × price per KG, not pieces × price."""
+    supplier = _supplier(company, sku="SKG2")
+    # 1000 g per piece, 10 pieces per carton → 10 kg per carton.
+    product = _product(company, sku="PKG2")
+    api.force_authenticate(owner)
+    resp = api.post(
+        "/api/v1/tenant/purchases/",
+        {
+            "supplier": supplier.id,
+            "invoice_date": str(date.today()),
+            "vat_rate": "0",
+            "lines": [{
+                "product": product.id, "line_type": "product",
+                "quantity_cartons": "5", "quantity_pieces": "50",
+                "quantity_kg": "50", "unit_price": "10", "price_type": "kg",
+            }],
+        },
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    line = resp.data["lines"][0]
+    # 50 kg × 10 = 500 (NOT 50 pieces × 10 = 500 by coincidence of weight —
+    # assert against kg explicitly by re-checking with a non-1kg weight below).
+    assert Decimal(line["line_subtotal"]) == Decimal("500.00")
+
+    heavy = Product.objects.create(
+        company=company, category=product.category, name_ar="prod heavy",
+        sku="PKG3", product_type=ProductType.FIXED_WEIGHT, weight_grams=1200,
+        default_pieces_per_carton=10, purchase_price=Decimal("10.00"),
+    )
+    resp = api.post(
+        "/api/v1/tenant/purchases/",
+        {
+            "supplier": supplier.id,
+            "invoice_date": str(date.today()),
+            "vat_rate": "0",
+            "lines": [{
+                "product": heavy.id, "line_type": "product",
+                "quantity_cartons": "5", "quantity_pieces": "50",
+                "quantity_kg": "60", "unit_price": "10", "price_type": "kg",
+            }],
+        },
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    line = resp.data["lines"][0]
+    # 60 kg × 10 = 600 — pieces (50) must NOT drive the total.
+    assert Decimal(line["line_subtotal"]) == Decimal("600.00")
+
+
+def test_cut_product_manual_kg_total(company, owner):
+    supplier = _supplier(company, sku="SKG4")
+    liver = _cut_product(company, sku="CUTKG4")
+    inv = _create(
+        company, supplier, owner,
+        [_line(liver, quantity_kg="25.5", unit_price="4", price_type="kg")],
+        vat_rate=Decimal("0"),
+    )
+    line = inv.lines.first()
+    assert line.line_subtotal == Decimal("102.00")
+
+
+def test_kg_totals_survive_approval(company, owner):
+    supplier = _supplier(company, sku="SKG5")
+    product = _product(company, sku="PKG5")
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_cartons="2", quantity_pieces="20",
+               quantity_kg="20", unit_price="14.5", price_type="kg")],
+        vat_rate=Decimal("0"),
+    )
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="ok")
+    inv.refresh_from_db()
+    line = inv.lines.first()
+    assert line.line_subtotal == Decimal("290.00")
+    assert inv.total_amount == Decimal("290.00")
+
+
 def test_cancel_reverses_deduction_ledgers(company, owner):
     poultry = _supplier(company)
     slaughter = _service_supplier(company, "slaughterhouse", "مسلخ", "SH5")

@@ -52,9 +52,18 @@ function mapAccount(a: ApiMoneyAccount): MoneyAccountRow {
   };
 }
 
-export async function listMoneyAccounts(): Promise<MoneyAccountRow[]> {
+export async function listMoneyAccounts(filters?: {
+  accountType?: "cashbox" | "bank";
+  isActive?: boolean;
+}): Promise<MoneyAccountRow[]> {
   const data = await request<ApiMoneyAccount[] | { results?: ApiMoneyAccount[] }>(
     ENDPOINTS.tenant.moneyAccounts,
+    {
+      query: {
+        account_type: filters?.accountType,
+        is_active: filters?.isActive,
+      },
+    },
   );
   const rows = Array.isArray(data) ? data : (data.results ?? []);
   return rows.map(mapAccount);

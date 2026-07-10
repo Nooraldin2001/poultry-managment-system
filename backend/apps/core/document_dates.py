@@ -80,6 +80,33 @@ def validate_invoice_document_date(
     return cleaned_reason
 
 
+def ensure_backdate_reason_for_approval(invoice, provided_reason: str = "") -> bool:
+    """Ensure a backdated invoice carries a reason before approval.
+
+    An invoice that already stores a valid ``backdate_reason`` approves without
+    requiring the reason again. A backdated invoice missing its reason accepts
+    the ``provided_reason`` fallback from the approve payload; otherwise a
+    clear bilingual error is raised.
+
+    Returns True when ``invoice.backdate_reason`` was set from the fallback
+    (the caller must include it in ``update_fields``).
+    """
+    if invoice.invoice_date >= timezone.localdate():
+        return False
+    if (invoice.backdate_reason or "").strip():
+        return False
+    cleaned = (provided_reason or "").strip()
+    if not cleaned:
+        raise ValidationError({
+            "backdate_reason": (
+                "Backdate reason is required to approve a backdated invoice / "
+                "سبب إدخال تاريخ سابق مطلوب لاعتماد فاتورة بتاريخ سابق"
+            )
+        })
+    invoice.backdate_reason = cleaned
+    return True
+
+
 def invoice_date_to_received_at(invoice_date: date):
     """Convert business invoice date to timezone-aware datetime for FIFO layers."""
     from datetime import datetime, time
