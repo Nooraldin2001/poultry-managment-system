@@ -31,6 +31,8 @@ from apps.audit.services import (
 )
 from apps.company_settings.constants import DocumentType
 from apps.company_settings.services import generate_document_number
+from apps.core.enums import PriceType
+from apps.core.line_pricing import normalize_price_type
 from apps.inventory import services as inventory_services
 from apps.inventory.models import (
     MovementDirection,
@@ -336,8 +338,9 @@ def _resolve_purchase_price(company, supplier, product, price_type):
 def _create_line(company, invoice, data, *, default_sort=0, user=None) -> PurchaseInvoiceLine:
     line_type = data.get("line_type", PurchaseLineType.PRODUCT)
     product = _resolve_product(company, data.get("product"), line_type)
-    price_type = data.get("price_type") or (
-        product.purchase_price_type if product else "kg"
+    price_type = normalize_price_type(
+        data.get("price_type"),
+        default=(product.purchase_price_type if product else PriceType.KG),
     )
     provided = data.get("unit_price")
     default_price, _source = _resolve_purchase_price(
@@ -1179,6 +1182,8 @@ def build_purchase_print_preview(invoice, request=None) -> dict:
                 "pieces": str(ln.quantity_pieces),
                 "kg": str(ln.quantity_kg),
                 "unit_price": str(ln.unit_price),
+                "price_type": ln.price_type,
+                "line_subtotal": str(ln.line_subtotal),
                 "line_total": str(ln.line_total),
             }
             for ln in lines

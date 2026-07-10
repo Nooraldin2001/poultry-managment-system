@@ -119,6 +119,37 @@ def test_cross_tenant_supplier_access_blocked(api, owner, other_owner):
     assert api.get(f"/api/v1/tenant/suppliers/{other_supplier.id}/").status_code == 404
 
 
+def test_owner_can_retrieve_supplier_detail(api, owner):
+    api.force_authenticate(user=owner)
+    sid = _create_supplier(api, name_ar="مورد تفصيل").json()["id"]
+    resp = api.get(f"/api/v1/tenant/suppliers/{sid}/")
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["id"] == sid
+    assert body["name_ar"] == "مورد تفصيل"
+    assert "current_balance" in body
+
+
+def test_accountant_can_retrieve_supplier_detail(api, owner, accountant):
+    api.force_authenticate(user=owner)
+    sid = _create_supplier(api).json()["id"]
+    api.force_authenticate(user=accountant)
+    resp = api.get(f"/api/v1/tenant/suppliers/{sid}/")
+    assert resp.status_code == 200, resp.content
+
+
+def test_supplier_statement_does_not_break_detail(api, owner):
+    api.force_authenticate(user=owner)
+    sid = _create_supplier(
+        api, opening_balance="100.00", opening_balance_type="we_owe_supplier"
+    ).json()["id"]
+    detail = api.get(f"/api/v1/tenant/suppliers/{sid}/")
+    statement = api.get(f"/api/v1/tenant/suppliers/{sid}/statement/")
+    assert detail.status_code == 200
+    assert statement.status_code == 200
+    assert statement.json()["supplier_id"] == sid
+
+
 def test_cashier_supplier_access_blocked(api, cashier):
     api.force_authenticate(user=cashier)
     assert api.get("/api/v1/tenant/suppliers/").status_code == 403

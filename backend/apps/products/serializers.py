@@ -35,6 +35,7 @@ class ProductListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name_ar", "name_en", "sku", "product_type",
             "category", "category_name", "sales_price", "sales_price_type",
+            "purchase_price", "purchase_price_type",
             "weight_grams", "default_pieces_per_carton", "carton_weight_kg",
             "is_active", "can_sell", "can_purchase", "can_quote", "track_inventory",
         ]

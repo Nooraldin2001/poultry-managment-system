@@ -12,19 +12,22 @@ import { FormErrors } from "@/shared/components/FormErrors";
 import { ApiError } from "@/services/api/errors";
 import type { InvoiceLineDraft } from "./types";
 import type { LinePayloadOptions } from "./invoiceApi";
-import { applyLineTotals } from "./lineTotals";
-import { deriveQuantitiesFromCartons } from "./lineQuantities";
-import { isCartonBasedProduct, isKgPrimaryProduct } from "./productLineMode";
-import { SalesLinePriceCell } from "./SalesLinePriceCell";
-import { canDeleteSalesLine, canOverrideSalesPrice, canBackdateSalesInvoice } from "@/shared/utils/permissions";
-import type { ProductRow } from "@/shared/types/entities";
 import {
   addDraftLine,
   createDraftHeader,
   patchDraftHeader,
   removeDraftLine,
+  syncLineFromApi,
   updateDraftLine,
 } from "./invoiceApi";
+import { applyLineTotals } from "./lineTotals";
+import { deriveQuantitiesFromCartons } from "./lineQuantities";
+import { isCartonBasedProduct, isKgPrimaryProduct } from "./productLineMode";
+import { defaultLinePriceType, parsePriceType, priceColumnLabel } from "./priceTypeUtils";
+import { LinePriceTypeSelect } from "./LinePriceTypeSelect";
+import { SalesLinePriceCell } from "./SalesLinePriceCell";
+import { canDeleteSalesLine, canOverrideSalesPrice, canBackdateSalesInvoice } from "@/shared/utils/permissions";
+import type { ProductRow } from "@/shared/types/entities";
 import { ReasonModal } from "./ReasonModal";
 import { BackdateInvoiceFields, isBackdatedDate, todayIso } from "./BackdateInvoiceFields";
 import { parseAmount } from "@/services/crud/parse";
@@ -109,7 +112,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
       pieces: l.pieces ?? l.qty,
       kg: l.kg ?? l.qty,
       unitPrice: l.price,
-      priceType: (l.unit as "kg") || "kg",
+      priceType: parsePriceType(l.unit),
       vatRate: 5,
       lineSubtotal: l.total,
       lineTotal: l.total,
@@ -227,7 +230,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
         pieces: 0,
         kg: 0,
         unitPrice: prod.saleP,
-        priceType: prod.salePT,
+        priceType: defaultLinePriceType(prod, "sales"),
         vatRate: 5,
         lineSubtotal: 0,
         lineTotal: 0,
@@ -249,7 +252,8 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
       }
       const finalized = withTotals;
       const serverId = await addDraftLine("sales", id, finalized);
-      setLines((prev) => [...prev, { ...finalized, serverId }]);
+      const detail = await getSalesDetail(id);
+      setLines(mapDetailLines(detail));
       await saveHeader(id);
     } catch (err) {
       if (err instanceof ApiError) setFieldErrors(err.fieldErrors);
@@ -261,13 +265,14 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
   };
 
   const persistLine = async (line: InvoiceLineDraft, options?: LinePayloadOptions) => {
-    if (!docId || !line.serverId || status !== "draft") return;
+    if (!docId || !line.serverId || status !== "draft") return line;
     const payloadOpts: LinePayloadOptions =
       options ??
       (line.priceSource === "manual_override"
         ? { manualPriceOverride: true, priceOverrideReason: line.priceOverrideReason }
         : {});
-    await updateDraftLine("sales", docId, line.serverId, line, payloadOpts);
+    const saved = await updateDraftLine("sales", docId, line.serverId, line, payloadOpts);
+    return syncLineFromApi(line, saved);
   };
 
   const updateLine = (next: InvoiceLineDraft, options?: { skipQuantityRecalc?: boolean; kgOverride?: boolean }) => {
@@ -281,7 +286,9 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
     }
     const withTotals = applyLineTotals(merged);
     setLines((prev) => prev.map((l) => (l.id === withTotals.id ? withTotals : l)));
-    void persistLine(withTotals);
+    void persistLine(withTotals).then((synced) => {
+      setLines((prev) => prev.map((l) => (l.id === synced.id ? synced : l)));
+    });
   };
 
   const removeLine = async (line: InvoiceLineDraft) => {
@@ -482,7 +489,8 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
                     <th className="p-2 text-start font-black text-slate-500">{isRTL ? "المنتج" : "Product"}</th>
                     <th className="p-2">{isRTL ? "كرتون" : "Ct"}</th>
                     <th className="p-2">{isRTL ? "كجم" : "KG"}</th>
-                    <th className="p-2">{isRTL ? "السعر" : "Price"}</th>
+                    <th className="p-2">{isRTL ? "نوع السعر" : "Price type"}</th>
+                    <th className="p-2">{isRTL ? "السعر" : "Unit price"}</th>
                     <th className="p-2">{isRTL ? "الإجمالي" : "Total"}</th>
                     <th className="p-2" />
                   </tr>
@@ -524,14 +532,30 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
                         />
                       </td>
                       <td className="p-2">
-                        <SalesLinePriceCell
-                          lang={lang}
-                          customerId={customerId}
-                          line={line}
-                          isDraft={isDraft}
-                          canEditPrice={canEditPrice}
-                          onPriceChange={updateLine}
-                        />
+                        {isDraft ? (
+                          <LinePriceTypeSelect
+                            lang={lang}
+                            line={line}
+                            onChange={(next) => updateLine(applyLineTotals(next))}
+                          />
+                        ) : (
+                          <span className="text-xs">{priceColumnLabel(line.priceType, lang)}</span>
+                        )}
+                      </td>
+                      <td className="p-2">
+                        <div className="space-y-0.5">
+                          <span className="block text-[10px] text-slate-400">
+                            {priceColumnLabel(line.priceType, lang)}
+                          </span>
+                          <SalesLinePriceCell
+                            lang={lang}
+                            customerId={customerId}
+                            line={line}
+                            isDraft={isDraft}
+                            canEditPrice={canEditPrice}
+                            onPriceChange={updateLine}
+                          />
+                        </div>
                       </td>
                       <td className="p-2 font-mono font-bold">{line.lineTotal.toFixed(2)}</td>
                       <td className="p-2">

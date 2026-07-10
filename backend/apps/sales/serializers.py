@@ -8,6 +8,7 @@ from apps.customers.models import Customer
 from apps.products.models import Product
 
 from apps.core.serializer_mixins import InvoiceDateValidationMixin
+from apps.core.line_pricing import normalize_price_type
 
 from .models import (
     SalesAdjustmentEffect,
@@ -124,6 +125,14 @@ class SalesInvoiceLineInputSerializer(_NonNegativeMixin, serializers.Serializer)
     notes = serializers.CharField(required=False, allow_blank=True)
     sort_order = serializers.IntegerField(required=False, default=0)
     override_reason = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_price_type(self, value):
+        if value is None or value == "":
+            return value
+        try:
+            return normalize_price_type(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
 
     def validate(self, attrs):
         self._check_non_negative(attrs)

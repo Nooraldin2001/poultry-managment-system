@@ -231,13 +231,24 @@ export async function listSupplierPayments(supplierId: string): Promise<Supplier
   }));
 }
 
+export async function listSupplierSpecialPrices(supplierId: string): Promise<{ id: string; product: string; price: number; active: boolean }[]> {
+  if (IS_MOCK_MODE) return [];
+  const data = await request(ENDPOINTS.tenant.supplierSpecialPrices(supplierId));
+  return mapNestedRows(data).map((r, i) => ({
+    id: String(r.id ?? i),
+    product: String(r.product_name ?? r.product_name_snapshot ?? ""),
+    price: parseAmount(r.price as string),
+    active: r.is_active !== false,
+  }));
+}
+
 export async function listSupplierAgreements(supplierId: string): Promise<{ id: string; product: string; price: number; active: boolean }[]> {
   if (IS_MOCK_MODE) return [];
   const data = await request(ENDPOINTS.tenant.supplierAgreements(supplierId));
   return mapNestedRows(data).map((r, i) => ({
     id: String(r.id ?? i),
-    product: String(r.product_name ?? r.product_name_snapshot ?? ""),
-    price: parseAmount(r.price as string),
+    product: String(r.title ?? r.product_name ?? ""),
+    price: parseAmount((r.default_amount ?? r.price) as string),
     active: r.is_active !== false,
   }));
 }

@@ -25,6 +25,8 @@ from apps.audit.services import (
 from apps.company_settings.constants import DocumentType
 from apps.company_settings.models import VATSettings
 from apps.company_settings.services import generate_document_number
+from apps.core.enums import PriceType
+from apps.core.line_pricing import normalize_price_type
 from apps.customers.models import (
     Customer,
     CustomerFreeProductAgreement,
@@ -401,7 +403,10 @@ def _create_line(company, invoice, customer, data, *, default_sort=0, user=None,
                  preserve_pricing=False):
     line_type = data.get("line_type", SalesLineType.PRODUCT)
     product = _resolve_product(company, data.get("product"), line_type)
-    price_type = data.get("price_type", product.sales_price_type if product else "kg")
+    price_type = normalize_price_type(
+        data.get("price_type"),
+        default=(product.sales_price_type if product else PriceType.KG),
+    )
     is_free = bool(data.get("is_free", False))
     price_source = data.get("price_source")
     if preserve_pricing:
@@ -871,6 +876,8 @@ def build_print_preview(invoice, request=None) -> dict:
                 "pieces": str(ln.quantity_pieces),
                 "kg": str(ln.quantity_kg),
                 "unit_price": str(ln.unit_price),
+                "price_type": ln.price_type,
+                "line_subtotal": str(ln.line_subtotal),
                 "line_total": str(ln.line_total),
                 "is_free": ln.is_free,
             }

@@ -20,6 +20,8 @@ interface ApiProductList {
   category_name: string;
   sales_price?: string;
   sales_price_type?: string;
+  purchase_price?: string;
+  purchase_price_type?: string;
   weight_grams?: number | null;
   default_pieces_per_carton?: number | null;
   is_active: boolean;
@@ -87,8 +89,8 @@ export function mapApiProductListToRow(row: ApiProductList, stock?: { cartons?: 
     ppc: row.default_pieces_per_carton ?? 0,
     saleP: parseAmount(row.sales_price),
     salePT: mapPriceType(row.sales_price_type),
-    buyP: 0,
-    buyPT: "piece",
+    buyP: parseAmount(row.purchase_price),
+    buyPT: mapPriceType(row.purchase_price_type),
     minCt: 0,
     minKg: 0,
     active: row.is_active,

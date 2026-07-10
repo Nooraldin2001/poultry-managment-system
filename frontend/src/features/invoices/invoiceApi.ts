@@ -1,11 +1,29 @@
 import { request } from "@/services/api/client";
 import { ENDPOINTS } from "@/services/api/endpoints";
+import { parseAmount } from "@/services/crud/parse";
 import type { InvoiceKind, InvoiceLineDraft } from "./types";
+import { parsePriceType } from "./priceTypeUtils";
 
 export type LinePayloadOptions = {
   manualPriceOverride?: boolean;
   priceOverrideReason?: string;
 };
+
+export type SavedLineResponse = {
+  price_type?: string;
+  line_subtotal?: string;
+  line_total?: string;
+};
+
+export function syncLineFromApi(line: InvoiceLineDraft, saved: SavedLineResponse): InvoiceLineDraft {
+  return {
+    ...line,
+    priceType: saved.price_type ? parsePriceType(saved.price_type) : line.priceType,
+    lineSubtotal:
+      saved.line_subtotal != null ? parseAmount(saved.line_subtotal) : line.lineSubtotal,
+    lineTotal: saved.line_total != null ? parseAmount(saved.line_total) : line.lineTotal,
+  };
+}
 
 export function lineToPayload(
   line: InvoiceLineDraft,
@@ -88,14 +106,14 @@ export async function updateDraftLine(
   lineId: string,
   line: InvoiceLineDraft,
   options?: LinePayloadOptions,
-): Promise<void> {
+): Promise<SavedLineResponse> {
   const base =
     kind === "sales"
       ? ENDPOINTS.tenant.sale(docId)
       : kind === "purchase"
         ? ENDPOINTS.tenant.purchase(docId)
         : ENDPOINTS.tenant.quotation(docId);
-  await request(`${base}lines/${lineId}/`, {
+  return request<SavedLineResponse>(`${base}lines/${lineId}/`, {
     method: "PATCH",
     body: lineToPayload(line, options),
   });

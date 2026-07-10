@@ -3871,7 +3871,8 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "suppliers-new"     && <CreateSupplierScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} />}
           {tScreen === "suppliers-edit"    && selectedSupplierId && <CreateSupplierScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} supplierId={selectedSupplierId} />}
           {tScreen === "suppliers-edit"    && !selectedSupplierId && <EmptyState lang={lang} messageAr="اختر مورداً من القائمة" messageEn="Select a supplier from the list" />}
-          {tScreen === "supplier-profile"  && <SupplierProfileScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} supplierId={selectedSupplierId} />}
+          {tScreen === "supplier-profile"  && selectedSupplierId && <SupplierProfileScreen lang={lang} role={role} permissions={permissions} onNavigate={navTenant} supplierId={selectedSupplierId} />}
+          {tScreen === "supplier-profile"  && !selectedSupplierId && <EmptyState lang={lang} messageAr="لم يتم تحديد المورد" messageEn="No supplier selected" />}
           {tScreen === "supplier-statement"&& <SupplierStatementScreen lang={lang} supplierId={selectedSupplierId} onNavigate={navTenant} />}
           {(tScreen === "inventory") && <InventoryOverviewScreen lang={lang} role={role} onNavigate={navTenant} selectedProductId={invProductId} setSelectedProductId={setInvProductId} />}
           {tScreen === "inventory-product"    && <InvProductDetailScreen lang={lang} role={role} onNavigate={navTenant} productId={invProductId} />}

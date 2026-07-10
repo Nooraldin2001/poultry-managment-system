@@ -12,7 +12,7 @@ import { FormErrors } from "@/shared/components/FormErrors";
 import { ApiError } from "@/services/api/errors";
 import type { InvoiceLineDraft } from "./types";
 import type { LinePayloadOptions } from "./invoiceApi";
-import { addDraftLine, createDraftHeader, patchDraftHeader, removeDraftLine, updateDraftLine } from "./invoiceApi";
+import { addDraftLine, createDraftHeader, patchDraftHeader, removeDraftLine, syncLineFromApi, updateDraftLine } from "./invoiceApi";
 import { applyLineTotals } from "./lineTotals";
 import { deriveQuantitiesFromCartons } from "./lineQuantities";
 import {
@@ -20,6 +20,8 @@ import {
   isCartonBasedProduct,
   isKgPrimaryProduct,
 } from "./productLineMode";
+import { defaultLinePriceType, parsePriceType, priceColumnLabel } from "./priceTypeUtils";
+import { LinePriceTypeSelect } from "./LinePriceTypeSelect";
 import { PurchaseLinePriceCell } from "./PurchaseLinePriceCell";
 import { canDeletePurchaseLine, canOverridePurchasePrice, canBackdatePurchaseInvoice } from "@/shared/utils/permissions";
 import { notifyTenantDataChanged } from "@/shared/utils/tenantRefresh";
@@ -139,10 +141,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       pieces: l.pieces ?? l.qty,
       kg: l.kg ?? l.qty,
       unitPrice: l.price,
-      // Purchase lines are always priced per KG: the table shows a single
-      // "Price per KG" column, so totals must be kg × unit_price — never
-      // pieces × price (client blocker).
-      priceType: "kg",
+      priceType: parsePriceType(l.unit),
       vatRate: l.vatRate ?? (detail.invoice.vat > 0 ? DEFAULT_VAT_RATE : 0),
       lineSubtotal: l.subtotal ?? l.total,
       lineTotal: l.total,
@@ -371,9 +370,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
         pieces: qtyDefaults.pieces,
         kg: qtyDefaults.kg,
         unitPrice: prod.buyP || prod.saleP,
-        // Purchases are priced per KG (UI column: "السعر لكل كيلو"); KG is
-        // auto-derived from cartons for fixed-weight products.
-        priceType: "kg",
+        priceType: defaultLinePriceType(prod, "purchase"),
         vatRate: lineVatRate,
         lineSubtotal: 0,
         lineTotal: 0,
@@ -418,13 +415,14 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   };
 
   const persistLine = async (line: InvoiceLineDraft, options?: LinePayloadOptions) => {
-    if (!docId || !line.serverId || status !== "draft") return;
+    if (!docId || !line.serverId || status !== "draft") return line;
     const payloadOpts: LinePayloadOptions =
       options ??
       (line.priceSource === "manual_override"
         ? { manualPriceOverride: true, priceOverrideReason: line.priceOverrideReason }
         : {});
-    await updateDraftLine("purchase", docId, line.serverId, line, payloadOpts);
+    const saved = await updateDraftLine("purchase", docId, line.serverId, line, payloadOpts);
+    return syncLineFromApi(line, saved);
   };
 
   const updateLine = (next: InvoiceLineDraft, options?: { skipQuantityRecalc?: boolean; kgOverride?: boolean }) => {
@@ -438,7 +436,9 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     }
     const withTotals = applyLineTotals(merged);
     setLines((prev) => prev.map((l) => (l.id === withTotals.id ? withTotals : l)));
-    void persistLine(withTotals);
+    void persistLine(withTotals).then((synced) => {
+      setLines((prev) => prev.map((l) => (l.id === synced.id ? synced : l)));
+    });
   };
 
   const handleVatToggle = (enabled: boolean) => {
@@ -633,7 +633,8 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
                   <th className="p-2">{isRTL ? "كراتين" : "Cartons"}</th>
                   <th className="p-2">{isRTL ? "مقطعات" : "Pieces"}</th>
                   <th className="p-2">{isRTL ? "الكمية بالكيلو" : "Quantity KG"}</th>
-                  <th className="p-2">{isRTL ? "السعر لكل كيلو" : "Price per KG"}</th>
+                  <th className="p-2">{isRTL ? "نوع السعر" : "Price type"}</th>
+                  <th className="p-2">{isRTL ? "السعر" : "Unit price"}</th>
                   <th className="p-2">{isRTL ? "الإجمالي" : "Total"}</th>
                   <th className="p-2" />
                 </tr>
@@ -696,14 +697,30 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
                       />
                     </td>
                     <td className="p-2">
-                      <PurchaseLinePriceCell
-                        lang={lang}
-                        supplierId={supplierId}
-                        line={line}
-                        isDraft={isDraft}
-                        canEditPrice={canEditPrice}
-                        onPriceChange={updateLine}
-                      />
+                      {isDraft ? (
+                        <LinePriceTypeSelect
+                          lang={lang}
+                          line={line}
+                          onChange={(next) => updateLine(applyLineTotals(next))}
+                        />
+                      ) : (
+                        <span className="text-xs">{priceColumnLabel(line.priceType, lang)}</span>
+                      )}
+                    </td>
+                    <td className="p-2">
+                      <div className="space-y-0.5">
+                        <span className="block text-[10px] text-slate-400">
+                          {priceColumnLabel(line.priceType, lang)}
+                        </span>
+                        <PurchaseLinePriceCell
+                          lang={lang}
+                          supplierId={supplierId}
+                          line={line}
+                          isDraft={isDraft}
+                          canEditPrice={canEditPrice}
+                          onPriceChange={updateLine}
+                        />
+                      </div>
                     </td>
                     <td className="p-2 font-mono font-bold">{line.lineSubtotal.toFixed(2)}</td>
                     <td className="p-2">{isDraft && canDeleteLine && <button type="button" onClick={() => void removeLine(line)}><Trash2 size={14} className="text-red-500" /></button>}</td>

@@ -694,20 +694,47 @@ export function SupplierProfileScreen({ lang, role, permissions = [], onNavigate
   const [tab, setTab] = useState("overview");
   const [showPay, setShowPay] = useState(false);
   const [showSpecialPrice, setShowSpecialPrice] = useState(false);
-  const profileTabs = useSupplierProfileTabs(supplierId, tab as SupplierProfileTabKey);
 
-  const { item: row, loading, error, forbidden, reload } = useSupplierDetail(
+  const { item: row, loading, error, forbidden, notFound, reload } = useSupplierDetail(
     supplierId,
     async (id) => {
       const m = MOCK_SUPPLIERS.find((x) => x.id === id);
       return m ? supplierRowFromMock(m) : null;
     },
   );
+  const profileTabs = useSupplierProfileTabs(supplierId, tab as SupplierProfileTabKey, !!supplierId && !loading && !!row);
+
+  if (!supplierId) {
+    return (
+      <EmptyState
+        lang={lang}
+        messageAr="لم يتم تحديد المورد"
+        messageEn="No supplier selected"
+      />
+    );
+  }
   if (forbidden) return <PermissionDeniedState lang={lang} />;
   if (loading) return <LoadingState lang={lang} />;
+  if (notFound || (!row && !error)) {
+    return (
+      <EmptyState
+        lang={lang}
+        messageAr="المورد غير موجود أو تم حذفه"
+        messageEn="Supplier not found or has been deleted"
+      />
+    );
+  }
   if (error) return <ErrorState lang={lang} error={error} onRetry={() => void reload()} />;
-  const s = row ? enrichSupplier(toModuleSupplier(row), IS_MOCK_MODE ? MOCK_SUPPLIERS.find((m) => m.id === row.id) : undefined) : null;
-  if (!s) return <EmptyState lang={lang} messageAr="لا يوجد موردون بعد" messageEn="No suppliers yet" />;
+  const s = enrichSupplier(toModuleSupplier(row), IS_MOCK_MODE ? MOCK_SUPPLIERS.find((m) => m.id === row.id) : undefined);
+  if (!s) {
+    return (
+      <EmptyState
+        lang={lang}
+        messageAr="المورد غير موجود أو تم حذفه"
+        messageEn="Supplier not found or has been deleted"
+      />
+    );
+  }
   const canEdit = canEditSupplier(role, permissions);
   const canPay = role === "owner" || role === "accountant";
   const totalPurchases = IS_MOCK_MODE
@@ -901,12 +928,12 @@ export function SupplierProfileScreen({ lang, role, permissions = [], onNavigate
                 <p className="text-xs text-slate-400 font-semibold">{isRTL ? "سيتم اقتراح سعر المورد الخاص تلقائياً عند إنشاء فاتورة شراء لهذا المورد." : "Supplier special prices are automatically suggested when creating a purchase invoice."}</p>
                 {canEdit ? <Btn size="sm" variant="primary" onClick={() => setShowSpecialPrice(true)}><Plus size={13} />{isRTL ? "إضافة سعر شراء خاص" : "Add Special Price"}</Btn> : <PermBtn lang={lang}><Plus size={13} />{isRTL ? "إضافة سعر" : "Add Price"}</PermBtn>}
               </div>
-              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.agreements.loading} error={profileTabs.agreements.error} forbidden={profileTabs.agreements.forbidden} unavailable={profileTabs.agreements.unavailable} empty={IS_MOCK_MODE ? SUPP_PRICES.length === 0 : profileTabs.agreements.data.length === 0} emptyAr="لا توجد أسعار خاصة" emptyEn="No special prices">
+              <ProfileTabBody lang={lang} loading={!IS_MOCK_MODE && profileTabs.specialPrices.loading} error={profileTabs.specialPrices.error} forbidden={profileTabs.specialPrices.forbidden} unavailable={profileTabs.specialPrices.unavailable} empty={IS_MOCK_MODE ? SUPP_PRICES.length === 0 : profileTabs.specialPrices.data.length === 0} emptyAr="لا توجد أسعار خاصة" emptyEn="No special prices">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead><tr className="bg-slate-50 border-b border-slate-200">{[isRTL ? "المنتج" : "Product", isRTL ? "السعر" : "Price", isRTL ? "الحالة" : "Status"].map((h, i) => <th key={i} className={`px-3 py-2.5 font-black text-xs text-slate-400 ${isRTL ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>
                     <tbody className="divide-y divide-slate-100">
-                      {(IS_MOCK_MODE ? SUPP_PRICES.map((sp, i) => ({ id: String(i), product: isRTL ? sp.productAr : sp.product, price: sp.specialPrice, active: sp.active })) : profileTabs.agreements.data).map((sp) => (
+                      {(IS_MOCK_MODE ? SUPP_PRICES.map((sp, i) => ({ id: String(i), product: isRTL ? sp.productAr : sp.product, price: sp.specialPrice, active: sp.active })) : profileTabs.specialPrices.data).map((sp) => (
                         <tr key={sp.id} className="hover:bg-slate-50">
                           <td className="px-3 py-2.5 font-bold text-slate-800">{sp.product}</td>
                           <td className="px-3 py-2.5 font-mono font-black text-[#0F2C59]">AED {sp.price}</td>
