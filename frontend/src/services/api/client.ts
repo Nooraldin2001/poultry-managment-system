@@ -207,8 +207,13 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       res.status === 401 ? "unauthorized" :
       res.status === 403 ? "forbidden" :
       res.status === 404 ? "not_found" :
+      isHtml || res.status >= 500 ? "server_error" :
       "api_error";
-    throw new ApiError(message, { status: res.status, code, fieldErrors, raw: data });
+    const safeMessage =
+      isHtml || (res.status >= 500 && typeof data === "string")
+        ? "Server error while approving purchase invoice. Please contact support."
+        : message;
+    throw new ApiError(safeMessage, { status: res.status, code, fieldErrors, raw: data });
   }
 
   return data as T;

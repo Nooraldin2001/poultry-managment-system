@@ -338,10 +338,13 @@ def _resolve_purchase_price(company, supplier, product, price_type):
 def _create_line(company, invoice, data, *, default_sort=0, user=None) -> PurchaseInvoiceLine:
     line_type = data.get("line_type", PurchaseLineType.PRODUCT)
     product = _resolve_product(company, data.get("product"), line_type)
-    price_type = normalize_price_type(
-        data.get("price_type"),
-        default=(product.purchase_price_type if product else PriceType.KG),
-    )
+    try:
+        price_type = normalize_price_type(
+            data.get("price_type"),
+            default=(product.purchase_price_type if product else PriceType.KG),
+        )
+    except ValueError as exc:
+        raise ValidationError({"price_type": str(exc)}) from exc
     provided = data.get("unit_price")
     default_price, _source = _resolve_purchase_price(
         company, invoice.supplier, product, price_type
@@ -689,8 +692,15 @@ def repair_purchase_inventory_side_effects(
 @transaction.atomic
 def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> PurchaseInvoice:
     """Approve a draft invoice: add FIFO stock + post supplier payable."""
+    from apps.core.agent_debug import agent_dbg
     from apps.core.document_dates import ensure_backdate_reason_for_approval
 
+    agent_dbg(
+        "purchases.services.approve:entry",
+        "approve service started",
+        {"invoice_id": invoice.id, "invoice_number": invoice.invoice_number},
+        "C",
+    )
     reason = require_reason_for_sensitive_action("approve_purchase_invoice", reason)
 
     invoice = (
@@ -702,6 +712,7 @@ def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> Pu
         raise ValidationError("Only a draft purchase invoice can be approved.")
 
     backdate_reason_set = ensure_backdate_reason_for_approval(invoice, backdate_reason)
+    agent_dbg("purchases.services.approve:backdate_ok", "backdate validated", {"invoice_id": invoice.id}, "C")
 
     company = invoice.company
     _check_supplier(company, invoice.supplier)
@@ -712,6 +723,12 @@ def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> Pu
 
     recalculate_purchase_invoice(invoice)
     lines = list(invoice.lines.select_related("product").all())
+    agent_dbg(
+        "purchases.services.approve:recalculated",
+        "totals recalculated",
+        {"invoice_id": invoice.id, "line_count": len(lines), "total": str(invoice.total_amount)},
+        "C",
+    )
 
     normalized = False
     for line in lines:
@@ -721,10 +738,12 @@ def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> Pu
         lines = list(invoice.lines.select_related("product").all())
 
     _validate_lines_for_approval(lines)
+    agent_dbg("purchases.services.approve:lines_ok", "lines validated", {"invoice_id": invoice.id}, "C")
 
     # Allocate increase_inventory_cost adjustments across product lines (by
     # subtotal) so unit_cost_per_kg reflects the true landed cost.
     _apply_purchase_stock_side_effects(invoice=invoice, user=user, reason=reason)
+    agent_dbg("purchases.services.approve:stock_ok", "stock side effects applied", {"invoice_id": invoice.id}, "C")
 
     # Post money movement for paid part (cash/bank), then supplier payable only
     # for outstanding part so credit/partial works correctly.
@@ -855,6 +874,12 @@ def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> Pu
         reason=reason,
     )
     _record_status_history(invoice, PurchaseStatus.DRAFT, invoice.status, reason, user)
+    agent_dbg(
+        "purchases.services.approve:done",
+        "approve service completed",
+        {"invoice_id": invoice.id, "status": invoice.status},
+        "C",
+    )
     return invoice
 
 

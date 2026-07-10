@@ -430,6 +430,93 @@ def test_frontend_style_backdated_purchase_approve_flow(api, company, owner):
     assert resp.status_code == 200, resp.data
 
 
+def test_delete_line_then_approve_backdated_purchase(api, company, owner):
+    """Delete a draft line, PATCH header, then approve (stale-prefetch regression)."""
+    from datetime import timedelta
+
+    supplier = _supplier(company)
+    product = _product(company, sku="PBD-DEL")
+    past = date.today() - timedelta(days=5)
+    api.force_authenticate(owner)
+    resp = api.post(
+        PURCHASES_URL,
+        _purchase_payload(supplier, product, past, backdate_reason="سبب حذف بند"),
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    inv_id = resp.data["id"]
+    line_id = resp.data["lines"][0]["id"]
+    resp = api.post(
+        f"{PURCHASES_URL}{inv_id}/lines/",
+        {
+            "product": product.id,
+            "line_type": "product",
+            "quantity_kg": "5",
+            "unit_price": "10",
+            "price_type": "kg",
+            "vat_rate": "0",
+        },
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    extra_line_id = resp.data["id"]
+    resp = api.delete(f"{PURCHASES_URL}{inv_id}/lines/{extra_line_id}/")
+    assert resp.status_code == 204, getattr(resp, "data", resp)
+    resp = api.patch(
+        f"{PURCHASES_URL}{inv_id}/",
+        {
+            "supplier": supplier.id,
+            "invoice_date": str(past),
+            "backdate_reason": "سبب حذف بند",
+            "payment_method": "credit",
+            "money_account": None,
+            "amount_paid": "0",
+            "vat_rate": "0.00",
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    resp = api.patch(
+        f"{PURCHASES_URL}{inv_id}/lines/{line_id}/",
+        {
+            "quantity_kg": "20",
+            "unit_price": "10",
+            "price_type": "kg",
+            "vat_rate": "0",
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    resp = api.post(
+        f"{PURCHASES_URL}{inv_id}/approve/",
+        {"reason": "اعتماد بعد حذف بند", "backdate_reason": "سبب حذف بند"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    assert resp.data["status"] == "approved"
+
+
+def test_approve_purchase_validation_errors_are_json_not_500(api, company, owner):
+    from apps.purchases.models import PurchaseInvoice
+
+    supplier = _supplier(company)
+    product = _product(company, sku="PBD-VAL")
+    past = date.today() - timedelta(days=3)
+    api.force_authenticate(owner)
+    resp = api.post(
+        PURCHASES_URL,
+        _purchase_payload(supplier, product, past, backdate_reason="initial reason"),
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    inv_id = resp.data["id"]
+    PurchaseInvoice.objects.filter(pk=inv_id).update(backdate_reason="")
+    resp = api.post(f"{PURCHASES_URL}{inv_id}/approve/", {"reason": "missing backdate reason"}, format="json")
+    assert resp.status_code == 400, resp.data
+    assert "text/html" not in str(resp.get("content_type", "")).lower()
+    assert resp.data
+
+
 def test_backdated_sales_approve_via_api(api, company, owner):
     customer = _customer(company)
     product = _product(company, sku="SBD11")

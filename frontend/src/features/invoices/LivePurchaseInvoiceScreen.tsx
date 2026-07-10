@@ -501,7 +501,15 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       fetch('http://127.0.0.1:7860/ingest/00c03889-4edf-41f7-887a-9f04d03e7a1c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cd5244'},body:JSON.stringify({sessionId:'cd5244',location:'LivePurchaseInvoiceScreen.tsx:handleApprove:error',message:'approve flow failed',data:{errorType:e instanceof ApiError?'ApiError':'unknown',status:e instanceof ApiError?e.status:0,code:e instanceof ApiError?e.code:'',msgPreview:e instanceof ApiError?String(e.message).slice(0,120):String(e).slice(0,120),isHtml:e instanceof ApiError&&typeof e.raw==='string'&&e.raw.includes('<!doctype html>')},hypothesisId:'E',timestamp:Date.now()})}).catch(()=>{});
       // #endregion
       if (e instanceof ApiError) setFieldErrors(e.fieldErrors);
-      toast.error(e instanceof ApiError ? e.message : "Failed");
+      const fallbackAr = "حدث خطأ في الخادم أثناء اعتماد فاتورة الشراء. برجاء التواصل مع الدعم.";
+      const fallbackEn = "Server error while approving purchase invoice. Please contact support.";
+      const msg =
+        e instanceof ApiError
+          ? (e.code === "server_error" || e.status >= 500
+            ? (isRTL ? fallbackAr : fallbackEn)
+            : e.message)
+          : (isRTL ? fallbackAr : "Failed");
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
