@@ -177,6 +177,7 @@ class MoneyMovementType(models.TextChoices):
     CUSTOMER_COLLECTION = "customer_collection", "Customer Collection"
     EXPENSE_PAYMENT = "expense_payment", "Expense Payment"
     MANUAL_ADJUSTMENT = "manual_adjustment", "Manual Adjustment"
+    ACCOUNT_TRANSFER = "account_transfer", "Account Transfer"
     REFUND = "refund", "Refund"
     OPENING_BALANCE = "opening_balance", "Opening Balance"
 

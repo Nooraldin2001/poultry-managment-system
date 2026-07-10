@@ -134,21 +134,149 @@ def post_money_movement(
 
 
 def get_treasury_summary(company) -> dict:
+    from django.utils import timezone
+
     accounts = MoneyAccount.objects.filter(company=company, is_active=True)
-    cash_total = (
-        accounts.filter(account_type=MoneyAccountType.CASHBOX).aggregate(s=Sum("current_balance"))["s"]
-        or ZERO
+    cash_qs = accounts.filter(account_type=MoneyAccountType.CASHBOX)
+    bank_qs = accounts.filter(account_type=MoneyAccountType.BANK)
+    cash_total = cash_qs.aggregate(s=Sum("current_balance"))["s"] or ZERO
+    bank_total = bank_qs.aggregate(s=Sum("current_balance"))["s"] or ZERO
+
+    today = timezone.localdate()
+    today_movements = MoneyMovement.objects.filter(
+        company=company,
+        movement_date=today,
+        money_account__is_active=True,
     )
-    bank_total = (
-        accounts.filter(account_type=MoneyAccountType.BANK).aggregate(s=Sum("current_balance"))["s"]
-        or ZERO
+    today_inflows = (
+        today_movements.filter(direction=MoneyDirection.IN).aggregate(s=Sum("amount"))["s"] or ZERO
     )
+    today_outflows = (
+        today_movements.filter(direction=MoneyDirection.OUT).aggregate(s=Sum("amount"))["s"] or ZERO
+    )
+
     return {
         "cashbox_total": cash_total,
         "bank_total": bank_total,
         "available_total": cash_total + bank_total,
         "accounts_count": accounts.count(),
+        "active_cashboxes": cash_qs.count(),
+        "active_banks": bank_qs.count(),
+        "today_inflows": today_inflows,
+        "today_outflows": today_outflows,
     }
+
+
+def get_account_statement(
+    company,
+    account: MoneyAccount,
+    *,
+    date_from=None,
+    date_to=None,
+    movement_type: str = "",
+    search: str = "",
+) -> dict:
+    """Opening/closing balances and filtered movements for an account statement."""
+    qs = MoneyMovement.objects.filter(company=company, money_account=account)
+
+    opening = _d(account.opening_balance)
+    if date_from:
+        prior = qs.filter(movement_date__lt=date_from).order_by("movement_date", "id")
+        for movement in prior:
+            opening += movement.amount if movement.direction == MoneyDirection.IN else -movement.amount
+
+    filtered = qs
+    if date_from:
+        filtered = filtered.filter(movement_date__gte=date_from)
+    if date_to:
+        filtered = filtered.filter(movement_date__lte=date_to)
+    if movement_type:
+        filtered = filtered.filter(movement_type=movement_type)
+    if search:
+        filtered = filtered.filter(
+            Q(description__icontains=search)
+            | Q(reason__icontains=search)
+            | Q(reference_id__icontains=search)
+            | Q(reference_type__icontains=search)
+        )
+
+    movements = list(filtered.order_by("movement_date", "id"))
+    closing = opening
+    for movement in movements:
+        closing += movement.amount if movement.direction == MoneyDirection.IN else -movement.amount
+
+    return {
+        "opening_balance": opening,
+        "closing_balance": closing,
+        "movements": movements,
+    }
+
+
+@transaction.atomic
+def post_account_transfer(
+    *,
+    company,
+    from_account: MoneyAccount,
+    to_account: MoneyAccount,
+    amount,
+    reason: str,
+    user,
+    description: str = "",
+) -> tuple[MoneyMovement, MoneyMovement]:
+    """Transfer funds between two money accounts atomically."""
+    reason = require_reason_for_sensitive_action("treasury_transfer", reason)
+    amount = _d(amount)
+    if amount <= 0:
+        raise ValidationError({"amount": "Amount must be positive."})
+    if from_account.company_id != company.id or to_account.company_id != company.id:
+        raise ValidationError("Accounts must belong to the same company.")
+    if from_account.pk == to_account.pk:
+        raise ValidationError({"to_account": "Source and destination must differ."})
+    if not from_account.is_active or not to_account.is_active:
+        raise ValidationError("Both accounts must be active for transfers.")
+
+    from_account = MoneyAccount.objects.select_for_update().get(pk=from_account.pk)
+    to_account = MoneyAccount.objects.select_for_update().get(pk=to_account.pk)
+
+    if not from_account.allow_negative and _d(from_account.current_balance) < amount:
+        raise ValidationError({
+            "amount": (
+                "Insufficient balance in source account / "
+                "الرصيد غير كافٍ في الحساب المصدر"
+            )
+        })
+
+    transfer_ref = f"{from_account.id}-{to_account.id}-{timezone.now().timestamp():.0f}"
+    label = description or f"Transfer {from_account.name} → {to_account.name}"
+    movement_date = timezone.localdate()
+
+    out_movement = post_money_movement(
+        company=company,
+        money_account=from_account,
+        movement_type=MoneyMovementType.ACCOUNT_TRANSFER,
+        direction=MoneyDirection.OUT,
+        amount=amount,
+        reference_type="account_transfer",
+        reference_id=transfer_ref,
+        description=f"{label} (out)",
+        reason=reason,
+        user=user,
+        movement_date=movement_date,
+    )
+    in_movement = post_money_movement(
+        company=company,
+        money_account=to_account,
+        movement_type=MoneyMovementType.ACCOUNT_TRANSFER,
+        direction=MoneyDirection.IN,
+        amount=amount,
+        reference_type="account_transfer",
+        reference_id=transfer_ref,
+        description=f"{label} (in)",
+        reason=reason,
+        user=user,
+        movement_date=movement_date,
+    )
+    return out_movement, in_movement
 
 
 def _document_type_for_movement(movement_type: str) -> str:

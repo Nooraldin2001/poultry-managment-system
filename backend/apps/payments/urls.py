@@ -17,6 +17,7 @@ from .views import (
     SupplierRefundCreateView,
     MoneyAccountViewSet,
     TreasurySummaryView,
+    AccountTransferView,
 )
 
 router = DefaultRouter()
@@ -73,5 +74,6 @@ urlpatterns = [
         name="receipts-print-preview",
     ),
     path("treasury/summary/", TreasurySummaryView.as_view(), name="treasury-summary"),
+    path("treasury/transfer/", AccountTransferView.as_view(), name="treasury-transfer"),
 ]
 urlpatterns += router.urls

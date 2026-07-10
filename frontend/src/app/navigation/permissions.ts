@@ -14,6 +14,7 @@ const NAV_PERMISSION: Partial<Record<TenantScreen, string>> = {
   customers: "customers.view",
   suppliers: "suppliers.view",
   payments: "payments.view",
+  accounts: "treasury.view",
   expenses: "expenses.view",
   tax: "tax.view",
   reports: "reports.view",
@@ -54,12 +55,18 @@ const SCREEN_PERMISSION: Partial<Record<TenantScreen, string>> = {
   "settings-user-permissions": "users.manage",
   "payments-customer-refund": "payments.create_customer_refund",
   "payments-supplier-payment": "payments.create_supplier_payment",
+  "accounts-new": "treasury.create",
+  "accounts-edit": "treasury.update",
+  "accounts-detail": "treasury.view",
+  "accounts-statement": "treasury.movements.view",
+  "accounts-list": "treasury.view",
 };
 
 /** Role-based fallback when permissions array is empty (dev/mock). */
 const CASHIER_DENIED_SCREENS: TenantScreen[] = [
   "purchases", "purchases-list", "purchases-new", "purchases-edit", "purchases-preview", "purchases-detail",
-  "accounts", "tax", "tax-sales", "tax-purchases", "tax-net", "tax-warnings", "tax-audit",
+  "accounts", "accounts-list", "accounts-new", "accounts-edit", "accounts-detail", "accounts-statement",
+  "tax", "tax-sales", "tax-purchases", "tax-net", "tax-warnings", "tax-audit",
   "tax-credit-notes", "tax-non-taxable", "tax-settings", "tax-export-preview",
   "reports", "reports-daily", "reports-sales", "reports-purchases", "reports-inventory",
   "reports-customers", "reports-suppliers", "reports-tax", "reports-profit", "reports-statements",

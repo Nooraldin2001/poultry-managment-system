@@ -31,6 +31,8 @@ from .serializers import (
     MoneyAdjustmentSerializer,
     MoneyMovementSerializer,
     TreasurySummarySerializer,
+    AccountStatementSerializer,
+    AccountTransferSerializer,
 )
 
 
@@ -334,6 +336,7 @@ class MoneyAccountViewSet(TenantScopedViewSet):
         "partial_update": "treasury.update",
         "update": "treasury.update",
         "movements": "treasury.movements.view",
+        "statement": "treasury.movements.view",
         "adjustments": "treasury.adjust",
     }
 
@@ -370,10 +373,39 @@ class MoneyAccountViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["get"])
     def movements(self, request, pk=None):
         account = self.get_object()
+        p = request.query_params
         qs = MoneyMovement.objects.filter(
             company_id=request.user.company_id, money_account=account
-        ).order_by("-created_at", "-id")
+        )
+        if p.get("date_from"):
+            qs = qs.filter(movement_date__gte=p["date_from"])
+        if p.get("date_to"):
+            qs = qs.filter(movement_date__lte=p["date_to"])
+        if p.get("movement_type"):
+            qs = qs.filter(movement_type=p["movement_type"])
+        if p.get("search"):
+            qs = qs.filter(
+                Q(description__icontains=p["search"])
+                | Q(reason__icontains=p["search"])
+                | Q(reference_id__icontains=p["search"])
+                | Q(reference_type__icontains=p["search"])
+            )
+        qs = qs.order_by("-movement_date", "-id")
         return Response(MoneyMovementSerializer(qs, many=True).data)
+
+    @action(detail=True, methods=["get"])
+    def statement(self, request, pk=None):
+        account = self.get_object()
+        p = request.query_params
+        data = services.get_account_statement(
+            request.user.company,
+            account,
+            date_from=p.get("date_from") or None,
+            date_to=p.get("date_to") or None,
+            movement_type=p.get("movement_type", ""),
+            search=p.get("search", ""),
+        )
+        return Response(AccountStatementSerializer(data).data)
 
     @action(detail=True, methods=["post"])
     def adjustments(self, request, pk=None):
@@ -403,3 +435,31 @@ class TreasurySummaryView(APIView):
     def get(self, request):
         data = services.get_treasury_summary(request.user.company)
         return Response(TreasurySummarySerializer(data).data)
+
+
+class AccountTransferView(APIView):
+    permission_classes = [IsTenantUser, HasTenantPermission]
+    required_permission = "treasury.transfer"
+
+    def post(self, request):
+        serializer = AccountTransferSerializer(
+            data=request.data, context={"company": request.user.company}
+        )
+        serializer.is_valid(raise_exception=True)
+        vd = serializer.validated_data
+        out_movement, in_movement = services.post_account_transfer(
+            company=request.user.company,
+            from_account=vd["from_account"],
+            to_account=vd["to_account"],
+            amount=vd["amount"],
+            reason=vd["reason"],
+            user=request.user,
+            description=vd.get("description", ""),
+        )
+        return Response(
+            {
+                "from_movement": MoneyMovementSerializer(out_movement).data,
+                "to_movement": MoneyMovementSerializer(in_movement).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )

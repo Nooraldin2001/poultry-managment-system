@@ -269,6 +269,7 @@ class MoneyMovementSerializer(serializers.ModelSerializer):
             "reference_id",
             "description",
             "reason",
+            "movement_date",
             "created_by",
             "created_at",
         ]
@@ -291,3 +292,39 @@ class TreasurySummarySerializer(serializers.Serializer):
     bank_total = serializers.DecimalField(max_digits=16, decimal_places=2)
     available_total = serializers.DecimalField(max_digits=16, decimal_places=2)
     accounts_count = serializers.IntegerField()
+    active_cashboxes = serializers.IntegerField()
+    active_banks = serializers.IntegerField()
+    today_inflows = serializers.DecimalField(max_digits=16, decimal_places=2)
+    today_outflows = serializers.DecimalField(max_digits=16, decimal_places=2)
+
+
+class AccountStatementSerializer(serializers.Serializer):
+    opening_balance = serializers.DecimalField(max_digits=16, decimal_places=2)
+    closing_balance = serializers.DecimalField(max_digits=16, decimal_places=2)
+    movements = MoneyMovementSerializer(many=True)
+
+
+class AccountTransferSerializer(serializers.Serializer):
+    from_account = serializers.IntegerField()
+    to_account = serializers.IntegerField()
+    amount = serializers.DecimalField(max_digits=16, decimal_places=2)
+    reason = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        company = self.context["company"]
+        try:
+            attrs["from_account"] = MoneyAccount.objects.get(
+                pk=attrs["from_account"], company=company
+            )
+        except MoneyAccount.DoesNotExist as exc:
+            raise serializers.ValidationError({"from_account": "Source account not found."}) from exc
+        try:
+            attrs["to_account"] = MoneyAccount.objects.get(
+                pk=attrs["to_account"], company=company
+            )
+        except MoneyAccount.DoesNotExist as exc:
+            raise serializers.ValidationError({"to_account": "Destination account not found."}) from exc
+        if attrs["amount"] <= 0:
+            raise serializers.ValidationError({"amount": "Amount must be positive."})
+        return attrs

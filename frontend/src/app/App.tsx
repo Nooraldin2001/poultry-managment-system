@@ -2783,6 +2783,7 @@ import { SettingsHomeScreen, CompanyProfileScreen, UsersListScreen, CreateUserSc
 import { QuotationsListScreen, NewQuotationScreen, QuotationDetailScreen, QuotationPreviewScreen, ConvertQuotationScreen, QuotationAnalyticsScreen } from "./QuotationsModule";
 import { ProductsListScreen, AddProductScreen, ProductDetailScreen, ProductCategoriesScreen, BulkProductSetupScreen, ByProductsSetupScreen, ProductImportExportScreen, ProductSettingsPanel } from "./ProductModule";
 import { PaymentsOverviewScreen, PaymentMovementsScreen, CustomerCollectionModal as PayCollectModal, SupplierPaymentModal as PaySupplierModal, CustomerRefundScreen, SupplierRefundScreen, ReceiptPreviewScreen, PaymentMethodSummaryScreen, CashBankAccountsScreen, PaymentsReportScreen } from "./PaymentsModule";
+import { AccountsDashboardScreen, AccountsListScreen, AccountFormScreen, AccountDetailScreen, AccountStatementScreen } from "./AccountsModule";
 import { TaxDashboardScreen, SalesVATReportScreen, PurchaseVATReportScreen, NetVATScreen, TaxWarningsScreen, VATAuditScreen, TaxCreditNotesScreen, NonTaxableInvoicesScreen, TaxSettingsPanel, TaxExportPreviewScreen } from "./TaxModule";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3670,6 +3671,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
   const [selectedProductId, setSelectedProductId] = useState("");
   const [selectedSalesId, setSelectedSalesId] = useState("");
   const [selectedPurchaseId, setSelectedPurchaseId] = useState("");
+  const [selectedAccountId, setSelectedAccountId] = useState("");
   const [selectedReceiptId, setSelectedReceiptId] = useState("");
   const [showCollectModal, setShowCollectModal] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
@@ -3809,7 +3811,26 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "tax-non-taxable"          && <NonTaxableInvoicesScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "tax-settings"             && <TaxSettingsPanel lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "tax-export-preview"       && <TaxExportPreviewScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {tScreen === "accounts"               && <AccountsComingSoonScreen lang={lang} onNavigate={navTenant} />}
+          {tScreen === "accounts"               && <AccountsDashboardScreen lang={lang} permissions={permissions} onNavigate={navTenant} setSelectedAccountId={setSelectedAccountId} />}
+          {tScreen === "accounts-list"          && <AccountsListScreen lang={lang} permissions={permissions} onNavigate={navTenant} setSelectedAccountId={setSelectedAccountId} />}
+          {tScreen === "accounts-new"           && <AccountFormScreen lang={lang} permissions={permissions} onNavigate={navTenant} setSelectedAccountId={setSelectedAccountId} />}
+          {tScreen === "accounts-edit"          && selectedAccountId && <AccountFormScreen lang={lang} permissions={permissions} onNavigate={navTenant} accountId={selectedAccountId} setSelectedAccountId={setSelectedAccountId} />}
+          {tScreen === "accounts-edit"          && !selectedAccountId && <EmptyState lang={lang} messageAr="اختر حساباً من القائمة" messageEn="Select an account from the list" />}
+          {tScreen === "accounts-detail"        && <AccountDetailScreen lang={lang} permissions={permissions} onNavigate={navTenant} accountId={selectedAccountId} setSelectedAccountId={setSelectedAccountId} />}
+          {tScreen === "accounts-statement"     && (
+            <AccountStatementScreen
+              lang={lang}
+              permissions={permissions}
+              onNavigate={navTenant}
+              accountId={selectedAccountId}
+              onOpenReference={(refType, refId) => {
+                if (refType === "purchase_invoice" && refId) {
+                  setSelectedPurchaseId(refId);
+                  navTenant("purchases-detail");
+                }
+              }}
+            />
+          )}
           {tScreen === "qa-summary"             && <QASummaryScreen lang={lang} onNavigate={navTenant} />}
           {tScreen === "products"               && <ProductsListScreen lang={lang} role={role} onNavigate={navTenant} setSelectedProductId={setSelectedProductId} />}
           {tScreen === "products-new"           && <AddProductScreen lang={lang} role={role} onNavigate={navTenant} />}
@@ -3880,7 +3901,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
           {tScreen === "inventory-alerts"     && <LowStockScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "inventory-movement"   && <MovementScreen lang={lang} role={role} onNavigate={navTenant} />}
           {tScreen === "inventory-valuation"  && <ValuationScreen lang={lang} role={role} onNavigate={navTenant} />}
-          {!["dashboard","sales","sales-list","sales-new","sales-edit","sales-preview","sales-detail","purchases","purchases-list","purchases-new","purchases-edit","purchases-preview","purchases-detail","inventory","inventory-product","inventory-stocktaking","inventory-alerts","inventory-movement","inventory-valuation","customers","customers-create","customers-edit","customers-profile","customers-statement","suppliers","suppliers-new","suppliers-edit","supplier-profile","supplier-statement","expenses","expenses-list","expenses-recurring","expenses-report","expense-detail","expense-voucher","payments","payments-movements","payments-customer-collection","payments-supplier-payment","payments-customer-refund","payment-receipt-detail","payment-receipt-preview","payments-method-summary","payments-cash-bank","payments-report","tax","tax-sales","tax-purchases","tax-net","tax-warnings","tax-audit","tax-credit-notes","tax-non-taxable","tax-settings","tax-export-preview","accounts","qa-summary","products","products-new","products-edit","product-detail","product-categories","products-bulk-setup","products-byproducts","products-import-export","quotations","quotations-new","quotation-detail","quotation-preview","quotation-convert","quotation-analytics","reports","reports-daily","reports-sales","reports-purchases","reports-inventory","reports-customers","reports-suppliers","reports-tax","reports-profit","reports-statements","reports-builder","settings","settings-company","settings-users","settings-user-new","settings-user-permissions","settings-roles","settings-sensitive-actions","settings-audit","settings-numbering","settings-vat","settings-print-templates","settings-invoice-design","settings-transactions","settings-plan","settings-security","users"].includes(tScreen) && (
+          {!["dashboard","sales","sales-list","sales-new","sales-edit","sales-preview","sales-detail","purchases","purchases-list","purchases-new","purchases-edit","purchases-preview","purchases-detail","inventory","inventory-product","inventory-stocktaking","inventory-alerts","inventory-movement","inventory-valuation","customers","customers-create","customers-edit","customers-profile","customers-statement","suppliers","suppliers-new","suppliers-edit","supplier-profile","supplier-statement","expenses","expenses-list","expenses-recurring","expenses-report","expense-detail","expense-voucher","payments","payments-movements","payments-customer-collection","payments-supplier-payment","payments-customer-refund","payment-receipt-detail","payment-receipt-preview","payments-method-summary","payments-cash-bank","payments-report","tax","tax-sales","tax-purchases","tax-net","tax-warnings","tax-audit","tax-credit-notes","tax-non-taxable","tax-settings","tax-export-preview","accounts","accounts-list","accounts-new","accounts-edit","accounts-detail","accounts-statement","qa-summary","products","products-new","products-edit","product-detail","product-categories","products-bulk-setup","products-byproducts","products-import-export","quotations","quotations-new","quotation-detail","quotation-preview","quotation-convert","quotation-analytics","reports","reports-daily","reports-sales","reports-purchases","reports-inventory","reports-customers","reports-suppliers","reports-tax","reports-profit","reports-statements","reports-builder","settings","settings-company","settings-users","settings-user-new","settings-user-permissions","settings-roles","settings-sensitive-actions","settings-audit","settings-numbering","settings-vat","settings-print-templates","settings-invoice-design","settings-transactions","settings-plan","settings-security","users"].includes(tScreen) && (
             <ComingSoonPlaceholder screen={tScreen} isRTL={isRTL} onBackToDashboard={() => setTScreen("dashboard")} />
           )}
           </>
