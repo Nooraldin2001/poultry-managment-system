@@ -11,6 +11,8 @@ export type InvoiceTheme = {
   headerBg: string;
   titleBg: string;
   tableHeaderBg: string;
+  summaryRowBg?: string;
+  summaryRowText?: string;
   border: string;
   text: string;
   muted: string;
@@ -25,6 +27,8 @@ export interface InvoiceThemeTokens {
   headerBg: string;
   titleBg: string;
   tableHeaderBg: string;
+  summaryRowBg?: string;
+  summaryRowText?: string;
   border: string;
   text: string;
   muted: string;
@@ -51,6 +55,8 @@ const BASE_THEMES: Record<string, Omit<InvoiceTheme, "key" | "labelAr" | "labelE
     headerBg: "#0F2C59",
     titleBg: "#C8102E",
     tableHeaderBg: "#0F2C59",
+    summaryRowBg: "#0F2C59",
+    summaryRowText: "#FFFFFF",
     border: "#D3DCE8",
     text: "#1A2433",
     muted: "#64748B",
@@ -153,6 +159,14 @@ export function getInvoiceTheme(themeKey?: string | null): InvoiceTheme {
 /** Resolve theme tokens with a safe fallback for unknown keys. */
 export function resolveTheme(key: string | undefined | null): InvoiceThemeTokens {
   return getInvoiceTheme(key);
+}
+
+/** Summary row colors — follows template theme, never hardcoded blue. */
+export function summaryRowColors(theme: InvoiceThemeTokens): { bg: string; text: string } {
+  return {
+    bg: theme.summaryRowBg ?? theme.tableHeaderBg ?? theme.primary,
+    text: theme.summaryRowText ?? "#FFFFFF",
+  };
 }
 
 /** Bilingual names for the settings UI swatches. */

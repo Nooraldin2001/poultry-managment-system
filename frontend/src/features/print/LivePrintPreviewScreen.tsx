@@ -5,7 +5,7 @@ import { LoadingState, ErrorState, EmptyState } from "@/shared/components/ApiSta
 import { PrintPreviewLayout, type PrintLineRow } from "./PrintPreviewLayout";
 import { InvoiceTemplateRenderer } from "./InvoiceTemplateRenderer";
 import { resolveTheme } from "./theme";
-import { parseBranding, parseCompanyIdentity, parsePartyIdentity } from "./types";
+import { parseBranding, parseCompanyIdentity, parsePartyIdentity, type InvoiceLineTotals } from "./types";
 
 function lineDisplayTotal(line: Record<string, unknown>): string | undefined {
   const exVat =
@@ -81,6 +81,19 @@ function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; 
   }));
 }
 
+function mapLineTotals(data: Record<string, unknown>): InvoiceLineTotals | undefined {
+  const totals = (data.totals ?? {}) as Record<string, unknown>;
+  const cartons = totals.total_cartons;
+  const kg = totals.total_kg;
+  const subtotal = totals.subtotal ?? data.subtotal;
+  if (cartons == null && kg == null && subtotal == null) return undefined;
+  return {
+    totalCartons: cartons != null ? String(cartons) : "0",
+    totalKg: kg != null ? String(kg) : "0",
+    subtotal: subtotal != null ? String(subtotal) : "0",
+  };
+}
+
 type Props = {
   lang: Lang;
   onNavigate: (s: TenantScreen) => void;
@@ -136,6 +149,7 @@ export function LivePrintPreviewScreen({ lang, onNavigate, backScreen, titleAr, 
   }, [fetchPreview]);
 
   const lines = useMemo(() => (data ? mapPrintLines(data) : []), [data]);
+  const lineTotals = useMemo(() => (data ? mapLineTotals(data) : undefined), [data]);
   const totals = useMemo(() => (data ? mapTotals(data, lang) : []), [data, lang]);
 
   if (loading) return <LoadingState lang={lang} />;
@@ -184,6 +198,7 @@ export function LivePrintPreviewScreen({ lang, onNavigate, backScreen, titleAr, 
           partyKind: partyKind as "customer" | "supplier",
           meta: templateMeta,
           lines,
+          lineTotals,
           totals,
           notes: data.notes ? String(data.notes) : undefined,
           branding,

@@ -503,3 +503,121 @@ def test_reports_profit_uses_kg_priced_sales_line(company, owner):
         company, date_from=date.today(), date_to=date.today(),
     )
     assert profit_report["gross_profit"] == inv.gross_profit
+
+
+# ── Print preview line totals (cartons / kg summary row) ─────────────────────
+def _cut_product(company, sku="CUT"):
+    return _product(
+        company, sku,
+        product_type=ProductType.CHICKEN_PART,
+        weight_grams=0,
+        default_pieces_per_carton=0,
+    )
+
+
+def test_purchase_print_preview_includes_total_cartons_and_kg(company, owner, api):
+    supplier = _supplier(company, "PTOT")
+    product = _product(company, "PTOT")
+    inv = purchase_services.create_purchase_invoice(
+        company=company, supplier=supplier, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": PurchaseLineType.PRODUCT,
+            "quantity_cartons": "10", "quantity_kg": "100",
+            "unit_price": "12", "price_type": "kg",
+        }],
+    )
+    preview = build_purchase_print_preview(inv)
+    assert preview["totals"]["total_cartons"] == "10"
+    assert preview["totals"]["total_kg"] == "100"
+    assert Decimal(preview["totals"]["subtotal"]) == inv.subtotal
+
+    api.force_authenticate(owner)
+    resp = api.get(f"{PURCHASES_URL}{inv.id}/print-preview/")
+    assert resp.status_code == 200
+    assert resp.data["totals"]["total_cartons"] == "10"
+    assert resp.data["totals"]["total_kg"] == "100"
+
+
+def test_sales_print_preview_includes_total_cartons_and_kg(company, owner, api):
+    customer = _customer(company, phone="0507777001")
+    product = _product(company, "STOT")
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("0"),
+        lines=[{
+            "product": product, "line_type": SalesLineType.PRODUCT,
+            "quantity_cartons": "5", "quantity_kg": "50",
+            "unit_price": "20", "price_type": "kg",
+        }],
+    )
+    preview = build_print_preview(inv)
+    assert preview["totals"]["total_cartons"] == "5"
+    assert preview["totals"]["total_kg"] == "50"
+    assert Decimal(preview["totals"]["subtotal"]) == inv.subtotal
+
+    api.force_authenticate(owner)
+    resp = api.get(f"{SALES_URL}{inv.id}/print-preview/")
+    assert resp.status_code == 200
+    assert resp.data["totals"]["total_cartons"] == "5"
+    assert resp.data["totals"]["total_kg"] == "50"
+
+
+def test_print_preview_cut_product_contributes_kg_not_cartons(company, owner):
+    supplier = _supplier(company, "PCUT")
+    liver = _cut_product(company, "PCUT")
+    inv = purchase_services.create_purchase_invoice(
+        company=company, supplier=supplier, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("0"),
+        lines=[{
+            "product": liver, "line_type": PurchaseLineType.PRODUCT,
+            "quantity_cartons": "0", "quantity_kg": "25.5",
+            "unit_price": "4", "price_type": "kg",
+        }],
+    )
+    preview = build_purchase_print_preview(inv)
+    assert preview["totals"]["total_cartons"] == "0"
+    assert preview["totals"]["total_kg"] == "25.5"
+
+
+def test_print_preview_carton_product_sums_both(company, owner):
+    customer = _customer(company, phone="0507777002")
+    product = _product(company, "SCART")
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("0"),
+        lines=[
+            {
+                "product": product, "line_type": SalesLineType.PRODUCT,
+                "quantity_cartons": "3", "quantity_kg": "30",
+                "unit_price": "10", "price_type": "kg",
+            },
+            {
+                "product": product, "line_type": SalesLineType.PRODUCT,
+                "quantity_cartons": "2", "quantity_kg": "20",
+                "unit_price": "10", "price_type": "kg",
+            },
+        ],
+    )
+    preview = build_print_preview(inv)
+    assert preview["totals"]["total_cartons"] == "5"
+    assert preview["totals"]["total_kg"] == "50"
+    assert Decimal(preview["totals"]["subtotal"]) == inv.subtotal
+
+
+def test_print_preview_summary_subtotal_before_vat(company, owner):
+    customer = _customer(company, phone="0507777003")
+    product = _product(company, "SVATSUM", sales_price=Decimal("13.75"))
+    inv = sales_services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=date.today(), vat_rate=Decimal("5"),
+        lines=[{
+            "product": product, "line_type": SalesLineType.PRODUCT,
+            "quantity_kg": "7.5", "unit_price": "13.75", "price_type": "kg",
+        }],
+    )
+    preview = build_print_preview(inv)
+    assert Decimal(preview["totals"]["subtotal"]) == inv.subtotal == Decimal("103.12")
+    assert Decimal(preview["totals"]["vat_amount"]) == Decimal("5.16")
+    assert Decimal(preview["totals"]["total_amount"]) == Decimal("108.28")
+    assert Decimal(preview["lines"][0]["display_total"]) == Decimal("103.12")

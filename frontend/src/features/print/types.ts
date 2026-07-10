@@ -57,6 +57,12 @@ export interface InvoicePartyIdentity {
   address: string;
 }
 
+export interface InvoiceLineTotals {
+  totalCartons: string;
+  totalKg: string;
+  subtotal: string;
+}
+
 export interface InvoiceTemplateProps {
   lang: Lang;
   titleAr: string;
@@ -66,6 +72,7 @@ export interface InvoiceTemplateProps {
   partyKind: "customer" | "supplier";
   meta: { label: string; value: string }[];
   lines: PrintLineRow[];
+  lineTotals?: InvoiceLineTotals;
   totals: { label: string; value: string }[];
   notes?: string;
   branding: InvoiceBranding;

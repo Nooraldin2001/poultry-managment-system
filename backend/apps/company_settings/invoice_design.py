@@ -105,6 +105,11 @@ COLOR_THEME_TOKENS = {
     },
 }
 
+# Enrich theme tokens with summary-row colors for print/PDF clients.
+for _tokens in COLOR_THEME_TOKENS.values():
+    _tokens.setdefault("summaryRowBg", _tokens["tableHeaderBg"])
+    _tokens.setdefault("summaryRowText", "#FFFFFF")
+
 TEMPLATE_CATALOG = [
     {
         "key": InvoiceTemplateKey.CLASSIC,

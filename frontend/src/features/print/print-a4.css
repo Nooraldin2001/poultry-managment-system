@@ -190,4 +190,11 @@
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
+
+  .invoice-summary-row td {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
 }

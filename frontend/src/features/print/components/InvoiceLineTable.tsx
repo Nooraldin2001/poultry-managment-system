@@ -1,4 +1,5 @@
 import type { InvoiceTemplateProps } from "../types";
+import { InvoiceTotalsSummaryRow } from "./InvoiceTotalsSummaryRow";
 
 /** Dense invoice line table with theme-colored header. */
 export function InvoiceLineTable({
@@ -6,8 +7,9 @@ export function InvoiceLineTable({
   lines,
   branding,
   theme,
+  lineTotals,
   headerStyle = "solid",
-}: Pick<InvoiceTemplateProps, "lang" | "lines" | "branding" | "theme"> & {
+}: Pick<InvoiceTemplateProps, "lang" | "lines" | "branding" | "theme" | "lineTotals"> & {
   headerStyle?: "solid" | "underline";
 }) {
   const isRTL = lang === "ar";
@@ -68,6 +70,15 @@ export function InvoiceLineTable({
               </td>
             </tr>
           ))}
+          {lines.length > 0 && lineTotals && (
+            <InvoiceTotalsSummaryRow
+              lang={lang}
+              isRTL={isRTL}
+              bilingual={bilingual}
+              theme={theme}
+              lineTotals={lineTotals}
+            />
+          )}
           {lines.length === 0 && (
             <tr>
               <td colSpan={5} className="py-4 text-center text-xs" style={{ color: theme.muted }}>

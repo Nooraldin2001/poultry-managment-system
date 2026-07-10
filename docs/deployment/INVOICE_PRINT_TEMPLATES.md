@@ -51,9 +51,32 @@ Example (750 g, 7.5 kg × 13.75):
 
 Frontend `LivePrintPreviewScreen.mapPrintLines()` prefers `display_total` → `line_subtotal`.
 
+## Summary row (totals line)
+
+After all line items, a **theme-colored summary row** shows aggregated quantities:
+
+| Column | Content |
+|--------|---------|
+| Item / البند | الإجمالي / Total |
+| Qty / الكمية | `totals.total_cartons` (sum of line cartons) |
+| Unit / الوحدة | `totals.total_kg` (sum of line kg) |
+| Price / السعر | — |
+| Total / الإجمالي | `totals.subtotal` (**before VAT**) |
+
+**Formulas (backend source of truth — `apps/tenants/print_line_totals.py`):**
+
+- `total_cartons = sum(line.quantity_cartons)`
+- `total_kg = sum(line.quantity_kg)`
+- Poultry cuts: cartons usually 0, kg still summed
+- Carton products: both cartons and kg summed
+
+**Theme color:** `summaryRowBg` defaults to `tableHeaderBg` / `primary` for the selected invoice color theme (not hardcoded blue). Text: white (`summaryRowText`).
+
+Frontend component: `InvoiceTotalsSummaryRow` inside `InvoiceLineTable`.
+
 ## Tests
 
-- `tests/test_invoice_line_pricing.py` — VAT-once cases for purchase/sales + print `display_total`
+- `tests/test_invoice_line_pricing.py` — VAT-once cases + print `display_total` + summary row cartons/kg
 - `tests/test_purchases.py`, `tests/test_sales.py` — line subtotal by price_type
 
 ## Production smoke (First View)

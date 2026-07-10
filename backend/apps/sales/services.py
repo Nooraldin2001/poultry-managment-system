@@ -927,11 +927,13 @@ def get_customer_sales_history(company, customer):
 
 # ── Print preview ───────────────────────────────────────────────────────────
 def build_print_preview(invoice, request=None) -> dict:
+    from apps.tenants.print_line_totals import compute_print_line_totals
     from apps.company_settings.services import build_invoice_branding
 
     company = invoice.company
     lines = list(invoice.lines.all().order_by("sort_order", "id"))
     customer_party = build_sales_customer_party(invoice)
+    qty_totals = compute_print_line_totals(lines)
     return {
         "title_en": "TAX INVOICE",
         "title_ar": "فاتورة ضريبية",
@@ -971,6 +973,8 @@ def build_print_preview(invoice, request=None) -> dict:
             for ln in lines
         ],
         "totals": {
+            "total_cartons": qty_totals["total_cartons"],
+            "total_kg": qty_totals["total_kg"],
             "subtotal": str(invoice.subtotal),
             "discount_total": str(invoice.discount_total),
             "taxable_amount": str(invoice.taxable_amount),

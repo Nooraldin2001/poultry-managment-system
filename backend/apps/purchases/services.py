@@ -1192,6 +1192,8 @@ def build_purchase_print_preview(invoice, request=None) -> dict:
     """JSON payload for tenant purchase print preview (browser print / save as PDF)."""
     from apps.company_settings.services import build_invoice_branding
 
+    from apps.tenants.print_line_totals import compute_print_line_totals
+
     company = invoice.company
     lines = list(invoice.lines.all().order_by("sort_order", "id"))
     supplier = getattr(invoice, "supplier", None)
@@ -1207,6 +1209,7 @@ def build_purchase_print_preview(invoice, request=None) -> dict:
         "address": (supplier.address or "").strip() if supplier is not None else "",
         "supplier_invoice_number": invoice.supplier_invoice_number,
     }
+    qty_totals = compute_print_line_totals(lines)
     return {
         "title_en": "PURCHASE INVOICE",
         "title_ar": "فاتورة شراء",
@@ -1246,6 +1249,8 @@ def build_purchase_print_preview(invoice, request=None) -> dict:
             for ln in lines
         ],
         "totals": {
+            "total_cartons": qty_totals["total_cartons"],
+            "total_kg": qty_totals["total_kg"],
             "subtotal": str(invoice.subtotal),
             "deduction_total": str(invoice.adjustment_total),
             "gross_total": str(invoice.gross_total or invoice.total_amount),
