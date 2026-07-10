@@ -1135,6 +1135,20 @@ def test_credit_purchase_cannot_use_money_account(company, owner):
         services.approve_purchase_invoice(invoice=inv, user=owner, reason="x")
 
 
+def test_paid_purchase_requires_money_account_before_approve(company, owner):
+    supplier = _supplier(company, sku="SMIX5")
+    product = _product(company, sku="PMIX5")
+    inv = _create(
+        company, supplier, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="partial", amount_paid=Decimal("50"),
+        money_account=None, vat_rate=Decimal("0"),
+    )
+    with pytest.raises(ValidationError) as exc:
+        services.approve_purchase_invoice(invoice=inv, user=owner, reason="x")
+    assert "money_account" in exc.value.detail
+
+
 def test_insufficient_cashbox_balance_blocks_purchase(company, owner):
     supplier = _supplier(company, sku="SMIX4")
     product = _product(company, sku="PMIX4")

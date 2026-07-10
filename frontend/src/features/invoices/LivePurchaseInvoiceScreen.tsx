@@ -248,6 +248,53 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     return payload;
   };
 
+  const validatePurchaseHeader = (): boolean => {
+    if (!supplierId) {
+      toast.error(isRTL ? "اختر المورد أولاً" : "Select a supplier first");
+      return false;
+    }
+    if (isBackdatedDate(invoiceDate) && canBackdate && !backdateReason.trim()) {
+      const msg = isRTL ? "سبب إدخال تاريخ سابق مطلوب" : "Backdate reason is required for backdated invoices";
+      setFieldErrors({ backdate_reason: [msg] });
+      toast.error(msg);
+      return false;
+    }
+    const paid = parseAmount(amountPaid || "0");
+    if (paid > totals.total) {
+      toast.error(isRTL ? "المبلغ المدفوع لا يمكن أن يتجاوز صافي المستحق للمورد" : "Paid amount cannot exceed net supplier payable");
+      return false;
+    }
+    const slaughter = parseAmount(slaughterDeduction || "0");
+    const transport = parseAmount(transportDeduction || "0");
+    if (slaughter > 0 && !slaughterhouseSupplierId) {
+      toast.error(isRTL ? "اختر المسلخ عند إدخال خصم المسلخ" : "Select slaughterhouse when deduction amount is set");
+      return false;
+    }
+    if (transport > 0 && !transportSupplierId) {
+      toast.error(isRTL ? "اختر النقل عند إدخال خصم النقل" : "Select transport account when deduction amount is set");
+      return false;
+    }
+    if (slaughter + transport > totals.gross) {
+      toast.error(isRTL ? "مجموع الخصومات يتجاوز إجمالي الفاتورة" : "Total deductions exceed gross total");
+      return false;
+    }
+    if (paymentMethod === "cash" && !moneyAccountId) {
+      toast.error(isRTL ? "اختر الخزنة" : "Select a cashbox");
+      return false;
+    }
+    if (paymentMethod === "bank_transfer" && !moneyAccountId) {
+      toast.error(isRTL ? "اختر الحساب البنكي" : "Select a bank account");
+      return false;
+    }
+    if (paymentMethod === "partial" && paid > 0 && !moneyAccountId) {
+      toast.error(
+        isRTL ? "اختر مصدر الدفع (خزنة أو حساب بنكي)" : "Select a payment source (cashbox or bank account)",
+      );
+      return false;
+    }
+    return true;
+  };
+
   const paymentPayload = (): Record<string, unknown> => {
     const selectedAccount = moneyAccounts.find((a) => a.id === moneyAccountId);
     const resolvedPaymentMethod =
@@ -302,43 +349,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   };
 
   const handleSaveDraft = async () => {
-    if (!supplierId) {
-      toast.error(isRTL ? "اختر المورد أولاً" : "Select a supplier first");
-      return;
-    }
-    const paid = parseAmount(amountPaid || "0");
-    if (paid > totals.total) {
-      toast.error(isRTL ? "المبلغ المدفوع لا يمكن أن يتجاوز صافي المستحق للمورد" : "Paid amount cannot exceed net supplier payable");
-      return;
-    }
-    const slaughter = parseAmount(slaughterDeduction || "0");
-    const transport = parseAmount(transportDeduction || "0");
-    if (slaughter > 0 && !slaughterhouseSupplierId) {
-      toast.error(isRTL ? "اختر المسلخ عند إدخال خصم المسلخ" : "Select slaughterhouse when deduction amount is set");
-      return;
-    }
-    if (transport > 0 && !transportSupplierId) {
-      toast.error(isRTL ? "اختر النقل عند إدخال خصم النقل" : "Select transport account when deduction amount is set");
-      return;
-    }
-    if (slaughter + transport > totals.gross) {
-      toast.error(isRTL ? "مجموع الخصومات يتجاوز إجمالي الفاتورة" : "Total deductions exceed gross total");
-      return;
-    }
-    if (paymentMethod === "cash" && !moneyAccountId) {
-      toast.error(isRTL ? "اختر الخزنة" : "Select a cashbox");
-      return;
-    }
-    if (paymentMethod === "bank_transfer" && !moneyAccountId) {
-      toast.error(isRTL ? "اختر الحساب البنكي" : "Select a bank account");
-      return;
-    }
-    if (paymentMethod === "partial" && paid > 0 && !moneyAccountId) {
-      toast.error(
-        isRTL ? "اختر مصدر الدفع (خزنة أو حساب بنكي)" : "Select a payment source (cashbox or bank account)",
-      );
-      return;
-    }
+    if (!validatePurchaseHeader()) return;
     setSaving(true);
     setFieldErrors({});
     setError(null);
@@ -458,6 +469,10 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     setSaving(true);
     setFieldErrors({});
     setError(null);
+    if (!validatePurchaseHeader()) {
+      setSaving(false);
+      return;
+    }
     // #region agent log
     fetch('http://127.0.0.1:7860/ingest/00c03889-4edf-41f7-887a-9f04d03e7a1c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cd5244'},body:JSON.stringify({sessionId:'cd5244',location:'LivePurchaseInvoiceScreen.tsx:handleApprove:start',message:'approve flow started',data:{invoiceId:docId,invoiceDate,isBackdated:isBackdatedDate(invoiceDate),vatEnabled,paymentMethod,lines:lines.length},hypothesisId:'E',timestamp:Date.now()})}).catch(()=>{});
     // #endregion

@@ -688,6 +688,54 @@ def repair_purchase_inventory_side_effects(
     return report
 
 
+def _validate_purchase_payment_for_approval(invoice) -> Decimal:
+    """Validate payment fields before stock/accounting side effects. Returns paid amount."""
+    from apps.payments.models import MoneyAccountType
+
+    paid_amount = _d(invoice.amount_paid)
+    if paid_amount > _d(invoice.total_amount):
+        raise ValidationError({"amount_paid": "Amount paid cannot exceed total."})
+
+    if invoice.payment_method == PurchasePaymentMethod.CREDIT:
+        if paid_amount > 0:
+            raise ValidationError({"amount_paid": "Credit purchase must have zero paid amount."})
+        if invoice.money_account_id:
+            raise ValidationError({
+                "money_account": (
+                    "Credit purchase cannot use a cashbox/bank account / "
+                    "الشراء الآجل لا يستخدم خزنة أو حساب بنكي"
+                )
+            })
+        return ZERO
+
+    if paid_amount <= 0:
+        return paid_amount
+
+    if not invoice.money_account_id:
+        raise ValidationError({
+            "money_account": (
+                "Select a cashbox/bank account for paid purchases. / "
+                "اختر الخزنة أو الحساب البنكي للمبلغ المدفوع"
+            )
+        })
+    account = invoice.money_account
+    if invoice.payment_method == PurchasePaymentMethod.CASH and account.account_type != MoneyAccountType.CASHBOX:
+        raise ValidationError({
+            "money_account": (
+                "Cash payment requires a cashbox account / "
+                "الدفع كاش يتطلب اختيار خزنة"
+            )
+        })
+    if invoice.payment_method in (PurchasePaymentMethod.BANK_TRANSFER, PurchasePaymentMethod.CHEQUE) and account.account_type != MoneyAccountType.BANK:
+        raise ValidationError({
+            "money_account": (
+                "Bank/Cheque payment requires a bank account / "
+                "الدفع البنكي يتطلب اختيار حساب بنكي"
+            )
+        })
+    return paid_amount
+
+
 # ── Approval ────────────────────────────────────────────────────────────────
 @transaction.atomic
 def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> PurchaseInvoice:
@@ -740,6 +788,14 @@ def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> Pu
     _validate_lines_for_approval(lines)
     agent_dbg("purchases.services.approve:lines_ok", "lines validated", {"invoice_id": invoice.id}, "C")
 
+    paid_amount = _validate_purchase_payment_for_approval(invoice)
+    agent_dbg(
+        "purchases.services.approve:payment_ok",
+        "payment validated",
+        {"invoice_id": invoice.id, "paid_amount": str(paid_amount)},
+        "C",
+    )
+
     # Allocate increase_inventory_cost adjustments across product lines (by
     # subtotal) so unit_cost_per_kg reflects the true landed cost.
     _apply_purchase_stock_side_effects(invoice=invoice, user=user, reason=reason)
@@ -748,41 +804,10 @@ def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> Pu
     # Post money movement for paid part (cash/bank), then supplier payable only
     # for outstanding part so credit/partial works correctly.
     from apps.payments import services as payment_services
-    from apps.payments.models import MoneyAccountType, MoneyDirection, MoneyMovementType
+    from apps.payments.models import MoneyDirection, MoneyMovementType
 
-    paid_amount = _d(invoice.amount_paid)
-    if paid_amount > _d(invoice.total_amount):
-        raise ValidationError({"amount_paid": "Amount paid cannot exceed total."})
-
-    if invoice.payment_method == PurchasePaymentMethod.CREDIT:
-        if paid_amount > 0:
-            raise ValidationError({"amount_paid": "Credit purchase must have zero paid amount."})
-        if invoice.money_account_id:
-            raise ValidationError({
-                "money_account": (
-                    "Credit purchase cannot use a cashbox/bank account / "
-                    "الشراء الآجل لا يستخدم خزنة أو حساب بنكي"
-                )
-            })
-        paid_amount = ZERO
-    elif paid_amount > 0:
-        if not invoice.money_account_id:
-            raise ValidationError({"money_account": "Select a cashbox/bank account for paid purchases."})
+    if paid_amount > 0:
         account = invoice.money_account
-        if invoice.payment_method == PurchasePaymentMethod.CASH and account.account_type != MoneyAccountType.CASHBOX:
-            raise ValidationError({
-                "money_account": (
-                    "Cash payment requires a cashbox account / "
-                    "الدفع كاش يتطلب اختيار خزنة"
-                )
-            })
-        if invoice.payment_method in (PurchasePaymentMethod.BANK_TRANSFER, PurchasePaymentMethod.CHEQUE) and account.account_type != MoneyAccountType.BANK:
-            raise ValidationError({
-                "money_account": (
-                    "Bank/Cheque payment requires a bank account / "
-                    "الدفع البنكي يتطلب اختيار حساب بنكي"
-                )
-            })
         payment_services.post_money_movement(
             company=company,
             money_account=account,
