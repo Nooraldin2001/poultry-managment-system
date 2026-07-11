@@ -24,6 +24,7 @@ from .models import (
     PurchaseInvoice,
     PurchaseInvoiceLine,
     PurchaseStatus,
+    ServiceChargeMode,
 )
 from .serializers import (
     PurchaseAdjustmentInputSerializer,
@@ -158,10 +159,16 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
             money_account=vd.get("money_account"),
             backdate_reason=vd.get("backdate_reason", ""),
             slaughterhouse_supplier=vd.get("slaughterhouse_supplier"),
-            slaughterhouse_deduction_amount=vd.get("slaughterhouse_deduction_amount", 0),
+            slaughterhouse_deduction_amount=vd.get(
+                "slaughterhouse_amount", vd.get("slaughterhouse_deduction_amount", 0)
+            ),
+            slaughterhouse_mode=vd.get("slaughterhouse_mode", ServiceChargeMode.DEDUCT),
             transport_supplier=vd.get("transport_supplier"),
-            transport_deduction_amount=vd.get("transport_deduction_amount", 0),
-            deduction_notes=vd.get("deduction_notes", ""),
+            transport_deduction_amount=vd.get(
+                "transport_amount", vd.get("transport_deduction_amount", 0)
+            ),
+            transport_mode=vd.get("transport_mode", ServiceChargeMode.DEDUCT),
+            deduction_notes=vd.get("service_notes", vd.get("deduction_notes", "")),
         )
         from apps.core.document_dates import log_backdated_invoice
 
@@ -204,7 +211,8 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
                 for field in ("invoice_date", "due_date", "supplier_invoice_number",
                               "payment_method", "vat_rate", "amount_paid", "notes",
                               "money_account", "backdate_reason", "deduction_notes",
-                              "slaughterhouse_deduction_amount", "transport_deduction_amount"):
+                              "slaughterhouse_deduction_amount", "transport_deduction_amount",
+                              "slaughterhouse_mode", "transport_mode"):
                     if field in vd:
                         setattr(invoice, field, vd[field])
                         header_fields.append(field)
@@ -214,6 +222,15 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
                 if "transport_supplier" in vd:
                     invoice.transport_supplier = vd["transport_supplier"]
                     header_fields.append("transport_supplier")
+                if "service_notes" in vd:
+                    invoice.deduction_notes = vd["service_notes"]
+                    header_fields.append("deduction_notes")
+                if "slaughterhouse_amount" in vd:
+                    invoice.slaughterhouse_deduction_amount = vd["slaughterhouse_amount"]
+                    header_fields.append("slaughterhouse_deduction_amount")
+                if "transport_amount" in vd:
+                    invoice.transport_deduction_amount = vd["transport_amount"]
+                    header_fields.append("transport_deduction_amount")
                 if header_fields:
                     invoice.updated_by = request.user
                     invoice.save(update_fields=list(set(header_fields)) + ["updated_by", "updated_at"])

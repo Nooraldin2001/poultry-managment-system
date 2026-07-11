@@ -34,7 +34,7 @@ export function toModuleSupplier(row: SupplierRow) {
     nameAr: row.name,
     nameEn: row.nameEn ?? row.name,
     type: "credit" as const,
-    category: "other",
+    category: row.categoryCode || "other",
     phone: row.phone ?? "",
     balance: row.balance,
     due: row.due ?? "",

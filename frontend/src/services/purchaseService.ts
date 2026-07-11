@@ -33,10 +33,16 @@ interface ApiPurchaseList {
 interface ApiPurchaseDetail extends ApiPurchaseList {
   money_account?: number | null;
   gross_total?: string;
+  final_invoice_total?: string;
   slaughterhouse_supplier?: number | null;
+  slaughterhouse_amount?: string;
   slaughterhouse_deduction_amount?: string;
+  slaughterhouse_mode?: "add" | "deduct";
   transport_supplier?: number | null;
+  transport_amount?: string;
   transport_deduction_amount?: string;
+  transport_mode?: "add" | "deduct";
+  service_notes?: string;
   deduction_notes?: string;
   lines?: ApiPurchaseLine[];
   backdate_reason?: string;
@@ -77,21 +83,50 @@ export function mapApiPurchaseToRow(row: ApiPurchaseList): PurchaseInvoiceRow {
     balance: parseAmount(row.balance_due),
     moneyAccountId: row.money_account != null ? String(row.money_account) : "",
     grossTotal: parseAmount((row as ApiPurchaseDetail).gross_total ?? row.total_amount),
+    finalInvoiceTotal: parseAmount(
+      (row as ApiPurchaseDetail).final_invoice_total
+        ?? (row as ApiPurchaseDetail).gross_total
+        ?? row.total_amount,
+    ),
     slaughterhouseSupplierId:
       (row as ApiPurchaseDetail).slaughterhouse_supplier != null
         ? String((row as ApiPurchaseDetail).slaughterhouse_supplier)
         : "",
-    slaughterhouseDeduction: parseAmount(
-      (row as ApiPurchaseDetail).slaughterhouse_deduction_amount ?? "0",
+    slaughterhouseAmount: parseAmount(
+      (row as ApiPurchaseDetail).slaughterhouse_amount
+        ?? (row as ApiPurchaseDetail).slaughterhouse_deduction_amount
+        ?? "0",
     ),
+    slaughterhouseDeduction: parseAmount(
+      (row as ApiPurchaseDetail).slaughterhouse_amount
+        ?? (row as ApiPurchaseDetail).slaughterhouse_deduction_amount
+        ?? "0",
+    ),
+    slaughterhouseMode:
+      (row as ApiPurchaseDetail).slaughterhouse_mode ?? "deduct",
     transportSupplierId:
       (row as ApiPurchaseDetail).transport_supplier != null
         ? String((row as ApiPurchaseDetail).transport_supplier)
         : "",
-    transportDeduction: parseAmount(
-      (row as ApiPurchaseDetail).transport_deduction_amount ?? "0",
+    transportAmount: parseAmount(
+      (row as ApiPurchaseDetail).transport_amount
+        ?? (row as ApiPurchaseDetail).transport_deduction_amount
+        ?? "0",
     ),
-    deductionNotes: (row as ApiPurchaseDetail).deduction_notes ?? "",
+    transportDeduction: parseAmount(
+      (row as ApiPurchaseDetail).transport_amount
+        ?? (row as ApiPurchaseDetail).transport_deduction_amount
+        ?? "0",
+    ),
+    transportMode: (row as ApiPurchaseDetail).transport_mode ?? "deduct",
+    deductionNotes:
+      (row as ApiPurchaseDetail).service_notes
+        ?? (row as ApiPurchaseDetail).deduction_notes
+        ?? "",
+    serviceNotes:
+      (row as ApiPurchaseDetail).service_notes
+        ?? (row as ApiPurchaseDetail).deduction_notes
+        ?? "",
   };
 }
 

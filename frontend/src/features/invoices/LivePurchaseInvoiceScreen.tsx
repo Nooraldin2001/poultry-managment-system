@@ -24,7 +24,7 @@ import { defaultLinePriceType, parsePriceType, priceColumnLabel } from "./priceT
 import { LinePriceTypeSelect } from "./LinePriceTypeSelect";
 import { PurchaseLinePriceCell } from "./PurchaseLinePriceCell";
 import { canDeletePurchaseLine, canOverridePurchasePrice, canBackdatePurchaseInvoice } from "@/shared/utils/permissions";
-import { notifyTenantDataChanged } from "@/shared/utils/tenantRefresh";
+import { notifyTenantDataChanged, subscribeTenantRefresh } from "@/shared/utils/tenantRefresh";
 import { ReasonModal } from "./ReasonModal";
 import { BackdateInvoiceFields, isBackdatedDate, todayIso } from "./BackdateInvoiceFields";
 import { parseAmount } from "@/services/crud/parse";
@@ -50,6 +50,8 @@ function recalcLineFromProduct(line: InvoiceLineDraft, prod: ProductRow | undefi
   });
   return { ...line, pieces: derived.pieces, kg: derived.kg };
 }
+
+type ServiceChargeMode = "add" | "deduct";
 
 type Props = {
   lang: Lang;
@@ -96,10 +98,13 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
   const [slaughterSuppliers, setSlaughterSuppliers] = useState<SupplierRow[]>([]);
   const [transportSuppliers, setTransportSuppliers] = useState<SupplierRow[]>([]);
   const [slaughterhouseSupplierId, setSlaughterhouseSupplierId] = useState("");
-  const [slaughterDeduction, setSlaughterDeduction] = useState("0");
+  const [slaughterAmount, setSlaughterAmount] = useState("0");
+  const [slaughterMode, setSlaughterMode] = useState<ServiceChargeMode>("deduct");
   const [transportSupplierId, setTransportSupplierId] = useState("");
-  const [transportDeduction, setTransportDeduction] = useState("0");
-  const [deductionNotes, setDeductionNotes] = useState("");
+  const [transportAmount, setTransportAmount] = useState("0");
+  const [transportMode, setTransportMode] = useState<ServiceChargeMode>("deduct");
+  const [serviceNotes, setServiceNotes] = useState("");
+  const [loadingServiceSuppliers, setLoadingServiceSuppliers] = useState(!IS_MOCK_MODE);
 
   const { items: suppliers, loading: loadingSuppliers, reload: reloadSuppliers } = usePurchaseSuppliers();
   const { items: products, loading: loadingProducts } = useProducts();
@@ -122,10 +127,12 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     setInvoiceDate(todayIso());
     setBackdateReason("");
     setSlaughterhouseSupplierId("");
-    setSlaughterDeduction("0");
+    setSlaughterAmount("0");
+    setSlaughterMode("deduct");
     setTransportSupplierId("");
-    setTransportDeduction("0");
-    setDeductionNotes("");
+    setTransportAmount("0");
+    setTransportMode("deduct");
+    setServiceNotes("");
     setError(null);
     setFieldErrors({});
     setNotFound(false);
@@ -165,10 +172,12 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       setAmountPaid(String(detail.invoice.paid));
       setMoneyAccountId(detail.invoice.moneyAccountId ?? "");
       setSlaughterhouseSupplierId(detail.invoice.slaughterhouseSupplierId ?? "");
-      setSlaughterDeduction(String(detail.invoice.slaughterhouseDeduction ?? 0));
+      setSlaughterAmount(String(detail.invoice.slaughterhouseAmount ?? detail.invoice.slaughterhouseDeduction ?? 0));
+      setSlaughterMode(detail.invoice.slaughterhouseMode ?? "deduct");
       setTransportSupplierId(detail.invoice.transportSupplierId ?? "");
-      setTransportDeduction(String(detail.invoice.transportDeduction ?? 0));
-      setDeductionNotes(detail.invoice.deductionNotes ?? "");
+      setTransportAmount(String(detail.invoice.transportAmount ?? detail.invoice.transportDeduction ?? 0));
+      setTransportMode(detail.invoice.transportMode ?? "deduct");
+      setServiceNotes(detail.invoice.serviceNotes ?? detail.invoice.deductionNotes ?? "");
       setVatEnabled(detail.invoice.vat > 0);
       setLines(mapDetailLines(detail));
     } catch (err) {
@@ -195,13 +204,38 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     void loadDoc();
   }, [invoiceId, initialSupplierId, loadDoc, resetDraft]);
 
+  const reloadServiceSuppliers = useCallback(() => {
+    if (IS_MOCK_MODE) return;
+    setLoadingServiceSuppliers(true);
+    Promise.all([listSlaughterhouseSuppliers(), listTransportSuppliers()])
+      .then(([slaughter, transport]) => {
+        setSlaughterSuppliers(slaughter);
+        setTransportSuppliers(transport);
+      })
+      .catch(() => {
+        setSlaughterSuppliers([]);
+        setTransportSuppliers([]);
+      })
+      .finally(() => setLoadingServiceSuppliers(false));
+  }, []);
+
+  useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    reloadServiceSuppliers();
+    const unsub = subscribeTenantRefresh(["suppliers"], reloadServiceSuppliers);
+    const onFocus = () => reloadServiceSuppliers();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      unsub();
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [reloadServiceSuppliers]);
+
   useEffect(() => {
     if (IS_MOCK_MODE) return;
     void listMoneyAccounts()
       .then(setMoneyAccounts)
       .catch(() => setMoneyAccounts([]));
-    void listSlaughterhouseSuppliers().then(setSlaughterSuppliers).catch(() => setSlaughterSuppliers([]));
-    void listTransportSuppliers().then(setTransportSuppliers).catch(() => setTransportSuppliers([]));
   }, []);
 
   useEffect(() => {
@@ -223,19 +257,42 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
     const subtotal = lines.reduce((s, l) => s + l.lineSubtotal, 0);
     const vat = vatEnabled ? Math.round(subtotal * DEFAULT_VAT_RATE) / 100 : 0;
     const gross = subtotal + vat;
-    const slaughter = parseAmount(slaughterDeduction || "0");
-    const transport = parseAmount(transportDeduction || "0");
-    const net = Math.max(0, gross - slaughter - transport);
+    const slaughter = parseAmount(slaughterAmount || "0");
+    const transport = parseAmount(transportAmount || "0");
+    const slaughterAdd = slaughterMode === "add" ? slaughter : 0;
+    const slaughterDeduct = slaughterMode === "deduct" ? slaughter : 0;
+    const transportAdd = transportMode === "add" ? transport : 0;
+    const transportDeduct = transportMode === "deduct" ? transport : 0;
+    const serviceAdditions = slaughterAdd + transportAdd;
+    const serviceDeductions = slaughterDeduct + transportDeduct;
+    const finalTotal = gross + serviceAdditions;
+    const netPoultry = Math.max(0, gross - serviceDeductions);
     const paid = parseAmount(amountPaid);
-    return { subtotal, vat, gross, slaughter, transport, total: net, paid, balance: Math.max(0, net - paid) };
-  }, [lines, vatEnabled, amountPaid, slaughterDeduction, transportDeduction]);
+    return {
+      subtotal,
+      vat,
+      gross,
+      slaughter,
+      transport,
+      slaughterAdd,
+      transportAdd,
+      serviceAdditions,
+      serviceDeductions,
+      finalTotal,
+      total: netPoultry,
+      paid,
+      balance: Math.max(0, netPoultry - paid),
+    };
+  }, [lines, vatEnabled, amountPaid, slaughterAmount, transportAmount, slaughterMode, transportMode]);
 
-  const deductionPayload = (): Record<string, unknown> => ({
+  const servicePayload = (): Record<string, unknown> => ({
     slaughterhouse_supplier: slaughterhouseSupplierId ? Number(slaughterhouseSupplierId) : null,
-    slaughterhouse_deduction_amount: slaughterDeduction || "0",
+    slaughterhouse_amount: slaughterAmount || "0",
+    slaughterhouse_mode: slaughterMode,
     transport_supplier: transportSupplierId ? Number(transportSupplierId) : null,
-    transport_deduction_amount: transportDeduction || "0",
-    deduction_notes: deductionNotes,
+    transport_amount: transportAmount || "0",
+    transport_mode: transportMode,
+    service_notes: serviceNotes,
   });
 
   const lineVatRate = vatEnabled ? DEFAULT_VAT_RATE : 0;
@@ -264,18 +321,20 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       toast.error(isRTL ? "المبلغ المدفوع لا يمكن أن يتجاوز صافي المستحق للمورد" : "Paid amount cannot exceed net supplier payable");
       return false;
     }
-    const slaughter = parseAmount(slaughterDeduction || "0");
-    const transport = parseAmount(transportDeduction || "0");
+    const slaughter = parseAmount(slaughterAmount || "0");
+    const transport = parseAmount(transportAmount || "0");
     if (slaughter > 0 && !slaughterhouseSupplierId) {
-      toast.error(isRTL ? "اختر المسلخ عند إدخال خصم المسلخ" : "Select slaughterhouse when deduction amount is set");
+      toast.error(isRTL ? "اختر المسلخ عند إدخال مبلغ المسلخ" : "Select slaughterhouse when amount is set");
       return false;
     }
     if (transport > 0 && !transportSupplierId) {
-      toast.error(isRTL ? "اختر النقل عند إدخال خصم النقل" : "Select transport account when deduction amount is set");
+      toast.error(isRTL ? "اختر النقل عند إدخال مبلغ النقل" : "Select transport account when amount is set");
       return false;
     }
-    if (slaughter + transport > totals.gross) {
-      toast.error(isRTL ? "مجموع الخصومات يتجاوز إجمالي الفاتورة" : "Total deductions exceed gross total");
+    const deductTotal =
+      (slaughterMode === "deduct" ? slaughter : 0) + (transportMode === "deduct" ? transport : 0);
+    if (deductTotal > totals.gross) {
+      toast.error(isRTL ? "مجموع الخصومات يتجاوز إجمالي الدجاج" : "Total deductions exceed gross poultry total");
       return false;
     }
     if (paymentMethod === "cash" && !moneyAccountId) {
@@ -320,7 +379,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       ...paymentPayload(),
       vat_rate: vatEnabled ? "5.00" : "0.00",
       notes,
-      ...deductionPayload(),
+      ...servicePayload(),
     });
   };
 
@@ -340,7 +399,7 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       ...paymentPayload(),
       notes,
       vat_rate: vatEnabled ? "5.00" : "0.00",
-      ...deductionPayload(),
+      ...servicePayload(),
     });
     setDocId(created.id);
     setInvoiceNumber(created.number ?? "");
@@ -772,72 +831,89 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
               </select>
             )}
           </div>
-          <div className="bg-white rounded-2xl border p-4 space-y-3">
-            <h3 className="font-black text-[#0F2C59] text-sm">
-              {isRTL ? "خصومات مرتبطة بالفاتورة" : "Invoice Deductions"}
-            </h3>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "المسلخ" : "Slaughterhouse"}</label>
-                <select
-                  value={slaughterhouseSupplierId}
-                  disabled={!isDraft}
-                  onChange={(e) => setSlaughterhouseSupplierId(e.target.value)}
-                  className="w-full rounded-xl border px-3 py-2 text-sm"
-                >
-                  <option value="">{isRTL ? "— اختر المسلخ —" : "— Select slaughterhouse —"}</option>
-                  {slaughterSuppliers.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+          <div className="bg-white rounded-2xl border p-4 space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-black text-[#0F2C59] text-sm">
+                {isRTL ? "خدمات مرتبطة بالفاتورة" : "Invoice-Linked Services"}
+              </h3>
+              {!IS_MOCK_MODE && (
+                <button type="button" onClick={reloadServiceSuppliers} className="p-2 rounded-lg border text-slate-500 hover:bg-slate-50" title={isRTL ? "تحديث القائمة" : "Refresh lists"}>
+                  <RefreshCw size={14} className={loadingServiceSuppliers ? "animate-spin" : ""} />
+                </button>
+              )}
+            </div>
+            <div className="space-y-4">
+              <div className="grid sm:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50/80">
+                <div className="sm:col-span-2 text-xs font-black text-slate-600">{isRTL ? "المسلخ" : "Slaughterhouse"}</div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "اختر المسلخ" : "Select slaughterhouse"}</label>
+                  <select
+                    value={slaughterhouseSupplierId}
+                    disabled={!isDraft}
+                    onChange={(e) => setSlaughterhouseSupplierId(e.target.value)}
+                    className="w-full rounded-xl border px-3 py-2 text-sm"
+                  >
+                    <option value="">{isRTL ? "— اختر المسلخ —" : "— Select slaughterhouse —"}</option>
+                    {slaughterSuppliers.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  {!loadingServiceSuppliers && slaughterSuppliers.length === 0 && (
+                    <p className="text-[11px] font-bold text-amber-600 mt-1">
+                      {isRTL ? "لا توجد حسابات مسالخ نشطة." : "No active slaughterhouse accounts."}{" "}
+                      <button type="button" className="underline" onClick={() => onNavigate("suppliers-new")}>
+                        {isRTL ? "إضافة مورد مسلخ" : "Add slaughterhouse supplier"}
+                      </button>
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "المبلغ" : "Amount"}</label>
+                  <input type="number" min={0} step="0.01" disabled={!isDraft} value={slaughterAmount} onChange={(e) => setSlaughterAmount(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm font-mono" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "طريقة التطبيق" : "Application mode"}</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([["add", isRTL ? "إضافة على الفاتورة" : "Add to invoice"], ["deduct", isRTL ? "خصم من مستحق مورد الدجاج" : "Deduct from poultry supplier"]] as const).map(([mode, label]) => (
+                      <button key={mode} type="button" disabled={!isDraft} onClick={() => setSlaughterMode(mode)} className={`py-2 rounded-xl text-xs font-bold border-2 ${slaughterMode === mode ? "border-[#0F2C59] bg-[#0F2C59]/5 text-[#0F2C59]" : "border-slate-200 text-slate-500"}`}>{label}</button>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "خصم المسلخ" : "Slaughterhouse Deduction"}</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  disabled={!isDraft}
-                  value={slaughterDeduction}
-                  onChange={(e) => setSlaughterDeduction(e.target.value)}
-                  className="w-full rounded-xl border px-3 py-2 text-sm font-mono"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "النقل / السائق" : "Transport / Driver"}</label>
-                <select
-                  value={transportSupplierId}
-                  disabled={!isDraft}
-                  onChange={(e) => setTransportSupplierId(e.target.value)}
-                  className="w-full rounded-xl border px-3 py-2 text-sm"
-                >
-                  <option value="">{isRTL ? "— اختر النقل —" : "— Select transport —"}</option>
-                  {transportSuppliers.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "خصم النقل" : "Transport Deduction"}</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  disabled={!isDraft}
-                  value={transportDeduction}
-                  onChange={(e) => setTransportDeduction(e.target.value)}
-                  className="w-full rounded-xl border px-3 py-2 text-sm font-mono"
-                />
+              <div className="grid sm:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50/80">
+                <div className="sm:col-span-2 text-xs font-black text-slate-600">{isRTL ? "النقل / السائق" : "Transport / Driver"}</div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "اختر النقل" : "Select transport"}</label>
+                  <select value={transportSupplierId} disabled={!isDraft} onChange={(e) => setTransportSupplierId(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm">
+                    <option value="">{isRTL ? "— اختر النقل —" : "— Select transport —"}</option>
+                    {transportSuppliers.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  {!loadingServiceSuppliers && transportSuppliers.length === 0 && (
+                    <p className="text-[11px] font-bold text-amber-600 mt-1">
+                      {isRTL ? "لا توجد حسابات نقل نشطة." : "No active transport accounts."}{" "}
+                      <button type="button" className="underline" onClick={() => onNavigate("suppliers-new")}>
+                        {isRTL ? "إضافة مورد نقل" : "Add transport supplier"}
+                      </button>
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "المبلغ" : "Amount"}</label>
+                  <input type="number" min={0} step="0.01" disabled={!isDraft} value={transportAmount} onChange={(e) => setTransportAmount(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm font-mono" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-500 block mb-1">{isRTL ? "طريقة التطبيق" : "Application mode"}</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([["add", isRTL ? "إضافة على الفاتورة" : "Add to invoice"], ["deduct", isRTL ? "خصم من مستحق مورد الدجاج" : "Deduct from poultry supplier"]] as const).map(([mode, label]) => (
+                      <button key={mode} type="button" disabled={!isDraft} onClick={() => setTransportMode(mode)} className={`py-2 rounded-xl text-xs font-bold border-2 ${transportMode === mode ? "border-[#0F2C59] bg-[#0F2C59]/5 text-[#0F2C59]" : "border-slate-200 text-slate-500"}`}>{label}</button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-            <textarea
-              value={deductionNotes}
-              disabled={!isDraft}
-              onChange={(e) => setDeductionNotes(e.target.value)}
-              rows={2}
-              placeholder={isRTL ? "ملاحظات الخصومات (اختياري)" : "Deduction notes (optional)"}
-              className="w-full rounded-xl border px-3 py-2 text-sm"
-            />
+            <textarea value={serviceNotes} disabled={!isDraft} onChange={(e) => setServiceNotes(e.target.value)} rows={2} placeholder={isRTL ? "ملاحظات الخدمات (اختياري)" : "Service notes (optional)"} className="w-full rounded-xl border px-3 py-2 text-sm" />
           </div>
         </div>
         <div className="bg-white rounded-2xl border p-4 space-y-2 text-sm">
@@ -845,49 +921,42 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
             <span>{isRTL ? "الإجمالي قبل الضريبة" : "Subtotal before VAT"}</span>
             <span className="font-mono">AED {totals.subtotal.toFixed(2)}</span>
           </div>
-          <div className="border-t border-slate-100 pt-2 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-bold text-slate-600">
-                {vatEnabled
-                  ? isRTL ? "ضريبة القيمة المضافة 5%" : "VAT 5%"
-                  : isRTL ? "بدون ضريبة" : "VAT disabled"}
-              </span>
-              {isDraft && (
-                <button
-                  type="button"
-                  aria-label={isRTL ? "تبديل الضريبة" : "Toggle VAT"}
-                  onClick={() => handleVatToggle(!vatEnabled)}
-                  className={`w-10 h-[22px] rounded-full flex items-center transition-all ${vatEnabled ? "bg-[#0F2C59]" : "bg-slate-300"}`}
-                >
-                  <span className={`w-4 h-4 bg-white rounded-full shadow-sm mx-0.5 transition-all ${vatEnabled ? "translate-x-5" : "translate-x-0"}`} />
-                </button>
-              )}
-            </div>
-            <div className="flex justify-between font-bold">
-              <span>{isRTL ? "ضريبة القيمة المضافة" : "VAT"}</span>
-              <span className="font-mono">AED {totals.vat.toFixed(2)}</span>
-            </div>
+          <div className="flex justify-between font-bold">
+            <span>{isRTL ? "ضريبة القيمة المضافة" : "VAT"}</span>
+            <span className="font-mono">AED {totals.vat.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between font-bold text-slate-700">
-            <span>{isRTL ? "الإجمالي شامل الضريبة" : "Total incl. VAT"}</span>
+          <div className="flex justify-between font-bold text-slate-700 border-t border-slate-100 pt-2">
+            <span>{isRTL ? "إجمالي الدجاج" : "Gross Poultry Total"}</span>
             <span className="font-mono">AED {totals.gross.toFixed(2)}</span>
           </div>
-          {(totals.slaughter > 0 || slaughterDeduction !== "0") && (
-            <div className="flex justify-between text-red-600 font-bold">
-              <span>{isRTL ? "خصم المسلخ" : "Slaughterhouse Deduction"}</span>
-              <span className="font-mono">- AED {totals.slaughter.toFixed(2)}</span>
+          {totals.serviceAdditions > 0 && (
+            <div className="flex justify-between text-emerald-700 font-bold">
+              <span>{isRTL ? "إضافات المسلخ والنقل" : "Added Service Costs"}</span>
+              <span className="font-mono">+ AED {totals.serviceAdditions.toFixed(2)}</span>
             </div>
           )}
-          {(totals.transport > 0 || transportDeduction !== "0") && (
+          {totals.serviceDeductions > 0 && (
             <div className="flex justify-between text-red-600 font-bold">
-              <span>{isRTL ? "خصم النقل" : "Transport Deduction"}</span>
-              <span className="font-mono">- AED {totals.transport.toFixed(2)}</span>
+              <span>{isRTL ? "خصومات من مستحق مورد الدجاج" : "Deductions from Poultry Supplier"}</span>
+              <span className="font-mono">- AED {totals.serviceDeductions.toFixed(2)}</span>
             </div>
           )}
+          <div className="flex justify-between font-bold text-[#0F2C59]">
+            <span>{isRTL ? "إجمالي تكلفة الفاتورة" : "Final Invoice Cost"}</span>
+            <span className="font-mono">AED {totals.finalTotal.toFixed(2)}</span>
+          </div>
           <div className="flex justify-between font-black text-[#0F2C59] pt-1 border-t">
-            <span>{isRTL ? "صافي المستحق للمورد" : "Net Supplier Payable"}</span>
+            <span>{isRTL ? "صافي المستحق لمورد الدجاج" : "Net Poultry Supplier Payable"}</span>
             <span className="font-mono">AED {totals.total.toFixed(2)}</span>
           </div>
+          {isDraft && (
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <span className="text-[10px] font-bold text-slate-400">{isRTL ? "تفعيل الضريبة" : "VAT toggle"}</span>
+              <button type="button" aria-label={isRTL ? "تبديل الضريبة" : "Toggle VAT"} onClick={() => handleVatToggle(!vatEnabled)} className={`w-10 h-[22px] rounded-full flex items-center transition-all ${vatEnabled ? "bg-[#0F2C59]" : "bg-slate-300"}`}>
+                <span className={`w-4 h-4 bg-white rounded-full shadow-sm mx-0.5 transition-all ${vatEnabled ? "translate-x-5" : "translate-x-0"}`} />
+              </button>
+            </div>
+          )}
           <select value={paymentMethod} disabled={!isDraft} onChange={(e) => handlePaymentMethodChange(e.target.value)} className="w-full border rounded-xl px-2 py-2 text-sm">
             <option value="cash">{isRTL ? "طريقة الدفع: كاش" : "Payment method: Cash"}</option>
             <option value="bank_transfer">{isRTL ? "طريقة الدفع: بنك" : "Payment method: Bank"}</option>

@@ -46,6 +46,7 @@ GROUP_ACTIONS = {
     "purchases": [
         "view", "create", "edit", "approve", "cancel", "print", "export",
         "sensitive", "upload_attachment", "view_cost", "manage_adjustments",
+        "manage_service_charges",
         "override_price", "backdate",
     ],
     "inventory": [
@@ -188,6 +189,7 @@ ACCOUNTANT_DEFAULTS = [
     "purchases.approve", "purchases.print", "purchases.export",
     "purchases.upload_attachment", "purchases.view_cost",
     "purchases.manage_adjustments", "purchases.backdate",
+    "purchases.manage_service_charges",
     # Inventory: read + valuation + export. Adjustments and stocktaking apply
     # stay DISABLED by default (Owner/Admin or per-user override required).
     "inventory.view",

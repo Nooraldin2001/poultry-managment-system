@@ -73,6 +73,25 @@ export function mapApiSupplierToRow(row: ApiSupplierList): SupplierRow {
   };
 }
 
+export interface SupplierCategoryRow {
+  id: string;
+  code: string;
+  name: string;
+  nameEn?: string;
+}
+
+export async function listSupplierCategories(): Promise<SupplierCategoryRow[]> {
+  if (IS_MOCK_MODE) return [];
+  const data = await request<{ results?: unknown[] } | unknown[]>(ENDPOINTS.tenant.supplierCategories);
+  const rows = Array.isArray(data) ? data : (data.results ?? []);
+  return rows.map((r: Record<string, unknown>, i: number) => ({
+    id: String(r.id ?? i),
+    code: String(r.code ?? ""),
+    name: String(r.name_ar ?? r.name ?? ""),
+    nameEn: String(r.name_en ?? r.name_ar ?? ""),
+  }));
+}
+
 export async function listSupplierRows(filters?: ApiListFilters): Promise<SupplierRow[]> {
   if (IS_MOCK_MODE) {
     return supplierMock.listSuppliers() as Promise<SupplierRow[]>;
@@ -263,6 +282,7 @@ export function buildSupplierCreatePayload(form: {
   emirate?: string;
   trn?: string;
   supplierType?: string;
+  categoryId?: number | null;
   openingBalance?: number;
   openingBalanceType?: string;
   paymentTermsDays?: number;
@@ -278,6 +298,10 @@ export function buildSupplierCreatePayload(form: {
     supplier_type: form.supplierType ?? "credit",
     track_balance: form.trackBalance !== false,
   };
+
+  if (form.categoryId != null && form.categoryId > 0) {
+    payload.category = form.categoryId;
+  }
 
   const whatsapp = form.whatsapp?.trim();
   if (whatsapp) payload.whatsapp = whatsapp;

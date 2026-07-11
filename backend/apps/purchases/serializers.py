@@ -22,6 +22,7 @@ from .models import (
     PurchaseInvoiceLine,
     PurchaseLineType,
     PurchaseStatus,
+    ServiceChargeMode,
 )
 
 ZERO = Decimal("0")
@@ -84,6 +85,13 @@ class PurchaseInvoiceDetailSerializer(serializers.ModelSerializer):
     adjustments = PurchaseAdjustmentSerializer(many=True, read_only=True)
     attachments = PurchaseAttachmentSerializer(many=True, read_only=True)
     vat_enabled = serializers.BooleanField(read_only=True)
+    slaughterhouse_amount = serializers.DecimalField(
+        source="slaughterhouse_deduction_amount", max_digits=16, decimal_places=2, read_only=True,
+    )
+    transport_amount = serializers.DecimalField(
+        source="transport_deduction_amount", max_digits=16, decimal_places=2, read_only=True,
+    )
+    service_notes = serializers.CharField(source="deduction_notes", read_only=True)
 
     class Meta:
         model = PurchaseInvoice
@@ -92,10 +100,14 @@ class PurchaseInvoiceDetailSerializer(serializers.ModelSerializer):
             "supplier_trn_snapshot", "supplier_invoice_number",
             "invoice_date", "due_date", "status", "payment_status",
             "payment_method", "subtotal", "adjustment_total", "taxable_amount",
-            "vat_rate", "vat_amount", "gross_total", "total_amount", "amount_paid", "balance_due",
+            "vat_rate", "vat_amount", "gross_total", "final_invoice_total",
+            "total_amount", "amount_paid", "balance_due",
             "inventory_cost_total", "money_account", "supplier_payable_posted",
-            "slaughterhouse_supplier", "slaughterhouse_deduction_amount",
-            "transport_supplier", "transport_deduction_amount", "deduction_notes",
+            "slaughterhouse_supplier", "slaughterhouse_amount",
+            "slaughterhouse_deduction_amount", "slaughterhouse_mode",
+            "transport_supplier", "transport_amount",
+            "transport_deduction_amount", "transport_mode",
+            "service_notes", "deduction_notes",
             "vat_enabled", "notes", "backdate_reason",
             "approval_reason", "approved_by", "approved_at",
             "cancel_reason", "cancelled_by", "cancelled_at",
@@ -226,13 +238,26 @@ class PurchaseInvoiceCreateUpdateSerializer(
     lines = PurchaseInvoiceLineInputSerializer(many=True, required=False)
     adjustments = PurchaseAdjustmentInputSerializer(many=True, required=False)
     slaughterhouse_supplier = serializers.IntegerField(required=False, allow_null=True)
-    slaughterhouse_deduction_amount = serializers.DecimalField(
+    slaughterhouse_amount = serializers.DecimalField(
         max_digits=16, decimal_places=2, required=False, default=ZERO
+    )
+    slaughterhouse_deduction_amount = serializers.DecimalField(
+        max_digits=16, decimal_places=2, required=False
+    )
+    slaughterhouse_mode = serializers.ChoiceField(
+        choices=ServiceChargeMode.choices, required=False, default=ServiceChargeMode.DEDUCT
     )
     transport_supplier = serializers.IntegerField(required=False, allow_null=True)
-    transport_deduction_amount = serializers.DecimalField(
+    transport_amount = serializers.DecimalField(
         max_digits=16, decimal_places=2, required=False, default=ZERO
     )
+    transport_deduction_amount = serializers.DecimalField(
+        max_digits=16, decimal_places=2, required=False
+    )
+    transport_mode = serializers.ChoiceField(
+        choices=ServiceChargeMode.choices, required=False, default=ServiceChargeMode.DEDUCT
+    )
+    service_notes = serializers.CharField(required=False, allow_blank=True)
     deduction_notes = serializers.CharField(required=False, allow_blank=True)
 
     def _resolve_supplier(self, value, field_name):
@@ -275,6 +300,19 @@ class PurchaseInvoiceCreateUpdateSerializer(
             raise serializers.ValidationError(
                 {"invoice_number": "Internal invoice number is assigned automatically."}
             )
+        initial = self.initial_data
+        if "slaughterhouse_amount" not in attrs and "slaughterhouse_deduction_amount" in initial:
+            attrs["slaughterhouse_amount"] = initial.get("slaughterhouse_deduction_amount", ZERO)
+        if "transport_amount" not in attrs and "transport_deduction_amount" in initial:
+            attrs["transport_amount"] = initial.get("transport_deduction_amount", ZERO)
+        if "service_notes" not in attrs and "deduction_notes" in initial:
+            attrs["service_notes"] = initial.get("deduction_notes", "")
+        if "slaughterhouse_amount" in attrs:
+            attrs["slaughterhouse_deduction_amount"] = attrs["slaughterhouse_amount"]
+        if "transport_amount" in attrs:
+            attrs["transport_deduction_amount"] = attrs["transport_amount"]
+        if "service_notes" in attrs:
+            attrs["deduction_notes"] = attrs["service_notes"]
         self._check_non_negative(attrs)
         company = self.context["company"]
         account_id = attrs.get("money_account")

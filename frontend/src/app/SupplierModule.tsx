@@ -19,7 +19,7 @@ import { ProfileTabBody } from "@/features/profiles/ProfileTabState";
 import { LiveSupplierPaymentModal } from "@/features/payments/LivePaymentModals";
 import { FormErrors } from "@/shared/components/FormErrors";
 import { ApiError } from "@/services/api/errors";
-import { createSupplier, updateSupplier, getSupplierDetail, buildSupplierCreatePayload, buildSupplierUpdatePayload } from "@/services/supplierService";
+import { createSupplier, updateSupplier, getSupplierDetail, buildSupplierCreatePayload, buildSupplierUpdatePayload, listSupplierCategories, type SupplierCategoryRow } from "@/services/supplierService";
 import { canCreateSupplier, canEditSupplier } from "@/shared/utils/permissions";
 import { supplierPaymentMethodOptions } from "@/shared/utils/supplierPaymentMethod";
 import { getSupplierStatementReport } from "@/services/reportsService";
@@ -420,7 +420,8 @@ export function CreateSupplierScreen({ lang, role, permissions = [], onNavigate,
   const [address, setAddress] = useState(""); const [emirate, setEmirate] = useState("");
   const [notes, setNotes] = useState("");
   const [suppType, setSuppType] = useState<SuppType>("credit");
-  const [category, setCategory] = useState("food_company");
+  const [categoryId, setCategoryId] = useState("");
+  const [categories, setCategories] = useState<SupplierCategoryRow[]>([]);
   const [active, setActive] = useState(true);
   const [openBal, setOpenBal] = useState("0"); const [openBalType, setOpenBalType] = useState("للمورد علينا");
   const [payTerms, setPayTerms] = useState("15"); const [payMethod, setPayMethod] = useState("bank");
@@ -440,6 +441,11 @@ export function CreateSupplierScreen({ lang, role, permissions = [], onNavigate,
   const canSetFinancials = canAccess && !isEdit;
 
   useEffect(() => {
+    if (IS_MOCK_MODE) return;
+    void listSupplierCategories().then(setCategories).catch(() => setCategories([]));
+  }, []);
+
+  useEffect(() => {
     if (!supplierId || IS_MOCK_MODE) return;
     let cancelled = false;
     setLoadingSupplier(true);
@@ -456,6 +462,7 @@ export function CreateSupplierScreen({ lang, role, permissions = [], onNavigate,
         setEmirate(detail.emirate);
         setNotes(detail.notes);
         setSuppType((detail.supplierType as SuppType) || "credit");
+        setCategoryId(detail.categoryId != null ? String(detail.categoryId) : "");
         setActive(detail.isActive);
         setPayTerms(String(detail.paymentTermsDays));
         setPayMethod(detail.defaultPaymentMethod || "bank");
@@ -493,6 +500,7 @@ export function CreateSupplierScreen({ lang, role, permissions = [], onNavigate,
         const payload = buildSupplierUpdatePayload({
           nameAr, nameEn, phone, whatsapp, email, address, emirate, trn,
           supplierType: suppType,
+          categoryId: categoryId ? Number(categoryId) : null,
           paymentTermsDays: parseInt(payTerms, 10) || 0,
           defaultPaymentMethod: payMethod,
           trackBalance,
@@ -505,6 +513,7 @@ export function CreateSupplierScreen({ lang, role, permissions = [], onNavigate,
         const payload = buildSupplierCreatePayload({
           nameAr, nameEn, phone, whatsapp, email, address, emirate, trn,
           supplierType: suppType,
+          categoryId: categoryId ? Number(categoryId) : null,
           openingBalance: parseFloat(openBal) || 0,
           openingBalanceType: openBalType,
           paymentTermsDays: parseInt(payTerms, 10) || 0,
@@ -528,15 +537,14 @@ export function CreateSupplierScreen({ lang, role, permissions = [], onNavigate,
   };
   const EMIRATES = ["دبي", "أبوظبي", "الشارقة", "عجمان", "رأس الخيمة", "أم القيوين", "الفجيرة"].map(e => ({ value: e, label: e }));
   const PAYMENT_METHOD_OPTIONS = supplierPaymentMethodOptions(lang);
-  const CATEGORIES = [
-    { value: "food_company", label: isRTL ? "شركة مواد غذائية" : "Food Company" },
-    { value: "farm",         label: isRTL ? "مزرعة دواجن" : "Poultry Farm" },
-    { value: "slaughterhouse",label: isRTL ? "مسلخ" : "Slaughterhouse" },
-    { value: "transport",    label: isRTL ? "شركة نقل" : "Transport Company" },
-    { value: "cash",         label: isRTL ? "مورد كاش" : "Cash Supplier" },
-    { value: "credit",       label: isRTL ? "مورد آجل" : "Credit Supplier" },
-    { value: "other",        label: isRTL ? "أخرى" : "Other" },
-  ];
+  const categoryOptions = categories.length > 0
+    ? categories.map((c) => ({
+        value: c.id,
+        label: isRTL ? c.name : (c.nameEn ?? c.name),
+      }))
+    : [
+        { value: "", label: isRTL ? "مورد عام" : "General Supplier" },
+      ];
 
   if (loadingSupplier) return <LoadingState lang={lang} />;
 
@@ -576,7 +584,7 @@ export function CreateSupplierScreen({ lang, role, permissions = [], onNavigate,
               ))}
             </div>
           </div>
-          <FSelect label={isRTL ? "التصنيف" : "Category"} value={category} onChange={setCategory} options={CATEGORIES} />
+          <FSelect label={isRTL ? "التصنيف" : "Category"} value={categoryId} onChange={setCategoryId} options={[{ value: "", label: isRTL ? "— اختر التصنيف —" : "— Select category —" }, ...categoryOptions]} />
           <div className="flex items-center justify-between py-2.5 border-t border-slate-100">
             <span className="text-sm font-bold text-slate-700">{isRTL ? "المورد نشط" : "Supplier Active"}</span>
             <button onClick={() => setActive(v => !v)} className={`w-10 h-[22px] rounded-full flex items-center transition-all ${active ? "bg-[#0F2C59]" : "bg-slate-300"}`}>

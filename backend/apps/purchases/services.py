@@ -44,6 +44,7 @@ from apps.inventory.services import StockConsumedError
 from apps.permissions.services import has_permission
 from apps.products.models import ProductType
 from apps.products.poultry_cuts import is_kg_primary_product, validate_purchase_line_quantities
+from apps.suppliers.constants import CATEGORY_SLAUGHTERHOUSE, CATEGORY_TRANSPORT
 from apps.suppliers.models import Supplier, SupplierLedgerEntry, SupplierSpecialPrice
 from apps.suppliers import services as supplier_services
 
@@ -61,6 +62,7 @@ from .models import (
     PurchasePaymentStatus,
     PurchaseStatus,
     PurchaseStatusHistory,
+    ServiceChargeMode,
 )
 
 ZERO = Decimal("0")
@@ -134,38 +136,79 @@ def _inventory_cost_extra(adjustments) -> Decimal:
     )
 
 
-def _validate_service_deductions(invoice, *, gross_total: Decimal) -> None:
-    """Validate slaughterhouse/transport deduction fields on a purchase invoice."""
-    slaughter = _d(invoice.slaughterhouse_deduction_amount)
-    transport = _d(invoice.transport_deduction_amount)
+def _service_breakdown(invoice) -> dict:
+    """Split slaughterhouse/transport amounts into add vs deduct components."""
+    slaughter_amt = _d(invoice.slaughterhouse_deduction_amount)
+    transport_amt = _d(invoice.transport_deduction_amount)
+    slaughter_mode = getattr(invoice, "slaughterhouse_mode", None) or ServiceChargeMode.DEDUCT
+    transport_mode = getattr(invoice, "transport_mode", None) or ServiceChargeMode.DEDUCT
+    slaughter_add = slaughter_amt if slaughter_mode == ServiceChargeMode.ADD else ZERO
+    slaughter_deduct = slaughter_amt if slaughter_mode == ServiceChargeMode.DEDUCT else ZERO
+    transport_add = transport_amt if transport_mode == ServiceChargeMode.ADD else ZERO
+    transport_deduct = transport_amt if transport_mode == ServiceChargeMode.DEDUCT else ZERO
+    total_additions = slaughter_add + transport_add
+    total_deductions = slaughter_deduct + transport_deduct
+    return {
+        "slaughter_amount": slaughter_amt,
+        "transport_amount": transport_amt,
+        "slaughter_mode": slaughter_mode,
+        "transport_mode": transport_mode,
+        "slaughter_add": slaughter_add,
+        "slaughter_deduct": slaughter_deduct,
+        "transport_add": transport_add,
+        "transport_deduct": transport_deduct,
+        "total_additions": total_additions,
+        "total_deductions": total_deductions,
+    }
+
+
+def _validate_service_charges(invoice, *, gross_total: Decimal) -> None:
+    """Validate slaughterhouse/transport service fields on a purchase invoice."""
+    breakdown = _service_breakdown(invoice)
+    slaughter = breakdown["slaughter_amount"]
+    transport = breakdown["transport_amount"]
     company = invoice.company
 
     if slaughter < 0 or transport < 0:
-        raise ValidationError("Deduction amounts cannot be negative.")
+        raise ValidationError("Service amounts cannot be negative.")
 
     if slaughter > 0 and not invoice.slaughterhouse_supplier_id:
         raise ValidationError(
-            {"slaughterhouse_supplier": "Slaughterhouse account is required when deduction amount is set."}
+            {"slaughterhouse_supplier": "Slaughterhouse account is required when amount is set."}
         )
     if transport > 0 and not invoice.transport_supplier_id:
         raise ValidationError(
-            {"transport_supplier": "Transport account is required when deduction amount is set."}
+            {"transport_supplier": "Transport account is required when amount is set."}
         )
 
-    total_deductions = slaughter + transport
-    if total_deductions > gross_total:
+    if breakdown["total_deductions"] > gross_total:
         raise ValidationError(
-            {"deductions": "Total deductions cannot exceed the gross invoice total."}
+            {"deductions": "Total service deductions cannot exceed the gross poultry total."}
         )
 
-    for field_name, supplier_id in (
-        ("slaughterhouse_supplier", invoice.slaughterhouse_supplier_id),
-        ("transport_supplier", invoice.transport_supplier_id),
+    for field_name, supplier_id, expected_code in (
+        ("slaughterhouse_supplier", invoice.slaughterhouse_supplier_id, CATEGORY_SLAUGHTERHOUSE),
+        ("transport_supplier", invoice.transport_supplier_id, CATEGORY_TRANSPORT),
     ):
         if not supplier_id:
             continue
-        if not Supplier.objects.filter(pk=supplier_id, company_id=company.id).exists():
+        supplier = (
+            Supplier.objects.select_related("category")
+            .filter(pk=supplier_id, company_id=company.id)
+            .first()
+        )
+        if supplier is None:
             raise ValidationError({field_name: "Supplier does not belong to this company."})
+        cat_code = (supplier.category.code if supplier.category_id else "") or ""
+        if expected_code and cat_code != expected_code:
+            raise ValidationError(
+                {field_name: f"Supplier must have category code '{expected_code}'."}
+            )
+
+
+def _validate_service_deductions(invoice, *, gross_total: Decimal) -> None:
+    """Backward-compatible alias."""
+    _validate_service_charges(invoice, gross_total=gross_total)
 
 
 def _apply_payment_state(invoice):
@@ -234,19 +277,19 @@ def recalculate_purchase_invoice(invoice) -> PurchaseInvoice:
         vat = ZERO
 
     gross_total = (taxable + vat).quantize(MONEY_Q)
-    _validate_service_deductions(invoice, gross_total=gross_total)
+    _validate_service_charges(invoice, gross_total=gross_total)
 
-    slaughter = _d(invoice.slaughterhouse_deduction_amount)
-    transport = _d(invoice.transport_deduction_amount)
-    total_deductions = slaughter + transport
+    breakdown = _service_breakdown(invoice)
 
     invoice.subtotal = subtotal.quantize(MONEY_Q)
     invoice.adjustment_total = payable_adjustment.quantize(MONEY_Q)
     invoice.taxable_amount = taxable
     invoice.vat_amount = vat
     invoice.gross_total = gross_total
-    invoice.total_amount = (gross_total - total_deductions).quantize(MONEY_Q)
-    invoice.inventory_cost_total = (subtotal + inventory_extra).quantize(MONEY_Q)
+    invoice.final_invoice_total = (gross_total + breakdown["total_additions"]).quantize(MONEY_Q)
+    invoice.total_amount = (gross_total - breakdown["total_deductions"]).quantize(MONEY_Q)
+    service_landed = breakdown["total_additions"]
+    invoice.inventory_cost_total = (subtotal + inventory_extra + service_landed).quantize(MONEY_Q)
 
     if _d(invoice.amount_paid) > _d(invoice.total_amount):
         raise ValidationError(
@@ -256,7 +299,7 @@ def recalculate_purchase_invoice(invoice) -> PurchaseInvoice:
     _apply_payment_state(invoice)
     invoice.save(update_fields=[
         "subtotal", "adjustment_total", "taxable_amount", "vat_amount",
-        "gross_total", "total_amount", "inventory_cost_total", "amount_paid", "balance_due",
+        "gross_total", "final_invoice_total", "total_amount", "inventory_cost_total", "amount_paid", "balance_due",
         "payment_status", "status", "updated_at",
     ])
     return invoice
@@ -270,7 +313,9 @@ def create_purchase_invoice(*, company, supplier, created_by, invoice_date,
                             amount_paid=ZERO, notes="", invoice_number=None,
                             money_account=None, backdate_reason="",
                             slaughterhouse_supplier=None, slaughterhouse_deduction_amount=ZERO,
+                            slaughterhouse_mode=ServiceChargeMode.DEDUCT,
                             transport_supplier=None, transport_deduction_amount=ZERO,
+                            transport_mode=ServiceChargeMode.DEDUCT,
                             deduction_notes=""):
     """Create a DRAFT purchase invoice with its lines and adjustments.
 
@@ -305,8 +350,10 @@ def create_purchase_invoice(*, company, supplier, created_by, invoice_date,
         supplier_trn_snapshot=supplier.trn or "",
         slaughterhouse_supplier=slaughterhouse_supplier,
         slaughterhouse_deduction_amount=_d(slaughterhouse_deduction_amount),
+        slaughterhouse_mode=slaughterhouse_mode or ServiceChargeMode.DEDUCT,
         transport_supplier=transport_supplier,
         transport_deduction_amount=_d(transport_deduction_amount),
+        transport_mode=transport_mode or ServiceChargeMode.DEDUCT,
         deduction_notes=deduction_notes or "",
         created_by=created_by,
         updated_by=created_by,
@@ -515,6 +562,7 @@ def _apply_purchase_stock_side_effects(*, invoice, user, reason) -> list[dict]:
     received_at = invoice_date_to_received_at(business_date)
     lines = list(invoice.lines.select_related("product").all())
     extra = _inventory_cost_extra(list(invoice.adjustments.all()))
+    extra += _service_breakdown(invoice)["total_additions"]
     product_lines = [ln for ln in lines if ln.is_stock_tracked and ln.has_quantity]
     allocations = calc.allocate_inventory_cost(
         [ln.line_subtotal for ln in product_lines], extra
@@ -842,10 +890,11 @@ def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> Pu
 
     slaughter_posted = ZERO
     transport_posted = ZERO
-    if _d(invoice.slaughterhouse_deduction_amount) > 0 and invoice.slaughterhouse_supplier_id:
+    breakdown = _service_breakdown(invoice)
+    if breakdown["slaughter_amount"] > 0 and invoice.slaughterhouse_supplier_id:
         sh = Supplier.objects.select_for_update().get(pk=invoice.slaughterhouse_supplier_id)
-        slaughter_posted = _d(invoice.slaughterhouse_deduction_amount)
-        supplier_services.record_purchase_deduction(
+        slaughter_posted = breakdown["slaughter_amount"]
+        supplier_services.record_purchase_service(
             supplier=sh,
             amount=slaughter_posted,
             reference_id=invoice.id,
@@ -853,12 +902,14 @@ def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> Pu
             created_by=user,
             reason=reason,
             entry_date=invoice.invoice_date,
-            description=f"Slaughterhouse deduction {invoice.invoice_number}",
+            service_type="slaughterhouse",
+            service_mode=breakdown["slaughter_mode"],
+            description=f"Slaughterhouse service {invoice.invoice_number}",
         )
-    if _d(invoice.transport_deduction_amount) > 0 and invoice.transport_supplier_id:
+    if breakdown["transport_amount"] > 0 and invoice.transport_supplier_id:
         tr = Supplier.objects.select_for_update().get(pk=invoice.transport_supplier_id)
-        transport_posted = _d(invoice.transport_deduction_amount)
-        supplier_services.record_purchase_deduction(
+        transport_posted = breakdown["transport_amount"]
+        supplier_services.record_purchase_service(
             supplier=tr,
             amount=transport_posted,
             reference_id=invoice.id,
@@ -866,7 +917,9 @@ def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> Pu
             created_by=user,
             reason=reason,
             entry_date=invoice.invoice_date,
-            description=f"Transport deduction {invoice.invoice_number}",
+            service_type="transport",
+            service_mode=breakdown["transport_mode"],
+            description=f"Transport service {invoice.invoice_number}",
         )
     invoice.slaughterhouse_deduction_posted = slaughter_posted
     invoice.transport_deduction_posted = transport_posted
@@ -894,9 +947,12 @@ def approve_purchase_invoice(*, invoice, user, reason, backdate_reason="") -> Pu
         new_value={
             "status": invoice.status,
             "gross_total": str(invoice.gross_total),
+            "final_invoice_total": str(invoice.final_invoice_total),
             "total_amount": str(invoice.total_amount),
-            "slaughterhouse_deduction": str(invoice.slaughterhouse_deduction_amount),
-            "transport_deduction": str(invoice.transport_deduction_amount),
+            "slaughterhouse_amount": str(invoice.slaughterhouse_deduction_amount),
+            "slaughterhouse_mode": invoice.slaughterhouse_mode,
+            "transport_amount": str(invoice.transport_deduction_amount),
+            "transport_mode": invoice.transport_mode,
             "slaughterhouse_supplier_id": invoice.slaughterhouse_supplier_id,
             "transport_supplier_id": invoice.transport_supplier_id,
         },
@@ -1075,6 +1131,7 @@ def get_purchase_summary(company) -> dict:
     )
     month_total = month_qs.aggregate(s=Sum("total_amount"))["s"] or ZERO
     month_gross = month_qs.aggregate(s=Sum("gross_total"))["s"] or ZERO
+    month_final = month_qs.aggregate(s=Sum("final_invoice_total"))["s"] or ZERO
     month_deductions = (
         month_qs.aggregate(
             sh=Sum("slaughterhouse_deduction_amount"),
@@ -1084,6 +1141,7 @@ def get_purchase_summary(company) -> dict:
     month_service_deductions = (
         _d(month_deductions.get("sh")) + _d(month_deductions.get("tr"))
     )
+    month_service_additions = max(month_final - month_gross, ZERO)
 
     approved_count = qs.filter(
         status__in=[PurchaseStatus.APPROVED, PurchaseStatus.PARTIALLY_PAID,
@@ -1108,6 +1166,8 @@ def get_purchase_summary(company) -> dict:
     return {
         "total_purchases_this_month": month_total,
         "gross_purchases_this_month": month_gross or month_total,
+        "final_purchase_cost_this_month": month_final or month_total,
+        "service_additions_this_month": month_service_additions,
         "service_deductions_this_month": month_service_deductions,
         "approved_purchases_count": approved_count,
         "draft_purchases_count": draft_count,
@@ -1210,6 +1270,22 @@ def build_purchase_print_preview(invoice, request=None) -> dict:
         "supplier_invoice_number": invoice.supplier_invoice_number,
     }
     qty_totals = compute_print_line_totals(lines)
+    breakdown = _service_breakdown(invoice)
+    services_payload = []
+    if breakdown["slaughter_amount"] > 0 and invoice.slaughterhouse_supplier_id:
+        services_payload.append({
+            "type": "slaughterhouse",
+            "supplier_name": invoice.slaughterhouse_supplier.name_ar,
+            "mode": breakdown["slaughter_mode"],
+            "amount": str(breakdown["slaughter_amount"]),
+        })
+    if breakdown["transport_amount"] > 0 and invoice.transport_supplier_id:
+        services_payload.append({
+            "type": "transport",
+            "supplier_name": invoice.transport_supplier.name_ar,
+            "mode": breakdown["transport_mode"],
+            "amount": str(breakdown["transport_amount"]),
+        })
     return {
         "title_en": "PURCHASE INVOICE",
         "title_ar": "فاتورة شراء",
@@ -1253,9 +1329,17 @@ def build_purchase_print_preview(invoice, request=None) -> dict:
             "total_kg": qty_totals["total_kg"],
             "subtotal": str(invoice.subtotal),
             "deduction_total": str(invoice.adjustment_total),
+            "gross_poultry_total": str(invoice.gross_total or invoice.total_amount),
             "gross_total": str(invoice.gross_total or invoice.total_amount),
-            "slaughterhouse_deduction": str(invoice.slaughterhouse_deduction_amount),
-            "transport_deduction": str(invoice.transport_deduction_amount),
+            "service_additions": str(breakdown["total_additions"]),
+            "service_deductions": str(breakdown["total_deductions"]),
+            "final_invoice_total": str(invoice.final_invoice_total or invoice.gross_total),
+            "slaughterhouse_deduction": str(breakdown["slaughter_deduct"]),
+            "transport_deduction": str(breakdown["transport_deduct"]),
+            "slaughterhouse_amount": str(breakdown["slaughter_amount"]),
+            "transport_amount": str(breakdown["transport_amount"]),
+            "slaughterhouse_mode": breakdown["slaughter_mode"],
+            "transport_mode": breakdown["transport_mode"],
             "slaughterhouse_name": (
                 invoice.slaughterhouse_supplier.name_ar
                 if invoice.slaughterhouse_supplier_id else ""
@@ -1266,11 +1350,13 @@ def build_purchase_print_preview(invoice, request=None) -> dict:
             ),
             "vat_rate": str(invoice.vat_rate),
             "vat_amount": str(invoice.vat_amount),
-            "total_amount": str(invoice.total_amount),
+            "total_amount": str(invoice.final_invoice_total or invoice.total_amount),
             "net_supplier_payable": str(invoice.total_amount),
+            "poultry_supplier_net_payable": str(invoice.total_amount),
             "amount_paid": str(invoice.amount_paid),
             "balance_due": str(invoice.balance_due),
         },
+        "services": services_payload,
         "prepared_by": invoice.created_by.full_name if invoice.created_by else "",
         "approved_by": invoice.approved_by.full_name if invoice.approved_by else "",
     }

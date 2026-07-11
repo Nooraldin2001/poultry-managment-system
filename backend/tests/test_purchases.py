@@ -1009,6 +1009,59 @@ def test_purchase_with_slaughter_and_transport_deductions(company, owner):
     assert layer.unit_cost_per_kg == Decimal("100.0000")
 
 
+def test_purchase_service_add_mode_increases_final_total(company, owner):
+    poultry = _supplier(company, sku="PADD")
+    slaughter = _service_supplier(company, "slaughterhouse", "مسلخ", "SHADD")
+    transport = _service_supplier(company, "transport", "نقل", "TRADD")
+    product = _product(company, sku="PADDP")
+    inv = _create(
+        company, poultry, owner,
+        [_line(product, quantity_kg="10", unit_price="100")],
+        slaughterhouse_supplier=slaughter,
+        slaughterhouse_deduction_amount=Decimal("60"),
+        slaughterhouse_mode="add",
+        transport_supplier=transport,
+        transport_deduction_amount=Decimal("40"),
+        transport_mode="add",
+    )
+    assert inv.gross_total == Decimal("1000.00")
+    assert inv.final_invoice_total == Decimal("1100.00")
+    assert inv.total_amount == Decimal("1000.00")
+    assert inv.inventory_cost_total == Decimal("1100.00")
+
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="approve")
+    poultry.refresh_from_db()
+    slaughter.refresh_from_db()
+    transport.refresh_from_db()
+    assert poultry.current_balance == Decimal("1000.00")
+    assert slaughter.current_balance == Decimal("60.00")
+    assert transport.current_balance == Decimal("40.00")
+
+
+def test_purchase_service_mixed_modes(company, owner):
+    poultry = _supplier(company, sku="PMIX")
+    slaughter = _service_supplier(company, "slaughterhouse", "مسلخ", "SHMIX")
+    transport = _service_supplier(company, "transport", "نقل", "TRMIX")
+    product = _product(company, sku="PMIXP")
+    inv = _create(
+        company, poultry, owner,
+        [_line(product, quantity_kg="10", unit_price="100")],
+        slaughterhouse_supplier=slaughter,
+        slaughterhouse_deduction_amount=Decimal("60"),
+        slaughterhouse_mode="deduct",
+        transport_supplier=transport,
+        transport_deduction_amount=Decimal("40"),
+        transport_mode="add",
+    )
+    assert inv.gross_total == Decimal("1000.00")
+    assert inv.final_invoice_total == Decimal("1040.00")
+    assert inv.total_amount == Decimal("940.00")
+
+    services.approve_purchase_invoice(invoice=inv, user=owner, reason="approve")
+    poultry.refresh_from_db()
+    assert poultry.current_balance == Decimal("940.00")
+
+
 def test_deduction_exceeds_gross_blocked(company, owner):
     poultry = _supplier(company)
     slaughter = _service_supplier(company, "slaughterhouse", "مسلخ", "SH2")

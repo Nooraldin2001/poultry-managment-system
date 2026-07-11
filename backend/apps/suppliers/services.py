@@ -161,24 +161,45 @@ def reverse_purchase_invoice(*, supplier, amount, reference_id, reference_number
 
 
 @transaction.atomic
-def record_purchase_deduction(*, supplier, amount, reference_id, reference_number,
-                              created_by=None, reason="", entry_date=None,
-                              description="Purchase invoice deduction"):
+def record_purchase_service(*, supplier, amount, reference_id, reference_number,
+                            created_by=None, reason="", entry_date=None,
+                            service_type="", service_mode="deduct",
+                            description=""):
     """Post a payable (credit) to a slaughterhouse/transport service supplier."""
     amount = Decimal(amount or 0)
     if amount <= 0:
         return None
+    meta = f"service_type={service_type};service_mode={service_mode}"
     return _append_ledger(
         supplier,
         entry_type=SupplierLedgerEntry.EntryType.PURCHASE_DEDUCTION,
         credit=amount,
-        description=description,
+        description=description or f"Purchase service ({service_type}, {service_mode})",
         entry_date=entry_date,
         created_by=created_by,
-        reason=reason,
-        reference_type="purchase_invoice",
+        reason=reason or meta,
+        reference_type="purchase_service",
         reference_id=reference_id,
         reference_number=reference_number,
+    )
+
+
+@transaction.atomic
+def record_purchase_deduction(*, supplier, amount, reference_id, reference_number,
+                              created_by=None, reason="", entry_date=None,
+                              description="Purchase invoice deduction"):
+    """Backward-compatible wrapper for service supplier posting."""
+    return record_purchase_service(
+        supplier=supplier,
+        amount=amount,
+        reference_id=reference_id,
+        reference_number=reference_number,
+        created_by=created_by,
+        reason=reason,
+        entry_date=entry_date,
+        service_type="service",
+        service_mode="deduct",
+        description=description,
     )
 
 

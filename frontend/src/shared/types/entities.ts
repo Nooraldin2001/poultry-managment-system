@@ -138,10 +138,16 @@ export interface PurchaseInvoiceRow {
   moneyAccountId?: string;
   grossTotal?: number;
   slaughterhouseSupplierId?: string;
+  slaughterhouseAmount?: number;
   slaughterhouseDeduction?: number;
+  slaughterhouseMode?: "add" | "deduct";
   transportSupplierId?: string;
+  transportAmount?: number;
   transportDeduction?: number;
+  transportMode?: "add" | "deduct";
+  finalInvoiceTotal?: number;
   deductionNotes?: string;
+  serviceNotes?: string;
 }
 
 export interface PurchaseInvoiceLineRow {

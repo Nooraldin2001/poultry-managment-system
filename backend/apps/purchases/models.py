@@ -62,6 +62,11 @@ class PurchasePaymentMethod(models.TextChoices):
     OTHER = "other", "Other"
 
 
+class ServiceChargeMode(models.TextChoices):
+    ADD = "add", "Add"
+    DEDUCT = "deduct", "Deduct"
+
+
 class PurchaseLineType(models.TextChoices):
     PRODUCT = "product", "Product"
     BY_PRODUCT = "by_product", "By-product"
@@ -155,6 +160,17 @@ class PurchaseInvoice(TenantOwnedModel):
     transport_deduction_amount = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
     transport_deduction_posted = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
     deduction_notes = models.TextField(blank=True)
+    slaughterhouse_mode = models.CharField(
+        max_length=8,
+        choices=ServiceChargeMode.choices,
+        default=ServiceChargeMode.DEDUCT,
+    )
+    transport_mode = models.CharField(
+        max_length=8,
+        choices=ServiceChargeMode.choices,
+        default=ServiceChargeMode.DEDUCT,
+    )
+    final_invoice_total = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
     # Inventory cost basis (subtotal + increase_inventory_cost adjustments).
     inventory_cost_total = models.DecimalField(default=ZERO, validators=_NON_NEG, **MONEY)
 
