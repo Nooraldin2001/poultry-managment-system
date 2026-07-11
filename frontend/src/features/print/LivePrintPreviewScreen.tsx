@@ -54,6 +54,15 @@ function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; 
   const total = data.total_amount ?? data.total ?? totals.total_amount ?? totals.net_supplier_payable;
   const paid = data.amount_paid ?? totals.amount_paid;
   const balance = data.balance ?? totals.balance_due;
+  const paymentMethod = data.payment_method ?? totals.payment_method;
+  const moneyAccountName = data.money_account_name ?? totals.money_account_name;
+  const paymentLabels: Record<string, { ar: string; en: string }> = {
+    cash: { ar: "كاش", en: "Cash" },
+    bank_transfer: { ar: "تحويل بنكي", en: "Bank transfer" },
+    credit: { ar: "آجل", en: "Credit" },
+    cheque: { ar: "شيك", en: "Cheque" },
+    other: { ar: "أخرى", en: "Other" },
+  };
   if (subtotal != null) pairs.push([L("الإجمالي قبل الضريبة", "Subtotal before VAT"), String(subtotal)]);
   if (vat != null && String(vat) !== "0" && String(vat) !== "0.00") {
     pairs.push([L("ضريبة القيمة المضافة", "VAT"), String(vat)]);
@@ -74,7 +83,19 @@ function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; 
     ]);
   }
   if (paid != null) pairs.push([L("المدفوع", "Paid"), String(paid)]);
-  if (balance != null) pairs.push([L("الرصيد", "Balance"), String(balance)]);
+  if (balance != null) {
+    pairs.push([
+      isPurchase ? L("الرصيد", "Balance") : L("المتبقي", "Balance"),
+      String(balance),
+    ]);
+  }
+  if (paymentMethod) {
+    const pm = paymentLabels[String(paymentMethod)] ?? { ar: String(paymentMethod), en: String(paymentMethod) };
+    pairs.push([L("طريقة الدفع", "Payment method"), isRTL ? pm.ar : pm.en]);
+  }
+  if (moneyAccountName) {
+    pairs.push([L("حساب الدفع", "Payment account"), String(moneyAccountName)]);
+  }
   return pairs.map(([label, value]) => ({
     label,
     value: value.startsWith("-") ? `AED ${value}` : `AED ${value}`,

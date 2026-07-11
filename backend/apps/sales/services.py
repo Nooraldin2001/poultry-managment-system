@@ -1268,6 +1268,8 @@ def build_print_preview(invoice, request=None) -> dict:
             "total_amount": str(invoice.total_amount),
             "amount_paid": str(invoice.amount_paid),
             "balance_due": str(invoice.balance_due),
+            "payment_method": invoice.payment_method,
+            "money_account_name": invoice.money_account.name if invoice.money_account_id else "",
         },
         "prepared_by": invoice.created_by.full_name if invoice.created_by else "",
         "approved_by": invoice.approved_by.full_name if invoice.approved_by else "",

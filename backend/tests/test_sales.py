@@ -31,7 +31,7 @@ from apps.sales.models import (
     SalesPriceSource,
     SalesStatus,
 )
-from apps.payments.models import MoneyAccount
+from apps.payments.models import MoneyAccount, MoneyMovement, MoneyMovementType
 
 pytestmark = pytest.mark.django_db
 
@@ -999,4 +999,203 @@ def test_inv_00029_dataset_passes_stock_validation(company, owner):
     for product_id, remaining in expected_remaining.items():
         balance = InventoryBalance.objects.get(company=company, product_id=product_id)
         assert balance.available_kg == remaining.quantize(Decimal("0.001")), product_id
+
+
+# ── VAT + payment source ─────────────────────────────────────────────────────
+def _money_account(company, *, name="Cash", account_type="cashbox", opening="1000"):
+    return MoneyAccount.objects.create(
+        company=company,
+        name=name,
+        account_type=account_type,
+        opening_balance=Decimal(opening),
+        current_balance=Decimal(opening),
+        currency="AED",
+        is_active=True,
+    )
+
+
+def test_sales_vat_disabled_has_zero_vat(company, owner):
+    customer = _customer(company, phone="0509001001")
+    product = _product(company, sku="SVATOFF", sales_price=Decimal("12"))
+    inv = _create(
+        company, customer, owner,
+        [_line(product, quantity_kg="10")],
+        vat_rate=Decimal("0"),
+    )
+    assert inv.vat_amount == Decimal("0.00")
+    assert inv.total_amount == inv.subtotal == Decimal("120.00")
+
+
+def test_sales_vat_enabled_calculates_once(company, owner):
+    customer = _customer(company, phone="0509001002")
+    product = _product(company, sku="SVATON", sales_price=Decimal("13.75"))
+    inv = _create(
+        company, customer, owner,
+        [_line(product, quantity_kg="7.5", unit_price="13.75")],
+        vat_rate=Decimal("5"),
+    )
+    assert inv.subtotal == Decimal("103.12")
+    assert inv.vat_amount == Decimal("5.16")
+    assert inv.total_amount == Decimal("108.28")
+
+
+def test_credit_sale_posts_full_receivable_without_money_movement(company, owner):
+    customer = _customer(company, phone="0509001003")
+    product = _product(company, sku="SCREDIT")
+    _seed_stock(company, owner, product)
+    inv = _create(
+        company, customer, owner,
+        [_line(product, quantity_kg="10", unit_price="100")],
+        payment_method="credit",
+        amount_paid=Decimal("0"),
+        vat_rate=Decimal("0"),
+    )
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="credit sale")
+    customer.refresh_from_db()
+    assert customer.current_balance == Decimal("1000.00")
+    assert not MoneyMovement.objects.filter(
+        company=company,
+        movement_type=MoneyMovementType.SALES_PAYMENT,
+        reference_type="sales_invoice",
+        reference_id=str(inv.id),
+    ).exists()
+
+
+def test_partial_sale_posts_paid_to_account_and_balance_to_customer(company, owner):
+    customer = _customer(company, phone="0509001004")
+    product = _product(company, sku="SPART")
+    cashbox = _money_account(company, name="Partial Cash", opening="500")
+    _seed_stock(company, owner, product)
+    inv = _create(
+        company, customer, owner,
+        [_line(product, quantity_kg="10", unit_price="100")],
+        payment_method="cash",
+        amount_paid=Decimal("300"),
+        money_account=cashbox,
+        vat_rate=Decimal("0"),
+    )
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="partial sale")
+    cashbox.refresh_from_db()
+    customer.refresh_from_db()
+    inv.refresh_from_db()
+    assert cashbox.current_balance == Decimal("800.00")
+    assert customer.current_balance == Decimal("700.00")
+    assert inv.balance_due == Decimal("700.00")
+    assert inv.amount_paid == Decimal("300.00")
+
+
+def test_cash_sale_cannot_use_bank_account(company, owner):
+    customer = _customer(company, phone="0509001005")
+    product = _product(company, sku="SCASHB")
+    bank = _money_account(company, name="Bank", account_type="bank", opening="500")
+    _seed_stock(company, owner, product)
+    inv = _create(
+        company, customer, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="cash",
+        amount_paid=Decimal("100"),
+        money_account=bank,
+        vat_rate=Decimal("0"),
+    )
+    with pytest.raises(ValidationError) as exc:
+        services.approve_sales_invoice(invoice=inv, user=owner, reason="bad cash")
+    assert "money_account" in exc.value.detail
+
+
+def test_bank_sale_cannot_use_cashbox(company, owner):
+    customer = _customer(company, phone="0509001006")
+    product = _product(company, sku="SBANKC")
+    cashbox = _money_account(company, name="Cash", opening="500")
+    _seed_stock(company, owner, product)
+    inv = _create(
+        company, customer, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="bank_transfer",
+        amount_paid=Decimal("50"),
+        money_account=cashbox,
+        vat_rate=Decimal("0"),
+    )
+    with pytest.raises(ValidationError) as exc:
+        services.approve_sales_invoice(invoice=inv, user=owner, reason="bad bank")
+    assert "money_account" in exc.value.detail
+
+
+def test_sales_cross_tenant_money_account_rejected(api, company, owner, other_company):
+    customer = _customer(company, phone="0509001007")
+    product = _product(company, sku="SXACC")
+    other_cash = _money_account(other_company, name="Other Cash", opening="100")
+    _seed_stock(company, owner, product)
+    api.force_authenticate(owner)
+    resp = api.post(SALES_URL, _payload(customer, product), format="json")
+    assert resp.status_code == 201, resp.data
+    inv_id = resp.data["id"]
+    resp = api.patch(
+        f"{SALES_URL}{inv_id}/",
+        {
+            "payment_method": "cash",
+            "money_account": other_cash.id,
+            "amount_paid": resp.data["total_amount"],
+        },
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert "money_account" in resp.data
+
+
+def test_amount_paid_cannot_exceed_grand_total(api, company, owner):
+    customer = _customer(company, phone="0509001008")
+    product = _product(company, sku="SOVER")
+    api.force_authenticate(owner)
+    resp = api.post(SALES_URL, _payload(customer, product), format="json")
+    assert resp.status_code == 201, resp.data
+    inv_id = resp.data["id"]
+    total = Decimal(resp.data["total_amount"])
+    resp = api.patch(
+        f"{SALES_URL}{inv_id}/",
+        {"amount_paid": str(total + Decimal("1"))},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert "amount_paid" in resp.data
+
+
+def test_cancel_sales_reverses_money_movement(company, owner):
+    customer = _customer(company, phone="0509001009")
+    product = _product(company, sku="SCANM")
+    cashbox = _money_account(company, name="Cancel Cash", opening="300")
+    _seed_stock(company, owner, product)
+    inv = _create(
+        company, customer, owner,
+        [_line(product, quantity_kg="10", unit_price="10")],
+        payment_method="cash",
+        amount_paid=Decimal("100"),
+        money_account=cashbox,
+        vat_rate=Decimal("0"),
+    )
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="approve")
+    services.cancel_sales_invoice(invoice=inv, user=owner, reason="cancel")
+    cashbox.refresh_from_db()
+    assert cashbox.current_balance == Decimal("300.00")
+
+
+def test_print_preview_includes_payment_totals(company, owner):
+    customer = _customer(company, phone="0509001010")
+    product = _product(company, sku="SPRINT", sales_price=Decimal("20"))
+    cashbox = _money_account(company, name="Print Cash", opening="100")
+    inv = _create(
+        company, customer, owner,
+        [_line(product, quantity_kg="5")],
+        payment_method="cash",
+        amount_paid=Decimal("100"),
+        money_account=cashbox,
+        vat_rate=Decimal("5"),
+    )
+    preview = services.build_print_preview(inv)
+    assert Decimal(preview["totals"]["subtotal"]) == Decimal("100.00")
+    assert Decimal(preview["totals"]["vat_amount"]) == Decimal("5.00")
+    assert Decimal(preview["totals"]["total_amount"]) == Decimal("105.00")
+    assert Decimal(preview["totals"]["amount_paid"]) == Decimal("100.00")
+    assert Decimal(preview["totals"]["balance_due"]) == Decimal("5.00")
+    assert preview["totals"]["payment_method"] == "cash"
+    assert preview["totals"]["money_account_name"] == "Print Cash"
 

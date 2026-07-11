@@ -4,6 +4,18 @@
 - **Tenant:** `firstview` — `https://firstview.poultryhero.solutions`
 - **Issue (AR):** `المبيعات بقت صفحة بيضة بس` — Sales page blank white screen (mobile Safari reported)
 
+## 2026-07-11 VAT + payment source parity (sales)
+
+| Area | Change |
+| --- | --- |
+| Frontend | `LiveSalesInvoiceScreen.tsx` ? VAT toggle, paid/balance due, cash/bank/credit/partial with cashbox/bank selectors (balances shown) |
+| Backend | Existing fields reused (`vat_rate`, `payment_method`, `money_account`, `amount_paid`, `balance_due`); print preview adds `payment_method` + `money_account_name` |
+| Partial | UI resolves to `cash` or `bank_transfer` on save (same as purchases) |
+
+Tests: `tests/test_sales.py` (VAT, credit, partial, validation, cancel reversal, print).
+
+---
+
 ## 2026-07-10 VAT duplication fix
 
 | Issue | Root cause | Fix |
