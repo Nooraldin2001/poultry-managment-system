@@ -170,6 +170,11 @@ export async function cancelSale(id: string, reason: string): Promise<SalesInvoi
   return mapApiSalesToRow(row);
 }
 
+export async function reopenSale(id: string, reason: string): Promise<SalesInvoiceRow> {
+  const row = await crud.action<ApiSalesList>(id, "reopen/", { reason });
+  return mapApiSalesToRow(row);
+}
+
 export async function getSalesSummary(filters?: ApiListFilters): Promise<Record<string, number>> {
   if (IS_MOCK_MODE) return {};
   const data = await request<Record<string, string | number>>(ENDPOINTS.tenant.salesSummary, {
@@ -214,15 +219,16 @@ export async function salesStockCheck(query: {
   cartons?: number;
   pieces?: number;
   kg?: number;
+  invoiceId?: string;
 }): Promise<Record<string, unknown>> {
-  return request(ENDPOINTS.tenant.salesStockCheck, {
-    query: {
-      product: String(query.product),
-      cartons: String(query.cartons ?? 0),
-      pieces: String(query.pieces ?? 0),
-      kg: String(query.kg ?? 0),
-    },
-  });
+  const params: Record<string, string> = {
+    product: String(query.product),
+    cartons: String(query.cartons ?? 0),
+    pieces: String(query.pieces ?? 0),
+    kg: String(query.kg ?? 0),
+  };
+  if (query.invoiceId) params.invoice_id = query.invoiceId;
+  return request(ENDPOINTS.tenant.salesStockCheck, { query: params });
 }
 
 export async function getSalesPrintPreview(id: string): Promise<unknown> {

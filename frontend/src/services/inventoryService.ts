@@ -28,6 +28,7 @@ interface ApiInventoryRow {
 }
 
 function mapInventoryRow(row: ApiInventoryRow, index: number): InventoryBalanceRow {
+  const productId = String(row.product ?? row.product_id ?? "");
   const cartons = parseAmount(row.available_cartons ?? row.total_cartons);
   const pieces = parseAmount(row.available_pieces ?? row.total_pieces);
   const weightKg = parseAmount(row.available_kg ?? row.total_weight_kg);
@@ -41,9 +42,10 @@ function mapInventoryRow(row: ApiInventoryRow, index: number): InventoryBalanceR
   let status: InventoryBalanceRow["status"] = "ok";
   if (statusRaw.includes("out") || (cartons === 0 && pieces === 0 && weightKg === 0)) status = "out";
   else if (statusRaw.includes("low") || (minStock > 0 && cartons < minStock)) status = "low";
+  const navId = productId || String(row.id ?? index);
   return {
-    id: String(row.id ?? row.product_id ?? row.product ?? index),
-    productId: String(row.product_id ?? row.product ?? ""),
+    id: navId,
+    productId: navId,
     name: row.product_name_ar ?? row.product_name ?? "",
     nameEn: row.product_name_en ?? row.product_name,
     cartons,
@@ -119,6 +121,91 @@ export async function listStockMovements(filters?: ApiListFilters): Promise<Stoc
 
 export async function createInventoryAdjustment(payload: Record<string, unknown>): Promise<unknown> {
   return request(ENDPOINTS.tenant.inventoryAdjustments, { method: "POST", body: payload });
+}
+
+export interface InventoryProductDetail {
+  productId: string;
+  name: string;
+  nameEn?: string;
+  cartons: number;
+  pieces: number;
+  weightKg: number;
+  minCartons: number;
+  minKg: number;
+  status: InventoryBalanceRow["status"];
+  fifoCostPerKg: number;
+  estimatedFifoValue: number | null;
+  lastMovementAt: string | null;
+  recentMovements: StockMovementRow[];
+}
+
+function mapApiMovementRow(r: Record<string, unknown>, i: number): StockMovementRow {
+  return {
+    id: String(r.id ?? i),
+    date: String(r.created_at ?? r.movement_date ?? r.date ?? "").slice(0, 16).replace("T", " "),
+    product: String(r.product_name ?? ""),
+    type: String(r.movement_type ?? r.movement_type_label ?? r.type ?? ""),
+    cartons: parseAmount((r.cartons_delta ?? r.cartons) as string | number),
+    pieces: parseAmount((r.pieces_delta ?? r.pieces) as string | number),
+    weightKg: parseAmount((r.kg_delta ?? r.weight_kg ?? r.weightKg) as string | number),
+    reference: String(r.reference_number ?? r.reference ?? r.document_number ?? ""),
+    balanceAfter: parseAmount((r.balance_kg_after ?? r.balance_after_kg) as string | number),
+    createdByName: String(r.created_by_name ?? ""),
+    notes: String(r.notes ?? r.reason ?? ""),
+  };
+}
+
+function mapBalanceStatus(
+  statusRaw: string,
+  cartons: number,
+  pieces: number,
+  weightKg: number,
+  minStock: number,
+): InventoryBalanceRow["status"] {
+  const normalized = statusRaw.toLowerCase();
+  if (normalized.includes("out") || (cartons === 0 && pieces === 0 && weightKg === 0)) return "out";
+  if (normalized.includes("low") || (minStock > 0 && cartons < minStock)) return "low";
+  return "ok";
+}
+
+export async function getInventoryProductDetail(productId: string): Promise<InventoryProductDetail> {
+  if (IS_MOCK_MODE) {
+    throw new Error("getInventoryProductDetail is not available in mock mode");
+  }
+  const data = await request<{
+    balance: ApiInventoryRow & {
+      minimum_stock_kg?: string | number;
+      last_movement_at?: string | null;
+    };
+    recent_movements?: Record<string, unknown>[];
+    estimated_fifo_value?: string | number | null;
+  }>(ENDPOINTS.tenant.inventoryProduct(productId));
+
+  const balance = data.balance;
+  const cartons = parseAmount(balance.available_cartons ?? balance.total_cartons);
+  const pieces = parseAmount(balance.available_pieces ?? balance.total_pieces);
+  const weightKg = parseAmount(balance.available_kg ?? balance.total_weight_kg);
+  const minCartons = parseAmount(balance.minimum_stock_cartons);
+  const minKg = parseAmount(balance.minimum_stock_kg);
+  const fifoValue = parseAmount(data.estimated_fifo_value);
+  const fifoCostPerKg = weightKg > 0 && fifoValue > 0 ? fifoValue / weightKg : parseAmount(balance.average_cost_per_kg);
+  const resolvedProductId = String(balance.product ?? balance.product_id ?? productId);
+
+  return {
+    productId: resolvedProductId,
+    name: balance.product_name_ar ?? balance.product_name ?? "",
+    nameEn: balance.product_name_en ?? balance.product_name,
+    cartons,
+    pieces,
+    weightKg,
+    minCartons,
+    minKg,
+    status: mapBalanceStatus(balance.stock_status ?? "", cartons, pieces, weightKg, minCartons),
+    fifoCostPerKg,
+    estimatedFifoValue: data.estimated_fifo_value == null ? null : fifoValue,
+    lastMovementAt: balance.last_movement_at ?? null,
+    recentMovements: (data.recent_movements ?? []).map(mapApiMovementRow),
+  };
 }
 
 export async function createOpeningStock(payload: Record<string, unknown>): Promise<unknown> {

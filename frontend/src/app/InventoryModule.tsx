@@ -19,6 +19,9 @@ import {
   createStocktakingSession,
   addStocktakingLine,
   applyStocktaking,
+  getInventoryProductDetail,
+  createInventoryAdjustment,
+  type InventoryProductDetail,
 } from "@/services/inventoryService";
 import { ReasonModal } from "@/features/invoices/ReasonModal";
 import { ApiError } from "@/services/api/errors";
@@ -125,6 +128,36 @@ const INV_MOVEMENTS = [
   { id: "mv8", date: "2025-01-24 08:00", productId: "ip1000", type: "adj-decrease" as MovType, ref: "STKTAKE-001",          ctDelta:  -1,  pcsDelta:  -10, kgDelta:  -10,  balAfter: 6,  user: "أحمد (مالك)",   note: "جرد فعلي — فرق وزن" },
 ];
 
+type DisplayMovement = (typeof INV_MOVEMENTS)[number];
+
+function mapApiMovementType(type: string): MovType {
+  const t = type.toLowerCase();
+  if (t.includes("purchase")) return "purchase";
+  if (t.includes("sales_approved") || (t.includes("sale") && !t.includes("cancel"))) return "sale";
+  if (t.includes("cancel") || t.includes("return")) return "return";
+  if (t.includes("reversal")) return "reversal";
+  if (t.includes("manual_increase") || t.includes("opening") || t.includes("stocktaking_increase")) return "adj-increase";
+  if (t.includes("manual_decrease") || t.includes("stocktaking_decrease")) return "adj-decrease";
+  if (t.includes("correction") || t.includes("stocktake")) return "stocktake";
+  return "adj-increase";
+}
+
+function mapDetailMovements(rows: InventoryProductDetail["recentMovements"], productId: string): DisplayMovement[] {
+  return rows.map((m) => ({
+    id: m.id,
+    date: m.date,
+    productId,
+    type: mapApiMovementType(m.type),
+    ref: m.reference ?? "",
+    ctDelta: m.cartons,
+    pcsDelta: m.pieces,
+    kgDelta: m.weightKg,
+    balAfter: m.balanceAfter ?? 0,
+    user: m.createdByName ?? "",
+    note: m.notes ?? "",
+  }));
+}
+
 // ── STATUS & MOVEMENT BADGES ───────────────────────────────────────────────────
 function InvStatusBadge({ status, lang }: { status: InvStatus; lang: Lang }) {
   const cfg = {
@@ -167,8 +200,9 @@ function inventoryRowFromMock(p: InvProduct) {
 
 function enrichInvProduct(m: ReturnType<typeof toModuleInvProduct>, mock?: InvProduct): InvProduct {
   const statusMap: Record<string, InvStatus> = { ok: "available", low: "low", out: "out" };
+  const productId = m.productId || m.id;
   return {
-    id: m.id,
+    id: productId,
     name: m.nameEn,
     nameAr: m.nameAr,
     cartons: m.cartons,
@@ -185,6 +219,26 @@ function enrichInvProduct(m: ReturnType<typeof toModuleInvProduct>, mock?: InvPr
   };
 }
 
+function invProductFromDetail(detail: InventoryProductDetail): InvProduct {
+  const statusMap: Record<string, InvStatus> = { ok: "available", low: "low", out: "out" };
+  return {
+    id: detail.productId,
+    name: detail.nameEn ?? detail.name,
+    nameAr: detail.name,
+    cartons: detail.cartons,
+    pcs: detail.pieces,
+    kg: detail.weightKg,
+    minCartons: detail.minCartons,
+    minKg: detail.minKg,
+    status: statusMap[detail.status ?? "ok"] ?? "available",
+    category: "chicken",
+    lastPurchase: "",
+    lastSale: detail.lastMovementAt?.slice(0, 10) ?? "",
+    avgSalePrice: detail.fifoCostPerKg,
+    fifoCost: detail.fifoCostPerKg,
+  };
+}
+
 // ── SCREEN: INVENTORY OVERVIEW ─────────────────────────────────────────────────
 export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProductId, setSelectedProductId }: {
   lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void;
@@ -195,6 +249,7 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
   const [showAdjust, setShowAdjust] = useState<string | null>(null);
+  const [adjustProduct, setAdjustProduct] = useState<InvProduct | null>(null);
   const [showSettings, setShowSettings] = useState(false);
 
   const canAdjust = role === "owner" || role === "accountant";
@@ -205,7 +260,9 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
     search ? { search } : undefined,
     async () => MOCK_INV_PRODUCTS.map(inventoryRowFromMock),
   );
-  const INV_PRODUCTS = inventoryRows.map((row) => enrichInvProduct(toModuleInvProduct(row), MOCK_INV_PRODUCTS.find((m) => m.id === row.productId || m.id === row.id)));
+  const INV_PRODUCTS = inventoryRows.map((row) =>
+    enrichInvProduct(toModuleInvProduct(row), IS_MOCK_MODE ? MOCK_INV_PRODUCTS.find((m) => m.id === row.productId || m.id === row.id) : undefined),
+  );
 
   if (forbidden) return <PermissionDeniedState lang={lang} />;
   if (loading) return <LoadingState lang={lang} />;
@@ -331,7 +388,7 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
                       <div className="flex items-center gap-1">
                         <button onClick={() => { setSelectedProductId(p.id); onNavigate("inventory-product"); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-[#0F2C59] hover:text-white transition-all" title={isRTL ? "عرض الحركة" : "View Movements"}><Eye size={13} /></button>
                         {canAdjust
-                          ? <button onClick={() => setShowAdjust(p.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-all" title={isRTL ? "تعديل المخزون" : "Adjust Stock"}><Pencil size={13} /></button>
+                          ? <button onClick={() => { setAdjustProduct(p); setShowAdjust(p.id); }} className="p-1.5 rounded-lg text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-all" title={isRTL ? "تعديل المخزون" : "Adjust Stock"}><Pencil size={13} /></button>
                           : <div className="relative group"><div className="p-1.5 rounded-lg text-slate-300 cursor-not-allowed"><Pencil size={13} /></div><div className="absolute bottom-full mb-1 right-0 bg-[#0F2C59] text-white text-[10px] px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 whitespace-nowrap z-10">{isRTL ? "ليس لديك صلاحية" : "No permission"}</div></div>}
                         <button className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-all" title={isRTL ? "طباعة" : "Print"}><Printer size={13} /></button>
                       </div>
@@ -366,7 +423,7 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
               )}
               <div className="flex gap-2">
                 <Btn size="sm" variant="secondary" onClick={() => { setSelectedProductId(p.id); onNavigate("inventory-product"); }}><Eye size={13} />{isRTL ? "الحركة" : "Movements"}</Btn>
-                {canAdjust && <Btn size="sm" variant="amber" onClick={() => setShowAdjust(p.id)}><Pencil size={13} />{isRTL ? "تعديل" : "Adjust"}</Btn>}
+                {canAdjust && <Btn size="sm" variant="amber" onClick={() => { setAdjustProduct(p); setShowAdjust(p.id); }}><Pencil size={13} />{isRTL ? "تعديل" : "Adjust"}</Btn>}
                 {p.status !== "available" && <Btn size="sm" variant="primary" onClick={() => onNavigate("purchases-new")}><ShoppingCart size={13} />{isRTL ? "شراء" : "Purchase"}</Btn>}
               </div>
             </Card>
@@ -381,12 +438,19 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
 
       {/* Mobile sticky actions */}
       <div className="lg:hidden fixed bottom-20 inset-x-0 bg-white border-t border-slate-200 px-4 py-3 flex gap-2 shadow-lg z-10">
-        {canAdjust && <Btn size="sm" variant="amber" className="flex-1 justify-center" onClick={() => setShowAdjust(filtered[0]?.id || "")}><Pencil size={13} />{isRTL ? "تعديل مخزون" : "Adjust"}</Btn>}
         {canStocktake && <Btn size="sm" variant="secondary" className="flex-1 justify-center" onClick={() => onNavigate("inventory-stocktaking")}><Layers size={13} />{isRTL ? "جرد" : "Count"}</Btn>}
         <Btn size="sm" variant="primary" className="flex-1 justify-center" onClick={() => onNavigate("purchases-new")}><ShoppingCart size={13} />{isRTL ? "إنشاء شراء" : "Purchase"}</Btn>
       </div>
 
-      {showAdjust && <StockAdjustModal lang={lang} productId={showAdjust} onClose={() => setShowAdjust(null)} />}
+      {showAdjust && (
+        <StockAdjustModal
+          lang={lang}
+          productId={showAdjust}
+          productSnapshot={adjustProduct ?? undefined}
+          onClose={() => { setShowAdjust(null); setAdjustProduct(null); }}
+          onSuccess={() => void reload()}
+        />
+      )}
       {showSettings && <InventorySettingsPanel lang={lang} role={role} onClose={() => setShowSettings(false)} />}
     </div>
   );
@@ -399,10 +463,82 @@ export function ProductDetailScreen({ lang, role, onNavigate, productId }: {
   const isRTL = lang === "ar";
   const [showAdjust, setShowAdjust] = useState(false);
   const [showFIFO, setShowFIFO] = useState(false);
+  const [product, setProduct] = useState<InvProduct | null>(null);
+  const [movements, setMovements] = useState<DisplayMovement[]>([]);
+  const [loading, setLoading] = useState(Boolean(productId));
+  const [error, setError] = useState<unknown>(null);
   const canAdjust = role === "owner" || role === "accountant";
 
-  const p = MOCK_INV_PRODUCTS.find(x => x.id === productId) || MOCK_INV_PRODUCTS[0];
-  const movements = INV_MOVEMENTS.filter(m => m.productId === p.id);
+  const loadDetail = () => {
+    if (!productId) {
+      setProduct(null);
+      setMovements([]);
+      setLoading(false);
+      return;
+    }
+    if (IS_MOCK_MODE) {
+      const mock = MOCK_INV_PRODUCTS.find((x) => x.id === productId) ?? null;
+      setProduct(mock);
+      setMovements(mock ? INV_MOVEMENTS.filter((m) => m.productId === mock.id) : []);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getInventoryProductDetail(productId)
+      .then((detail) => {
+        if (cancelled) return;
+        setProduct(invProductFromDetail(detail));
+        setMovements(mapDetailMovements(detail.recentMovements, detail.productId));
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  };
+
+  useEffect(() => {
+    const cleanup = loadDetail();
+    return cleanup;
+  }, [productId]);
+
+  if (!productId) {
+    return (
+      <div className="p-8 max-w-screen-xl mx-auto">
+        <EmptyState lang={lang} messageAr="لم يتم تحديد المنتج" messageEn="No product selected" />
+      </div>
+    );
+  }
+  if (loading) return <LoadingState lang={lang} />;
+  if (error) {
+    const notFound = error instanceof ApiError && error.status === 404;
+    if (notFound) {
+      return (
+        <div className="p-8 max-w-screen-xl mx-auto space-y-4">
+          <button onClick={() => onNavigate("inventory")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
+          <EmptyState lang={lang} messageAr="المنتج غير موجود أو تم حذفه" messageEn="Product not found or has been deleted" />
+        </div>
+      );
+    }
+    return <ErrorState lang={lang} error={error} onRetry={loadDetail} />;
+  }
+  if (!product) {
+    return (
+      <div className="p-8 max-w-screen-xl mx-auto space-y-4">
+        <button onClick={() => onNavigate("inventory")} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">{isRTL ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
+        <EmptyState lang={lang} messageAr="المنتج غير موجود أو تم حذفه" messageEn="Product not found or has been deleted" />
+      </div>
+    );
+  }
+
+  const p = product;
   const totalPurchased = movements.filter(m => m.type === "purchase").reduce((s, m) => s + Math.abs(m.kgDelta), 0);
   const totalSold = movements.filter(m => m.type === "sale").reduce((s, m) => s + Math.abs(m.kgDelta), 0);
   const totalReturned = movements.filter(m => m.type === "return").reduce((s, m) => s + Math.abs(m.kgDelta), 0);
@@ -521,15 +657,37 @@ export function ProductDetailScreen({ lang, role, onNavigate, productId }: {
         )}
       </Card>
 
-      {showAdjust && <StockAdjustModal lang={lang} productId={p.id} onClose={() => setShowAdjust(false)} />}
+      {showAdjust && (
+        <StockAdjustModal
+          lang={lang}
+          productId={p.id}
+          productSnapshot={p}
+          onClose={() => setShowAdjust(false)}
+          onSuccess={loadDetail}
+        />
+      )}
     </div>
   );
 }
 
 // ── MODAL: MANUAL STOCK ADJUSTMENT ────────────────────────────────────────────
-export function StockAdjustModal({ lang, productId, onClose }: { lang: Lang; productId: string; onClose: () => void }) {
+export function StockAdjustModal({
+  lang,
+  productId,
+  productSnapshot,
+  onClose,
+  onSuccess,
+}: {
+  lang: Lang;
+  productId: string;
+  productSnapshot?: InvProduct;
+  onClose: () => void;
+  onSuccess?: () => void;
+}) {
   const isRTL = lang === "ar";
-  const p = MOCK_INV_PRODUCTS.find(x => x.id === productId) || MOCK_INV_PRODUCTS[0];
+  const [product, setProduct] = useState<InvProduct | null>(productSnapshot ?? null);
+  const [loading, setLoading] = useState(!IS_MOCK_MODE && !productSnapshot);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [adjType, setAdjType] = useState<"increase" | "decrease" | "correction">("increase");
   const [ctAdj, setCtAdj] = useState("");
   const [pcsAdj, setPcsAdj] = useState("");
@@ -537,12 +695,62 @@ export function StockAdjustModal({ lang, productId, onClose }: { lang: Lang; pro
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    setAdjType("increase");
+    setCtAdj("");
+    setPcsAdj("");
+    setKgAdj("");
+    setReason("");
+    setNotes("");
+    setSuccess(false);
+    setSubmitting(false);
+  }, [productId]);
+
+  useEffect(() => {
+    if (!productId) {
+      setProduct(null);
+      setLoading(false);
+      return;
+    }
+    if (IS_MOCK_MODE) {
+      setProduct(MOCK_INV_PRODUCTS.find((x) => x.id === productId) ?? null);
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
+    if (productSnapshot?.id === productId) {
+      setProduct(productSnapshot);
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    getInventoryProductDetail(productId)
+      .then((detail) => {
+        if (!cancelled) setProduct(invProductFromDetail(detail));
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [productId, productSnapshot]);
+
+  const p = product;
   const kgAdjNum = parseFloat(kgAdj) || 0;
   const ctAdjNum = parseFloat(ctAdj) || 0;
-  const newKg = adjType === "correction" ? kgAdjNum : adjType === "increase" ? p.kg + kgAdjNum : Math.max(0, p.kg - kgAdjNum);
-  const newCt = adjType === "correction" ? ctAdjNum : adjType === "increase" ? p.cartons + ctAdjNum : Math.max(0, p.cartons - ctAdjNum);
-  const cannotReduce = adjType === "decrease" && kgAdjNum > p.kg;
+  const pcsAdjNum = parseFloat(pcsAdj) || 0;
+  const newKg = !p ? 0 : adjType === "correction" ? kgAdjNum : adjType === "increase" ? p.kg + kgAdjNum : Math.max(0, p.kg - kgAdjNum);
+  const newCt = !p ? 0 : adjType === "correction" ? ctAdjNum : adjType === "increase" ? p.cartons + ctAdjNum : Math.max(0, p.cartons - ctAdjNum);
+  const cannotReduce = Boolean(p && adjType === "decrease" && (kgAdjNum > p.kg || ctAdjNum > p.cartons || pcsAdjNum > p.pcs));
 
   const REASONS = [
     { ar: "جرد فعلي",     en: "Actual stocktake" },
@@ -553,6 +761,73 @@ export function StockAdjustModal({ lang, productId, onClose }: { lang: Lang; pro
     { ar: "بضاعة زائدة",  en: "Excess goods" },
     { ar: "سبب آخر",       en: "Other reason" },
   ];
+
+  const handleSubmit = async () => {
+    if (!p || !reason) return;
+    if (IS_MOCK_MODE) {
+      toast.success(isRTL ? "تم تعديل المخزون بنجاح" : "Stock adjusted successfully");
+      setSuccess(true);
+      onSuccess?.();
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const payload =
+        adjType === "correction"
+          ? {
+              product: Number(productId),
+              adjustment_type: "correction",
+              new_cartons: ctAdj || "0",
+              new_pieces: pcsAdj || "0",
+              new_kg: kgAdj || "0",
+              reason,
+              notes,
+            }
+          : {
+              product: Number(productId),
+              adjustment_type: adjType,
+              cartons: ctAdj || "0",
+              pieces: pcsAdj || "0",
+              kg: kgAdj || "0",
+              reason,
+              notes,
+            };
+      await createInventoryAdjustment(payload);
+      toast.success(isRTL ? "تم تعديل المخزون بنجاح" : "Stock adjusted successfully");
+      onSuccess?.();
+      setSuccess(true);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : (isRTL ? "فشل تعديل المخزون" : "Adjustment failed"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!productId) return null;
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8"><LoadingState lang={lang} /></div>
+      </div>
+    );
+  }
+
+  if (loadError || !p) {
+    const notFound = loadError instanceof ApiError && loadError.status === 404;
+    return (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center space-y-4">
+          <EmptyState
+            lang={lang}
+            messageAr={notFound ? "المنتج غير موجود أو تم حذفه" : "تعذر تحميل بيانات المنتج"}
+            messageEn={notFound ? "Product not found or has been deleted" : "Failed to load product data"}
+          />
+          <Btn variant="outline" className="w-full justify-center" onClick={onClose}>{isRTL ? "إغلاق" : "Close"}</Btn>
+        </div>
+      </div>
+    );
+  }
 
   if (success) return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -635,8 +910,8 @@ export function StockAdjustModal({ lang, productId, onClose }: { lang: Lang; pro
         </div>
         <div className="p-6 border-t border-slate-100 flex gap-3 justify-end">
           <Btn variant="outline" onClick={onClose}>{isRTL ? "إلغاء" : "Cancel"}</Btn>
-          <Btn disabled={!reason || !kgAdj || cannotReduce} onClick={() => { toast.success(isRTL ? "تم تعديل المخزون بنجاح" : "Stock adjusted successfully"); setSuccess(true); }}>
-            <Check size={15} />{isRTL ? "تطبيق التعديل" : "Apply Adjustment"}
+          <Btn disabled={!reason || !kgAdj || cannotReduce || submitting} onClick={() => void handleSubmit()}>
+            <Check size={15} />{submitting ? (isRTL ? "جاري الحفظ..." : "Saving...") : (isRTL ? "تطبيق التعديل" : "Apply Adjustment")}
           </Btn>
         </div>
       </div>
@@ -793,12 +1068,16 @@ export function StocktakingScreen({ lang, role, onNavigate }: { lang: Lang; role
 }
 
 // ── SCREEN: LOW STOCK ALERTS ───────────────────────────────────────────────────
-export function LowStockScreen({ lang, role, onNavigate }: { lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void }) {
+export function LowStockScreen({ lang, role, onNavigate, setSelectedProductId }: {
+  lang: Lang; role: TenantRole; onNavigate: (s: TenantScreen) => void; setSelectedProductId: (id: string) => void;
+}) {
   const isRTL = lang === "ar";
   const canAdjustMin = role === "owner";
 
   const { items: inventoryRows, loading, error, forbidden, reload } = useInventory(undefined, async () => MOCK_INV_PRODUCTS.map(inventoryRowFromMock));
-  const INV_PRODUCTS = inventoryRows.map((row) => enrichInvProduct(toModuleInvProduct(row), MOCK_INV_PRODUCTS.find((m) => m.id === row.productId || m.id === row.id)));
+  const INV_PRODUCTS = inventoryRows.map((row) =>
+    enrichInvProduct(toModuleInvProduct(row), IS_MOCK_MODE ? MOCK_INV_PRODUCTS.find((m) => m.id === row.productId || m.id === row.id) : undefined),
+  );
 
   if (forbidden) return <PermissionDeniedState lang={lang} />;
   if (loading) return <LoadingState lang={lang} />;
@@ -852,7 +1131,7 @@ export function LowStockScreen({ lang, role, onNavigate }: { lang: Lang; role: T
               </div>
               <div className="flex gap-2 flex-wrap">
                 <Btn size="sm" variant="primary" onClick={() => onNavigate("purchases-new")} className="flex-1 justify-center"><ShoppingCart size={13} />{isRTL ? "إنشاء شراء" : "New Purchase"}</Btn>
-                <button onClick={() => { onNavigate("inventory-product"); }} className="p-1.5 rounded-xl border border-slate-200 text-slate-400 hover:bg-slate-50"><Eye size={14} /></button>
+                <button onClick={() => { setSelectedProductId(p.id); onNavigate("inventory-product"); }} className="p-1.5 rounded-xl border border-slate-200 text-slate-400 hover:bg-slate-50"><Eye size={14} /></button>
                 {canAdjustMin && <button className="p-1.5 rounded-xl border border-slate-200 text-slate-400 hover:bg-slate-50" title={isRTL ? "تعديل الحد الأدنى" : "Edit min level"}><Pencil size={14} /></button>}
               </div>
             </Card>

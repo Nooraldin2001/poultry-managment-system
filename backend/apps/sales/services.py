@@ -38,7 +38,7 @@ from apps.customers.models import CustomerCreditLimitChange
 from apps.inventory import services as inventory_services
 from apps.inventory.models import InventoryBalance, MovementType, StockSourceType
 from apps.permissions.services import has_permission
-from apps.products.models import Product
+from apps.products.poultry_cuts import normalize_sales_line_quantities_for_stock
 from apps.tenants.print_identity import (
     build_company_print_identity,
     build_sales_customer_party,
@@ -62,6 +62,8 @@ from .models import (
 
 ZERO = Decimal("0")
 MONEY_Q = Decimal("0.01")
+KG_Q = Decimal("0.001")
+QTY_Q = Decimal("0.01")
 
 
 def _d(value) -> Decimal:
@@ -446,6 +448,12 @@ def _create_line(company, invoice, customer, data, *, default_sort=0, user=None,
             reason=data.get("override_reason", ""),
             new_value={"product_id": product.id if product else None, "unit_price": str(unit_price)},
         )
+    cartons, pieces, kg = normalize_sales_line_quantities_for_stock(
+        product=product,
+        quantity_cartons=data.get("quantity_cartons"),
+        quantity_pieces=data.get("quantity_pieces"),
+        quantity_kg=data.get("quantity_kg"),
+    )
     return SalesInvoiceLine.objects.create(
         company=company,
         invoice=invoice,
@@ -453,9 +461,9 @@ def _create_line(company, invoice, customer, data, *, default_sort=0, user=None,
         product_name_snapshot=(product.name_ar if product else data.get("product_name_snapshot", "")),
         product_sku_snapshot=(product.sku if product else data.get("product_sku_snapshot", "")),
         line_type=line_type,
-        quantity_cartons=_d(data.get("quantity_cartons")),
-        quantity_pieces=_d(data.get("quantity_pieces")),
-        quantity_kg=_d(data.get("quantity_kg")),
+        quantity_cartons=cartons,
+        quantity_pieces=pieces,
+        quantity_kg=kg,
         unit_price=unit_price,
         price_type=price_type,
         price_source=price_source,
@@ -549,26 +557,183 @@ def _validate_sales_payment_for_approval(invoice) -> Decimal:
 
 
 # ── Stock check ─────────────────────────────────────────────────────────────
-def check_stock_availability(*, company, product, cartons=ZERO, pieces=ZERO, kg=ZERO):
-    balance = InventoryBalance.objects.filter(company=company, product=product).first()
-    if balance is None:
-        return {
-            "available": False,
-            "available_cartons": ZERO,
-            "available_pieces": ZERO,
-            "available_kg": ZERO,
-        }
-    ok = (
-        balance.available_cartons >= _d(cartons)
-        and balance.available_pieces >= _d(pieces)
-        and balance.available_kg >= _d(kg)
+def _qty_dict(cartons, pieces, kg) -> dict:
+    return {
+        "cartons": str(_d(cartons).quantize(QTY_Q)),
+        "pieces": str(_d(pieces).quantize(QTY_Q)),
+        "kg": str(_d(kg).quantize(KG_Q)),
+    }
+
+
+def _get_inventory_balance(company, product) -> InventoryBalance:
+    """Exact balance row for company+product (never .first() on ambiguous rows)."""
+    try:
+        return InventoryBalance.objects.get(company=company, product=product)
+    except InventoryBalance.DoesNotExist:
+        return None
+
+
+def _existing_invoice_allocation(*, invoice, product) -> dict:
+    """Sum quantities already allocated to this invoice for a product."""
+    if invoice is None:
+        return {"cartons": ZERO, "pieces": ZERO, "kg": ZERO}
+    agg = (
+        SalesInventoryAllocation.objects.filter(
+            company=invoice.company, invoice=invoice, product=product,
+        ).aggregate(
+            cartons=Sum("quantity_cartons"),
+            pieces=Sum("quantity_pieces"),
+            kg=Sum("quantity_kg"),
+        )
     )
     return {
-        "available": ok,
-        "available_cartons": balance.available_cartons,
-        "available_pieces": balance.available_pieces,
-        "available_kg": balance.available_kg,
+        "cartons": _d(agg["cartons"]),
+        "pieces": _d(agg["pieces"]),
+        "kg": _d(agg["kg"]),
     }
+
+
+def _normalize_line_quantities_for_stock(line: SalesInvoiceLine) -> bool:
+    """Normalize line quantities before stock validation / FIFO consume."""
+    product = line.product
+    if not product or not line.is_stock_tracked:
+        return False
+    cartons, pieces, kg = normalize_sales_line_quantities_for_stock(
+        product=product,
+        quantity_cartons=line.quantity_cartons,
+        quantity_pieces=line.quantity_pieces,
+        quantity_kg=line.quantity_kg,
+    )
+    changed = (
+        cartons != _d(line.quantity_cartons)
+        or pieces != _d(line.quantity_pieces)
+        or kg != _d(line.quantity_kg)
+    )
+    if changed:
+        line.quantity_cartons = cartons
+        line.quantity_pieces = pieces
+        line.quantity_kg = kg
+        line.save(update_fields=[
+            "quantity_cartons", "quantity_pieces", "quantity_kg", "updated_at",
+        ])
+    return changed
+
+
+def check_stock_availability(
+    *,
+    company,
+    product,
+    cartons=ZERO,
+    pieces=ZERO,
+    kg=ZERO,
+    invoice=None,
+):
+    """Check whether requested quantities are available for a sales line.
+
+    For an existing invoice (edit / re-approve), quantities already allocated
+    to that same invoice are added back to the available pool.
+    """
+    cartons, pieces, kg = normalize_sales_line_quantities_for_stock(
+        product=product,
+        quantity_cartons=cartons,
+        quantity_pieces=pieces,
+        quantity_kg=kg,
+    )
+    balance = _get_inventory_balance(company, product)
+    current = {
+        "cartons": _d(balance.available_cartons) if balance else ZERO,
+        "pieces": _d(balance.available_pieces) if balance else ZERO,
+        "kg": _d(balance.available_kg) if balance else ZERO,
+    }
+    existing = _existing_invoice_allocation(invoice=invoice, product=product)
+    available_for_edit = {
+        "cartons": current["cartons"] + existing["cartons"],
+        "pieces": current["pieces"] + existing["pieces"],
+        "kg": current["kg"] + existing["kg"],
+    }
+    ok = (
+        available_for_edit["cartons"] >= cartons
+        and available_for_edit["pieces"] >= pieces
+        and available_for_edit["kg"] >= kg
+    )
+    return {
+        "product_id": product.id,
+        "requested": _qty_dict(cartons, pieces, kg),
+        "current_balance": _qty_dict(current["cartons"], current["pieces"], current["kg"]),
+        "existing_invoice_allocation": _qty_dict(
+            existing["cartons"], existing["pieces"], existing["kg"],
+        ),
+        "available_for_edit": _qty_dict(
+            available_for_edit["cartons"],
+            available_for_edit["pieces"],
+            available_for_edit["kg"],
+        ),
+        "is_available": ok,
+        # Backward-compatible fields for older clients
+        "available": ok,
+        "available_cartons": available_for_edit["cartons"],
+        "available_pieces": available_for_edit["pieces"],
+        "available_kg": available_for_edit["kg"],
+    }
+
+
+def _validate_stock_for_approval(*, company, invoice, lines) -> None:
+    """Validate stock for all lines; aggregate same-product requests."""
+    by_product: dict[int, dict] = {}
+    for line in lines:
+        if not line.is_stock_tracked or not line.has_quantity:
+            continue
+        product = line.product
+        cartons, pieces, kg = normalize_sales_line_quantities_for_stock(
+            product=product,
+            quantity_cartons=line.quantity_cartons,
+            quantity_pieces=line.quantity_pieces,
+            quantity_kg=line.quantity_kg,
+        )
+        bucket = by_product.setdefault(product.id, {
+            "product": product,
+            "name": line.product_name_snapshot or product.name_ar,
+            "cartons": ZERO,
+            "pieces": ZERO,
+            "kg": ZERO,
+        })
+        bucket["cartons"] += cartons
+        bucket["pieces"] += pieces
+        bucket["kg"] += kg
+
+    shortages = []
+    for bucket in by_product.values():
+        result = check_stock_availability(
+            company=company,
+            product=bucket["product"],
+            cartons=bucket["cartons"],
+            pieces=bucket["pieces"],
+            kg=bucket["kg"],
+            invoice=invoice,
+        )
+        if not result["is_available"]:
+            req = result["requested"]
+            avail = result["available_for_edit"]
+            shortages.append(
+                f"{bucket['name']}: requested {req['kg']} kg "
+                f"(cartons {req['cartons']}, pieces {req['pieces']}), "
+                f"available {avail['kg']} kg "
+                f"(cartons {avail['cartons']}, pieces {avail['pieces']})"
+            )
+
+    if shortages:
+        detail_en = "Insufficient stock for approval:\n- " + "\n- ".join(shortages)
+        detail_ar = (
+            "تعذر اعتماد الفاتورة بسبب عدم كفاية المخزون:\n- "
+            + "\n- ".join(
+                s.replace("requested", "المطلوب").replace("available", "المتاح")
+                for s in shortages
+            )
+        )
+        raise ValidationError({
+            "stock": detail_en,
+            "detail": f"{detail_en} / {detail_ar}",
+        })
 
 
 # ── Approval ────────────────────────────────────────────────────────────────
@@ -600,6 +765,17 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None,
     recalculate_sales_invoice(invoice)
     lines = list(invoice.lines.select_related("product").all())
 
+    if SalesInventoryAllocation.objects.filter(invoice=invoice).exists():
+        raise ValidationError(
+            "This invoice already has inventory allocations. "
+            "Reopen it before approving again. / "
+            "الفاتورة مرتبطة بمخزون مخصص مسبقاً — أعد فتحها قبل الاعتماد مجدداً."
+        )
+
+    for line in lines:
+        _normalize_line_quantities_for_stock(line)
+    lines = list(invoice.lines.select_related("product").all())
+
     _validate_cash_customer_payment(customer, invoice.total_amount, invoice.amount_paid)
     override_reason = _validate_credit_limit(
         customer=customer, balance_due=invoice.balance_due,
@@ -607,6 +783,8 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None,
     )
 
     paid_amount = _validate_sales_payment_for_approval(invoice)
+
+    _validate_stock_for_approval(company=company, invoice=invoice, lines=lines)
 
     fifo_total = ZERO
     for line in lines:
@@ -733,7 +911,128 @@ def approve_sales_invoice(*, invoice, user, reason, credit_override=None,
     return invoice
 
 
-# ── Cancellation ────────────────────────────────────────────────────────────
+# ── Cancellation / reopen ───────────────────────────────────────────────────
+def _return_sales_allocations_to_stock(*, invoice, user, reason, movement_type):
+    """Return stock consumed by this invoice's FIFO allocations."""
+    company = invoice.company
+    allocations = list(
+        invoice.inventory_allocations.select_related("product", "fifo_layer").all()
+    )
+    for alloc in allocations:
+        inventory_services.add_stock(
+            company=company,
+            product=alloc.product,
+            cartons=alloc.quantity_cartons,
+            pieces=alloc.quantity_pieces,
+            kg=alloc.quantity_kg,
+            unit_cost_per_kg=alloc.unit_cost_per_kg,
+            source_type=StockSourceType.SALES_INVOICE,
+            source_id=invoice.id,
+            source_reference=f"{invoice.invoice_number}-return",
+            reason=reason,
+            user=user,
+            movement_type=movement_type,
+        )
+    if allocations:
+        SalesInventoryAllocation.objects.filter(invoice=invoice).delete()
+    return allocations
+
+
+@transaction.atomic
+def reopen_sales_invoice(*, invoice, user, reason) -> SalesInvoice:
+    """Reverse approval side-effects and return invoice to editable draft."""
+    reason = require_reason_for_sensitive_action("reopen_sales_invoice", reason)
+
+    invoice = (
+        SalesInvoice.objects.select_for_update(of=("self",))
+        .select_related("customer", "money_account")
+        .get(pk=invoice.pk)
+    )
+    if invoice.status not in (
+        SalesStatus.APPROVED, SalesStatus.PARTIALLY_PAID, SalesStatus.PAID
+    ):
+        raise ValidationError(
+            "Only an approved sales invoice can be reopened. / "
+            "يمكن إعادة فتح فواتير البيع المعتمدة فقط."
+        )
+
+    company = invoice.company
+    customer = Customer.objects.select_for_update().get(pk=invoice.customer_id)
+    from_status = invoice.status
+
+    _return_sales_allocations_to_stock(
+        invoice=invoice, user=user, reason=reason,
+        movement_type=MovementType.SALES_CANCELLED,
+    )
+
+    posted = _d(invoice.posted_receivable)
+    if posted > 0:
+        customer_services.reverse_sales_invoice(
+            customer=customer,
+            amount=posted,
+            reference_id=invoice.id,
+            reference_number=invoice.invoice_number,
+            created_by=user,
+            reason=reason,
+            entry_date=timezone.now().date(),
+        )
+
+    from apps.payments import services as payment_services
+    from apps.payments.models import MoneyDirection, MoneyMovement, MoneyMovementType
+
+    paid_in = (
+        MoneyMovement.objects.filter(
+            company=company,
+            movement_type=MoneyMovementType.SALES_PAYMENT,
+            direction=MoneyDirection.IN,
+            reference_type="sales_invoice",
+            reference_id=str(invoice.id),
+        ).aggregate(s=Sum("amount"))["s"] or ZERO
+    )
+    if paid_in > 0 and invoice.money_account_id:
+        payment_services.post_money_movement(
+            company=company,
+            money_account=invoice.money_account,
+            movement_type=MoneyMovementType.REFUND,
+            direction=MoneyDirection.OUT,
+            amount=paid_in,
+            reference_type="sales_invoice_reopen",
+            reference_id=invoice.id,
+            description=f"Reopen sales {invoice.invoice_number}",
+            reason=reason,
+            user=user,
+        )
+
+    for line in invoice.lines.all():
+        line.fifo_cost_consumed = ZERO
+        line.gross_profit = ZERO
+        line.save(update_fields=["fifo_cost_consumed", "gross_profit", "updated_at"])
+
+    invoice.status = SalesStatus.DRAFT
+    invoice.posted_receivable = ZERO
+    invoice.fifo_cost_total = ZERO
+    invoice.gross_profit = ZERO
+    invoice.approval_reason = ""
+    invoice.approved_by = None
+    invoice.approved_at = None
+    invoice.payment_status = SalesPaymentStatus.UNPAID
+    invoice.amount_paid = ZERO
+    invoice.balance_due = invoice.total_amount
+    invoice.save(update_fields=[
+        "status", "posted_receivable", "fifo_cost_total", "gross_profit",
+        "approval_reason", "approved_by", "approved_at",
+        "payment_status", "amount_paid", "balance_due", "updated_at",
+    ])
+    _record_status_history(invoice, from_status, SalesStatus.DRAFT, reason, user)
+    create_audit_log(
+        action="reopen_sales_invoice", user=user, company=company,
+        module="sales", reference_type="sales_invoice", reference_id=invoice.id,
+        reason=reason, previous_value={"status": from_status},
+        new_value={"status": SalesStatus.DRAFT},
+    )
+    return invoice
+
+
 @transaction.atomic
 def cancel_sales_invoice(*, invoice, user, reason) -> SalesInvoice:
     reason = require_reason_for_sensitive_action("cancel_sales_invoice", reason)
@@ -768,24 +1067,10 @@ def cancel_sales_invoice(*, invoice, user, reason) -> SalesInvoice:
 
     customer = Customer.objects.select_for_update().get(pk=invoice.customer_id)
 
-    allocations = list(
-        invoice.inventory_allocations.select_related("product", "fifo_layer").all()
+    _return_sales_allocations_to_stock(
+        invoice=invoice, user=user, reason=reason,
+        movement_type=MovementType.SALES_CANCELLED,
     )
-    for alloc in allocations:
-        inventory_services.add_stock(
-            company=company,
-            product=alloc.product,
-            cartons=alloc.quantity_cartons,
-            pieces=alloc.quantity_pieces,
-            kg=alloc.quantity_kg,
-            unit_cost_per_kg=alloc.unit_cost_per_kg,
-            source_type=StockSourceType.SALES_INVOICE,
-            source_id=invoice.id,
-            source_reference=f"{invoice.invoice_number}-cancel",
-            reason=reason,
-            user=user,
-            movement_type=MovementType.SALES_CANCELLED,
-        )
 
     posted = _d(invoice.posted_receivable)
     customer_services.reverse_sales_invoice(

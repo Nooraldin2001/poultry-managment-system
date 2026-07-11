@@ -116,6 +116,8 @@ export interface StockMovementRow {
   weightKg: number;
   reference?: string;
   balanceAfter?: number;
+  createdByName?: string;
+  notes?: string;
 }
 
 export interface PurchaseInvoiceRow {

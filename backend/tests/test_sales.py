@@ -768,3 +768,235 @@ def test_sales_chicken_part_deducts_kg_and_blocks_oversell(company, owner):
         )
         services.approve_sales_invoice(invoice=oversell, user=owner, reason="too much")
 
+
+# ── Stock validation for edit / re-approve ───────────────────────────────────
+def test_new_sale_fails_when_kg_exceeds_balance(company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    _seed_stock(company, owner, product, kg="10")
+    inv = _create(company, customer, owner, [_line(product, quantity_kg="15")])
+    with pytest.raises(ValidationError, match="Insufficient stock"):
+        services.approve_sales_invoice(invoice=inv, user=owner, reason="oversell")
+
+
+def test_new_sale_succeeds_when_kg_equals_balance(company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    _seed_stock(company, owner, product, kg="10")
+    inv = _create(company, customer, owner, [_line(product, quantity_kg="10")])
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="exact")
+    balance = InventoryBalance.objects.get(company=company, product=product)
+    assert balance.available_kg == Decimal("0.000")
+
+
+def test_stock_check_credits_own_invoice_allocation(company, owner):
+    customer = _customer(company)
+    cat = ProductCategory.objects.create(company=company, name_ar="مقطعات", code="PARTS-GZ")
+    gizzards = Product.objects.create(
+        company=company, category=cat, name_ar="قوانص", sku="CUT-GIZZARD",
+        product_type=ProductType.CHICKEN_PART,
+        sales_price=Decimal("5.00"), sales_price_type="kg",
+        track_inventory=True, can_sell=True,
+    )
+    _seed_stock(company, owner, gizzards, kg="41", cost="4")
+    inv = _create(company, customer, owner, [_line(gizzards, quantity_kg="22", unit_price="5")])
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="sold")
+    balance = InventoryBalance.objects.get(company=company, product=gizzards)
+    assert balance.available_kg == Decimal("19.000")
+
+    # Without invoice credit: 19 < 22 → unavailable
+    plain = services.check_stock_availability(
+        company=company, product=gizzards, kg="22",
+    )
+    assert plain["is_available"] is False
+
+    # With invoice credit: 19 + 22 = 41 ≥ 22 → available
+    credited = services.check_stock_availability(
+        company=company, product=gizzards, kg="22", invoice=inv,
+    )
+    assert credited["is_available"] is True
+    assert Decimal(credited["existing_invoice_allocation"]["kg"]) == Decimal("22.000")
+    assert Decimal(credited["available_for_edit"]["kg"]) == Decimal("41.000")
+
+
+def test_stock_check_does_not_credit_other_invoice(company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    _seed_stock(company, owner, product, kg="50")
+    inv_a = _create(company, customer, owner, [_line(product, quantity_kg="20")])
+    inv_b = _create(company, customer, owner, [_line(product, quantity_kg="20")])
+    services.approve_sales_invoice(invoice=inv_a, user=owner, reason="a")
+    # inv_b still draft; credit inv_b's id must not add inv_a allocation
+    result = services.check_stock_availability(
+        company=company, product=product, kg="40", invoice=inv_b,
+    )
+    assert Decimal(result["existing_invoice_allocation"]["kg"]) == Decimal("0.000")
+    assert result["is_available"] is False
+
+
+def test_reopen_then_reapprove_no_double_deduction(company, owner):
+    customer = _customer(company)
+    product = _product(company)
+    _seed_stock(company, owner, product, kg="100")
+    inv = _create(company, customer, owner, [_line(product, quantity_kg="30")])
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="first")
+    balance_after_first = InventoryBalance.objects.get(company=company, product=product)
+    assert balance_after_first.available_kg == Decimal("70.000")
+    assert SalesInventoryAllocation.objects.filter(invoice=inv).count() > 0
+
+    services.reopen_sales_invoice(invoice=inv, user=owner, reason="edit")
+    inv.refresh_from_db()
+    assert inv.status == SalesStatus.DRAFT
+    assert not SalesInventoryAllocation.objects.filter(invoice=inv).exists()
+    balance_after_reopen = InventoryBalance.objects.get(company=company, product=product)
+    assert balance_after_reopen.available_kg == Decimal("100.000")
+
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="second")
+    balance_final = InventoryBalance.objects.get(company=company, product=product)
+    assert balance_final.available_kg == Decimal("70.000")
+    assert SalesInventoryAllocation.objects.filter(invoice=inv).count() > 0
+
+
+def test_kg_primary_line_zeros_stale_cartons_on_create(company, owner):
+    customer = _customer(company)
+    cat = ProductCategory.objects.create(company=company, name_ar="مقطعات", code="PARTS-LV")
+    liver = Product.objects.create(
+        company=company, category=cat, name_ar="كبده", sku="CUT-LIVER",
+        product_type=ProductType.CHICKEN_PART,
+        sales_price=Decimal("5.00"), sales_price_type="kg",
+        track_inventory=True, can_sell=True,
+    )
+    _seed_stock(company, owner, liver, kg="65", cost="4")
+    inv = _create(
+        company, customer, owner,
+        [_line(liver, quantity_cartons="1", quantity_kg="22", unit_price="5")],
+    )
+    line = inv.lines.first()
+    assert line.quantity_cartons == Decimal("0")
+    assert line.quantity_kg == Decimal("22")
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="ok")
+    balance = InventoryBalance.objects.get(company=company, product=liver)
+    assert balance.available_kg == Decimal("43.000")
+
+
+def test_stock_check_api_with_invoice_id(api, company, owner):
+    customer = _customer(company)
+    cat = ProductCategory.objects.create(company=company, name_ar="مقطعات", code="PARTS-API")
+    gizzards = Product.objects.create(
+        company=company, category=cat, name_ar="قوانص", sku="CUT-GIZZARD-API",
+        product_type=ProductType.CHICKEN_PART,
+        sales_price=Decimal("5.00"), sales_price_type="kg",
+        track_inventory=True, can_sell=True,
+    )
+    _seed_stock(company, owner, gizzards, kg="41", cost="4")
+    inv = _create(company, customer, owner, [_line(gizzards, quantity_kg="22", unit_price="5")])
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="sold")
+
+    api.force_authenticate(owner)
+    resp = api.get(
+        f"{SALES_URL}stock-check/?product={gizzards.id}&kg=22&invoice_id={inv.id}"
+    )
+    assert resp.status_code == 200
+    assert resp.data["is_available"] is True
+    assert Decimal(resp.data["available_for_edit"]["kg"]) == Decimal("41.000")
+
+
+def test_stock_check_invoice_id_cross_tenant_rejected(api, company, owner, other_company, other_owner):
+    customer = _customer(company)
+    product = _product(company)
+    _seed_stock(company, owner, product, kg="10")
+    inv = _create(company, customer, owner, [_line(product, quantity_kg="5")])
+
+    other_customer = _customer(other_company, phone="0509999001")
+    other_product = _product(other_company, sku="OTHER")
+    other_inv = _create(other_company, other_customer, other_owner, [_line(other_product, quantity_kg="5")])
+
+    api.force_authenticate(owner)
+    resp = api.get(
+        f"{SALES_URL}stock-check/?product={product.id}&kg=5&invoice_id={other_inv.id}"
+    )
+    assert resp.status_code == 404
+
+
+def _fixed_bird(company, sku, name_ar, grams, stock_kg):
+    cat = ProductCategory.objects.create(
+        company=company, name_ar=f"cat-{sku}", code=f"C{sku}",
+    )
+    product = Product.objects.create(
+        company=company, category=cat, name_ar=name_ar, sku=sku,
+        product_type=ProductType.FIXED_WEIGHT, weight_grams=grams,
+        default_pieces_per_carton=10, sales_price=Decimal("10.00"),
+        purchase_price=Decimal("8.00"), can_sell=True, track_inventory=True,
+    )
+    return product
+
+
+def _cut_part(company, sku, name_ar):
+    cat = ProductCategory.objects.get_or_create(
+        company=company, code="PARTS-INV29",
+        defaults={"name_ar": "مقطعات", "name_en": "Cuts"},
+    )[0]
+    return Product.objects.create(
+        company=company, category=cat, name_ar=name_ar, sku=sku,
+        product_type=ProductType.CHICKEN_PART,
+        sales_price=Decimal("10.00"), sales_price_type="kg",
+        track_inventory=True, can_sell=True,
+    )
+
+
+def test_inv_00029_dataset_passes_stock_validation(company, owner):
+    """Regression: multi-line invoice matching INV-00029 production dataset."""
+    customer = _customer(company, phone="050INV29")
+    lines_spec = [
+        ("P750", "750 جرام", 750, "7.5", "7.5"),
+        ("P800", "800 جرام", 800, "8", "8"),
+        ("P850", "850 جرام", 850, "8.5", "11.9"),
+        ("P950", "950 جرام", 950, "47.5", "57"),
+        ("P1050", "1050 جرام", 1050, "168", "256.2"),
+        ("P1100", "1100 جرام", 1100, "187", "462"),
+        ("P1150", "1150 جرام", 1150, "230", "540.5"),
+        ("P1200", "1200 جرام", 1200, "72", "720"),
+        ("P1250", "1250 جرام", 1250, "37.5", "650"),
+        ("CUT-LIVER", "كبده", None, "65", "128.5"),
+        ("CUT-GIZZARD", "قوانص", None, "22", "41"),
+        ("CUT-THIGH", "افخاذ", None, "4", "10.5"),
+        ("CUT-WING", "اجنحة", None, "1", "3"),
+        ("CUT-BONE", "عظم", None, "1", "2.5"),
+    ]
+    invoice_lines = []
+    expected_remaining = {}
+    for sku, name_ar, grams, req_kg, stock_kg in lines_spec:
+        if grams:
+            product = _fixed_bird(company, sku, name_ar, grams, stock_kg)
+        else:
+            product = _cut_part(company, sku, name_ar)
+        _seed_stock(company, owner, product, kg=stock_kg, cost="8")
+        invoice_lines.append(_line(product, quantity_kg=req_kg, unit_price="10"))
+        expected_remaining[product.id] = Decimal(stock_kg) - Decimal(req_kg)
+
+    inv = services.create_sales_invoice(
+        company=company, customer=customer, created_by=owner,
+        invoice_date=date(2026, 7, 10),
+        lines=invoice_lines,
+        invoice_number="INV-00029",
+        backdate_reason="test backdate",
+        vat_rate=Decimal("0"),
+    )
+    for line in inv.lines.select_related("product"):
+        result = services.check_stock_availability(
+            company=company,
+            product=line.product,
+            cartons=line.quantity_cartons,
+            pieces=line.quantity_pieces,
+            kg=line.quantity_kg,
+            invoice=inv,
+        )
+        assert result["is_available"] is True, (
+            f"{line.product_name_snapshot}: {result}"
+        )
+
+    services.approve_sales_invoice(invoice=inv, user=owner, reason="inv29")
+    for product_id, remaining in expected_remaining.items():
+        balance = InventoryBalance.objects.get(company=company, product_id=product_id)
+        assert balance.available_kg == remaining.quantize(Decimal("0.001")), product_id
+

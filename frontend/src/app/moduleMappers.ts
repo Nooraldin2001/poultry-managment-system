@@ -49,8 +49,10 @@ export function toModuleSupplier(row: SupplierRow) {
 }
 
 export function toModuleInvProduct(row: InventoryBalanceRow) {
+  const productId = row.productId || row.id;
   return {
-    id: row.productId || row.id,
+    id: productId,
+    productId,
     nameAr: row.name,
     nameEn: row.nameEn ?? row.name,
     sku: "",

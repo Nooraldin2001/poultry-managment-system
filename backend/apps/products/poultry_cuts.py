@@ -7,6 +7,8 @@ Product types (no migration):
 * ``by_product`` — organ meats when sold by KG; may also have carton specs for legacy SKUs.
 """
 
+from decimal import Decimal
+
 from .models import Product, ProductType
 
 # Reference data for optional tenant seed command (not auto-created).
@@ -80,3 +82,35 @@ def validate_purchase_line_quantities(
     if total <= 0:
         return {"quantity": "Stock-tracked product lines require a quantity."}
     return {}
+
+
+def normalize_sales_line_quantities_for_stock(
+    *,
+    product: Product,
+    quantity_cartons,
+    quantity_pieces,
+    quantity_kg,
+) -> tuple[Decimal, Decimal, Decimal]:
+    """Return cartons/pieces/kg normalized for stock validation and FIFO consume.
+
+    KG-primary products (cuts, moving weight) use KG only — cartons/pieces are
+    zeroed so stale UI defaults (e.g. cartons=1) cannot block approval.
+    """
+    ZERO_D = Decimal("0")
+    cartons = quantity_cartons if quantity_cartons is not None else ZERO_D
+    pieces = quantity_pieces if quantity_pieces is not None else ZERO_D
+    kg = quantity_kg if quantity_kg is not None else ZERO_D
+    if not isinstance(cartons, Decimal):
+        cartons = Decimal(str(cartons))
+    if not isinstance(pieces, Decimal):
+        pieces = Decimal(str(pieces))
+    if not isinstance(kg, Decimal):
+        kg = Decimal(str(kg))
+
+    if not product or not product.track_inventory:
+        return cartons, pieces, kg
+
+    if is_kg_primary_product(product):
+        return ZERO_D, ZERO_D, kg
+
+    return cartons, pieces, kg

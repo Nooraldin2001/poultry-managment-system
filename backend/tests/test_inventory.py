@@ -401,6 +401,62 @@ def test_audit_log_created_for_api_adjustment(api, owner, fixed_product):
     ).exists()
 
 
+def test_product_detail_returns_requested_product(api, owner):
+    cat = ProductCategory.objects.create(company=owner.company, name_ar="cat-detail", code="CDET")
+    product_a = Product.objects.create(
+        company=owner.company, category=cat, name_ar="1000 جرام", sku="A1000",
+        product_type=ProductType.FIXED_WEIGHT, weight_grams=1000, default_pieces_per_carton=10,
+    )
+    product_b = Product.objects.create(
+        company=owner.company, category=cat, name_ar="1050 جرام", sku="B1050",
+        product_type=ProductType.FIXED_WEIGHT, weight_grams=1050, default_pieces_per_carton=10,
+    )
+    _add(owner.company, product_a, kg="80")
+    _add(owner.company, product_b, kg="120")
+
+    api.force_authenticate(user=owner)
+    resp = api.get(f"/api/v1/tenant/inventory/products/{product_b.id}/")
+    assert resp.status_code == 200, resp.content
+    data = resp.json()
+    assert data["balance"]["product"] == product_b.id
+    assert data["balance"]["product_name"] == "1050 جرام"
+    assert Decimal(data["balance"]["available_kg"]) == Decimal("120.000")
+
+
+def test_adjustment_affects_requested_product_only(api, owner):
+    cat = ProductCategory.objects.create(company=owner.company, name_ar="cat-adj", code="CADJ")
+    product_a = Product.objects.create(
+        company=owner.company, category=cat, name_ar="900 جرام", sku="ADJ-A",
+        product_type=ProductType.FIXED_WEIGHT, weight_grams=900, default_pieces_per_carton=10,
+    )
+    product_b = Product.objects.create(
+        company=owner.company, category=cat, name_ar="1100 جرام", sku="ADJ-B",
+        product_type=ProductType.FIXED_WEIGHT, weight_grams=1100, default_pieces_per_carton=10,
+    )
+    _add(owner.company, product_a, kg="50")
+    _add(owner.company, product_b, kg="70")
+
+    api.force_authenticate(user=owner)
+    resp = api.post(
+        "/api/v1/tenant/inventory/adjustments/",
+        {
+            "product": product_b.id,
+            "adjustment_type": "increase",
+            "cartons": "1",
+            "pieces": "0",
+            "kg": "11",
+            "reason": "Physical count correction",
+        },
+        format="json",
+    )
+    assert resp.status_code == 201, resp.content
+
+    balance_a = InventoryBalance.objects.get(company=owner.company, product=product_a)
+    balance_b = InventoryBalance.objects.get(company=owner.company, product=product_b)
+    assert balance_a.available_kg == Decimal("50.000")
+    assert balance_b.available_kg == Decimal("81.000")
+
+
 # ── Permission / catalog tests ──────────────────────────────────────────────
 def test_inventory_permission_codes_seeded():
     from apps.permissions.models import PermissionCode

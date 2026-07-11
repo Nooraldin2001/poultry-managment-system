@@ -13,6 +13,7 @@ from apps.core.viewsets import TenantScopedViewSet
 from apps.customers.models import Customer
 from apps.permissions.services import has_permission
 from apps.products.models import Product
+from apps.products.poultry_cuts import normalize_sales_line_quantities_for_stock
 
 from . import services
 from .models import (
@@ -33,6 +34,7 @@ from .serializers import (
     SalesInvoiceLineSerializer,
     SalesInvoiceListSerializer,
     SalesPricePreviewSerializer,
+    SalesReopenSerializer,
     SalesStockCheckSerializer,
     SalesSummarySerializer,
 )
@@ -81,6 +83,7 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
         "create": "sales.create",
         "partial_update": "sales.edit",
         "approve": "sales.approve",
+        "reopen": "sales.approve",
         "cancel": "sales.cancel",
         "summary": "sales.view",
         "print_preview": "sales.print",
@@ -272,6 +275,18 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
         return self._detail_response(invoice)
 
     @action(detail=True, methods=["post"])
+    def reopen(self, request, pk=None):
+        invoice = self.get_object()
+        _require(request.user, "sales.approve")
+        serializer = SalesReopenSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        invoice = services.reopen_sales_invoice(
+            invoice=invoice, user=request.user,
+            reason=serializer.validated_data["reason"],
+        )
+        return self._detail_response(invoice)
+
+    @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         invoice = self.get_object()
         serializer = SalesCancelSerializer(data=request.data)
@@ -352,11 +367,18 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
         product = get_object_or_404(
             Product, pk=product_id, company_id=self.company.id
         )
+        invoice = None
+        invoice_id = request.query_params.get("invoice_id")
+        if invoice_id:
+            invoice = get_object_or_404(
+                SalesInvoice, pk=invoice_id, company_id=self.company.id,
+            )
         data = services.check_stock_availability(
             company=self.company, product=product,
             cartons=request.query_params.get("cartons", 0),
             pieces=request.query_params.get("pieces", 0),
             kg=request.query_params.get("kg", 0),
+            invoice=invoice,
         )
         return Response(SalesStockCheckSerializer(data).data)
 
@@ -449,6 +471,16 @@ class SalesInvoiceViewSet(TenantScopedViewSet):
         ):
             if field in vd:
                 setattr(line, field, vd[field])
+        if line.product_id:
+            cartons, pieces, kg = normalize_sales_line_quantities_for_stock(
+                product=line.product,
+                quantity_cartons=line.quantity_cartons,
+                quantity_pieces=line.quantity_pieces,
+                quantity_kg=line.quantity_kg,
+            )
+            line.quantity_cartons = cartons
+            line.quantity_pieces = pieces
+            line.quantity_kg = kg
         line.save()
         services.recalculate_sales_invoice(invoice)
         line.refresh_from_db()

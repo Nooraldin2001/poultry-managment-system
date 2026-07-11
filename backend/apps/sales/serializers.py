@@ -262,7 +262,19 @@ class SalesPricePreviewSerializer(serializers.Serializer):
 
 
 class SalesStockCheckSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField(required=False)
+    requested = serializers.DictField(child=serializers.CharField(), required=False)
+    current_balance = serializers.DictField(child=serializers.CharField(), required=False)
+    existing_invoice_allocation = serializers.DictField(
+        child=serializers.CharField(), required=False,
+    )
+    available_for_edit = serializers.DictField(child=serializers.CharField(), required=False)
+    is_available = serializers.BooleanField(required=False)
     available = serializers.BooleanField()
     available_cartons = serializers.DecimalField(max_digits=14, decimal_places=2)
     available_pieces = serializers.DecimalField(max_digits=14, decimal_places=2)
     available_kg = serializers.DecimalField(max_digits=14, decimal_places=3)
+
+
+class SalesReopenSerializer(serializers.Serializer):
+    reason = serializers.CharField()

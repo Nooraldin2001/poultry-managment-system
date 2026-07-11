@@ -6,7 +6,7 @@ import type { TenantRole } from "@/shared/types/roles";
 import type { TenantScreen } from "@/shared/types";
 import { IS_MOCK_MODE } from "@/services/config";
 import { useCustomers, useProducts } from "@/hooks/api/useTenantResources";
-import { getSalesDetail, salesPricePreview, salesStockCheck, approveSale, cancelSale } from "@/services/salesService";
+import { getSalesDetail, salesPricePreview, salesStockCheck, approveSale, cancelSale, reopenSale } from "@/services/salesService";
 import {
   eligibleMoneyAccounts,
   formatMoneyAccountLabel,
@@ -28,7 +28,7 @@ import {
 } from "./invoiceApi";
 import { applyLineTotals } from "./lineTotals";
 import { deriveQuantitiesFromCartons } from "./lineQuantities";
-import { isCartonBasedProduct, isKgPrimaryProduct } from "./productLineMode";
+import { defaultLineQuantitiesForProduct, isCartonBasedProduct, isKgPrimaryProduct } from "./productLineMode";
 import { defaultLinePriceType, parsePriceType, priceColumnLabel } from "./priceTypeUtils";
 import { LinePriceTypeSelect } from "./LinePriceTypeSelect";
 import { SalesLinePriceCell } from "./SalesLinePriceCell";
@@ -89,6 +89,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
   const [stockWarning, setStockWarning] = useState<string | null>(null);
   const [showApprove, setShowApprove] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
+  const [showReopen, setShowReopen] = useState(false);
   const [needsCreditOverride, setNeedsCreditOverride] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
@@ -279,13 +280,14 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
     setFieldErrors({});
     try {
       const id = await ensureDraft();
+      const qtyDefaults = defaultLineQuantitiesForProduct(prod);
       const draftBase: InvoiceLineDraft = {
         id: `tmp-${Date.now()}`,
         productId,
         productName: isRTL ? prod.nameAr : prod.nameEn,
-        cartons: 1,
-        pieces: 0,
-        kg: 0,
+        cartons: qtyDefaults.cartons,
+        pieces: qtyDefaults.pieces,
+        kg: qtyDefaults.kg,
         unitPrice: prod.saleP,
         priceType: defaultLinePriceType(prod, "sales"),
         vatRate: vatEnabled ? DEFAULT_VAT_RATE : 0,
@@ -369,26 +371,64 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
   };
 
   const runStockCheck = async (): Promise<boolean> => {
-    const warnings: string[] = [];
+    const byProduct = new Map<
+      string,
+      { name: string; cartons: number; pieces: number; kg: number }
+    >();
     for (const line of lines) {
+      if (!line.productId) continue;
+      const bucket = byProduct.get(line.productId) ?? {
+        name: line.productName,
+        cartons: 0,
+        pieces: 0,
+        kg: 0,
+      };
+      bucket.cartons += line.cartons;
+      bucket.pieces += line.pieces;
+      bucket.kg += line.kg;
+      byProduct.set(line.productId, bucket);
+    }
+
+    const shortages: string[] = [];
+    for (const [productId, bucket] of byProduct) {
       try {
         const res = await salesStockCheck({
-          product: Number(line.productId),
-          cartons: line.cartons,
-          pieces: line.pieces,
-          kg: line.kg,
+          product: Number(productId),
+          cartons: bucket.cartons,
+          pieces: bucket.pieces,
+          kg: bucket.kg,
+          invoiceId: docId || undefined,
         });
-        if (!(res as { available?: boolean }).available) {
-          const avail = res as { available_kg?: string; available_cartons?: string };
-          warnings.push(`${line.productName}: ${isRTL ? "مخزون غير كافٍ" : "insufficient stock"} (${avail.available_kg ?? "?"} kg)`);
+        const data = res as {
+          is_available?: boolean;
+          available?: boolean;
+          available_for_edit?: { kg?: string; cartons?: string; pieces?: string };
+          requested?: { kg?: string };
+        };
+        const ok = data.is_available ?? data.available ?? false;
+        if (!ok) {
+          const reqKg = data.requested?.kg ?? String(bucket.kg);
+          const availKg = data.available_for_edit?.kg ?? "?";
+          shortages.push(
+            isRTL
+              ? `${bucket.name}: المطلوب ${reqKg} كجم، المتاح ${availKg} كجم`
+              : `${bucket.name}: requested ${reqKg} kg, available ${availKg} kg`,
+          );
         }
       } catch (err) {
-        warnings.push(err instanceof ApiError ? err.message : String(err));
+        shortages.push(err instanceof ApiError ? err.message : String(err));
       }
     }
-    const msg = warnings.length ? warnings.join("; ") : null;
-    setStockWarning(msg);
-    return !msg;
+
+    if (shortages.length) {
+      const header = isRTL
+        ? "تعذر اعتماد الفاتورة بسبب عدم كفاية المخزون:"
+        : "Insufficient stock for approval:";
+      setStockWarning(`${header}\n- ${shortages.join("\n- ")}`);
+      return false;
+    }
+    setStockWarning(null);
+    return true;
   };
 
   const handleSaveDraft = async () => {
@@ -418,7 +458,11 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
     try {
       // Persist payment fields before approval — backend validates stored amount_paid.
       await saveHeader(docId);
-      await runStockCheck();
+      const stockOk = await runStockCheck();
+      if (!stockOk) {
+        toast.error(isRTL ? "المخزون غير كافٍ" : "Insufficient stock");
+        return;
+      }
       await approveSale(docId, reason, {
         ...(needsCreditOverride ? { credit_override: true } : {}),
         ...(isBackdatedDate(invoiceDate) && backdateReason.trim()
@@ -438,6 +482,23 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
         toast.error(err instanceof ApiError ? err.message : "Approve failed");
       }
       setError(err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReopen = async (reason: string) => {
+    if (!docId) return;
+    setSaving(true);
+    try {
+      await reopenSale(docId, reason);
+      setStatus("draft");
+      setShowReopen(false);
+      setStockWarning(null);
+      await loadDoc();
+      toast.success(isRTL ? "تم إعادة فتح الفاتورة للتعديل" : "Invoice reopened for editing");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Reopen failed");
     } finally {
       setSaving(false);
     }
@@ -512,7 +573,7 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
       {stockWarning && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-          <span>{stockWarning}</span>
+          <span className="whitespace-pre-line">{stockWarning}</span>
         </div>
       )}
 
@@ -761,6 +822,15 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
                 {isRTL ? "اعتماد" : "Approve"}
               </button>
             )}
+            {canApprove && (status === "approved" || status === "partial" || status === "paid") && (
+              <button
+                type="button"
+                onClick={() => setShowReopen(true)}
+                className="w-full py-2 rounded-xl border border-amber-300 text-amber-800 font-bold"
+              >
+                {isRTL ? "إعادة فتح للتعديل" : "Reopen for editing"}
+              </button>
+            )}
             {status === "approved" && (
               <button type="button" onClick={() => onNavigate("sales-preview")} className="w-full py-2 rounded-xl border font-bold">
                 {isRTL ? "معاينة الطباعة" : "Print preview"}
@@ -785,6 +855,18 @@ export function LiveSalesInvoiceScreen({ lang, role, permissions = [], onNavigat
           loading={saving}
           onClose={() => { setShowApprove(false); setNeedsCreditOverride(false); }}
           onConfirm={handleApprove}
+        />
+      )}
+      {showReopen && (
+        <ReasonModal
+          lang={lang}
+          titleAr="إعادة فتح فاتورة البيع"
+          titleEn="Reopen sales invoice"
+          confirmLabelAr="إعادة فتح"
+          confirmLabelEn="Reopen"
+          loading={saving}
+          onClose={() => setShowReopen(false)}
+          onConfirm={handleReopen}
         />
       )}
       {showCancel && (
