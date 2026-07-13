@@ -675,6 +675,17 @@ def get_inventory_summary(company) -> dict:
             last_movement_at is None or balance.last_movement_at > last_movement_at
         ):
             last_movement_at = balance.last_movement_at
+    today = timezone.localdate()
+    today_sales = (
+        StockMovement.objects.filter(
+            company=company,
+            movement_type=MovementType.SALES_APPROVED,
+            movement_date=today,
+        ).aggregate(s=Sum("kg_delta"))["s"]
+        or ZERO
+    )
+    today_sales_kg = abs(today_sales)
+
     return {
         "total_cartons": agg["total_cartons"] or ZERO,
         "total_pieces": agg["total_pieces"] or ZERO,
@@ -683,6 +694,7 @@ def get_inventory_summary(company) -> dict:
         "low_stock_count": low,
         "out_of_stock_count": out,
         "estimated_fifo_value": estimate_fifo_value(company),
+        "today_sales_kg": today_sales_kg,
         "last_movement_at": last_movement_at,
     }
 

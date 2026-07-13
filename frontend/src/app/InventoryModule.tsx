@@ -21,6 +21,7 @@ import {
   applyStocktaking,
   getInventoryProductDetail,
   createInventoryAdjustment,
+  getInventorySummary,
   type InventoryProductDetail,
 } from "@/services/inventoryService";
 import { ReasonModal } from "@/features/invoices/ReasonModal";
@@ -251,6 +252,7 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
   const [showAdjust, setShowAdjust] = useState<string | null>(null);
   const [adjustProduct, setAdjustProduct] = useState<InvProduct | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [todaySalesKg, setTodaySalesKg] = useState<number | null>(null);
 
   const canAdjust = role === "owner" || role === "accountant";
   const canStocktake = role === "owner" || role === "accountant";
@@ -263,6 +265,21 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
   const INV_PRODUCTS = inventoryRows.map((row) =>
     enrichInvProduct(toModuleInvProduct(row), IS_MOCK_MODE ? MOCK_INV_PRODUCTS.find((m) => m.id === row.productId || m.id === row.id) : undefined),
   );
+
+  useEffect(() => {
+    if (IS_MOCK_MODE || loading || forbidden) return;
+    let cancelled = false;
+    void getInventorySummary()
+      .then((summary) => {
+        if (!cancelled) setTodaySalesKg(summary.today_sales_kg ?? 0);
+      })
+      .catch(() => {
+        if (!cancelled) setTodaySalesKg(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, forbidden, inventoryRows.length]);
 
   if (forbidden) return <PermissionDeniedState lang={lang} />;
   if (loading) return <LoadingState lang={lang} />;
@@ -278,6 +295,7 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
   const totalCartons = INV_PRODUCTS.reduce((s, p) => s + p.cartons, 0);
   const totalPcs = INV_PRODUCTS.reduce((s, p) => s + p.pcs, 0);
   const totalKg = INV_PRODUCTS.reduce((s, p) => s + p.kg, 0);
+  const todayStockSalesKg = IS_MOCK_MODE ? 36 : (todaySalesKg ?? 0);
   const lowCount = INV_PRODUCTS.filter(p => p.status === "low").length;
   const outCount = INV_PRODUCTS.filter(p => p.status === "out").length;
   const availCount = INV_PRODUCTS.filter(p => p.status === "available").length;
@@ -311,7 +329,7 @@ export function InventoryOverviewScreen({ lang, role, onNavigate, selectedProduc
           { v: lowCount.toString(),                  ar: "منتجات منخفضة المخزون",     en: "Low Stock",           iconBg: "bg-amber-500",   icon: AlertTriangle, onClick: () => onNavigate("inventory-alerts") },
           { v: outCount.toString(),                  ar: "منتجات نفدت من المخزون",    en: "Out of Stock",        iconBg: "bg-red-500",     icon: XCircle, onClick: () => onNavigate("inventory-alerts") },
           { v: `AED ${estValue.toLocaleString()}`,   ar: "قيمة المخزون التقديرية",    en: "Estimated Value",     iconBg: "bg-emerald-600", icon: TrendingUp },
-          { v: IS_MOCK_MODE ? `36 KG` : `0 KG`,                              ar: "مبيعات اليوم من المخزون",   en: "Today's Stock Sales", iconBg: "bg-[#0F2C59]",   icon: TrendingDown },
+          { v: `${Math.round(todayStockSalesKg).toLocaleString()} KG`,                              ar: "مبيعات اليوم من المخزون",   en: "Today's Stock Sales", iconBg: "bg-[#0F2C59]",   icon: TrendingDown },
         ].map((c, i) => {
           const Icon = c.icon;
           return (

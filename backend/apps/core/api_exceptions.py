@@ -31,18 +31,6 @@ def poultryhero_exception_handler(exc, context):
     view_name = type(view).__name__ if view else "unknown"
     logger.exception("Unhandled API exception in %s", view_name)
 
-    try:
-        from apps.core.agent_debug import agent_dbg_exception
-
-        agent_dbg_exception(
-            f"{view_name}.unhandled",
-            exc,
-            {"action": getattr(view, "action", "")},
-            "Z",
-        )
-    except Exception:
-        pass
-
     return Response(
         {
             "detail": "An unexpected server error occurred. Please contact support.",

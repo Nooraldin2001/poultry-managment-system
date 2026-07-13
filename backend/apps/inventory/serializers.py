@@ -66,6 +66,7 @@ class InventorySummarySerializer(serializers.Serializer):
     low_stock_count = serializers.IntegerField()
     out_of_stock_count = serializers.IntegerField()
     estimated_fifo_value = serializers.DecimalField(max_digits=18, decimal_places=2)
+    today_sales_kg = serializers.DecimalField(max_digits=16, decimal_places=3)
     last_movement_at = serializers.DateTimeField(allow_null=True)
 
 

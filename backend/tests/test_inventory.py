@@ -308,6 +308,37 @@ def test_accountant_can_view_valuation(api, accountant):
     assert api.get("/api/v1/tenant/inventory/valuation/").status_code == 200
 
 
+def test_inventory_summary_reports_today_sales_kg(company, owner):
+    from apps.customers.models import Customer, CustomerType
+    from apps.sales import services as sales_services
+
+    customer = Customer.objects.create(
+        company=company,
+        name_ar="عميل",
+        phone="0500999001",
+        customer_type=CustomerType.CREDIT,
+        credit_limit=Decimal("50000.00"),
+    )
+    product = _product(company, sku="TSS1")
+    _add(company, product, kg="100", unit_cost_per_kg="8")
+    inv = sales_services.create_sales_invoice(
+        company=company,
+        customer=customer,
+        created_by=owner,
+        invoice_date=timezone.localdate(),
+        lines=[{
+            "product": product,
+            "line_type": "product",
+            "quantity_kg": Decimal("12"),
+            "price_type": "kg",
+        }],
+    )
+    sales_services.approve_sales_invoice(invoice=inv, user=owner, reason="sold")
+
+    summary = services.get_inventory_summary(company)
+    assert summary["today_sales_kg"] == Decimal("12.000")
+
+
 def test_cashier_cannot_adjust_stock(api, cashier, fixed_product):
     api.force_authenticate(user=cashier)
     resp = api.post(

@@ -197,11 +197,6 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     const isHtml =
       typeof data === "string" &&
       (data.includes("<!doctype html>") || data.includes("<title>Server Error"));
-    // #region agent log
-    if (isHtml || res.status >= 500) {
-      fetch('http://127.0.0.1:7860/ingest/00c03889-4edf-41f7-887a-9f04d03e7a1c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cd5244'},body:JSON.stringify({sessionId:'cd5244',location:'client.ts:request:error',message:'api error response',data:{path,status:res.status,contentType,isHtml,preview:typeof data==='string'?data.slice(0,120):''},hypothesisId:'D',timestamp:Date.now()})}).catch(()=>{});
-    }
-    // #endregion
     const { message, fieldErrors } = parseDrfErrors(data);
     const code =
       res.status === 401 ? "unauthorized" :

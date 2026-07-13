@@ -189,7 +189,6 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
 
     def partial_update(self, request, *args, **kwargs):
         from django.db import transaction
-        from apps.core.agent_debug import agent_dbg_exception
 
         invoice = self.get_object()
         _require_draft(invoice)
@@ -200,109 +199,82 @@ class PurchaseInvoiceViewSet(TenantScopedViewSet):
         serializer.is_valid(raise_exception=True)
         vd = serializer.validated_data
 
-        try:
-            with transaction.atomic():
-                header_fields = []
-                if "supplier" in vd:
-                    invoice.supplier = vd["supplier"]
-                    invoice.supplier_name_snapshot = vd["supplier"].name_ar
-                    invoice.supplier_trn_snapshot = vd["supplier"].trn or ""
-                    header_fields += ["supplier", "supplier_name_snapshot", "supplier_trn_snapshot"]
-                for field in ("invoice_date", "due_date", "supplier_invoice_number",
-                              "payment_method", "vat_rate", "amount_paid", "notes",
-                              "money_account", "backdate_reason", "deduction_notes",
-                              "slaughterhouse_deduction_amount", "transport_deduction_amount",
-                              "slaughterhouse_mode", "transport_mode"):
-                    if field in vd:
-                        setattr(invoice, field, vd[field])
-                        header_fields.append(field)
-                if "slaughterhouse_supplier" in vd:
-                    invoice.slaughterhouse_supplier = vd["slaughterhouse_supplier"]
-                    header_fields.append("slaughterhouse_supplier")
-                if "transport_supplier" in vd:
-                    invoice.transport_supplier = vd["transport_supplier"]
-                    header_fields.append("transport_supplier")
-                if "service_notes" in vd:
-                    invoice.deduction_notes = vd["service_notes"]
-                    header_fields.append("deduction_notes")
-                if "slaughterhouse_amount" in vd:
-                    invoice.slaughterhouse_deduction_amount = vd["slaughterhouse_amount"]
-                    header_fields.append("slaughterhouse_deduction_amount")
-                if "transport_amount" in vd:
-                    invoice.transport_deduction_amount = vd["transport_amount"]
-                    header_fields.append("transport_deduction_amount")
-                if header_fields:
-                    invoice.updated_by = request.user
-                    invoice.save(update_fields=list(set(header_fields)) + ["updated_by", "updated_at"])
+        with transaction.atomic():
+            header_fields = []
+            if "supplier" in vd:
+                invoice.supplier = vd["supplier"]
+                invoice.supplier_name_snapshot = vd["supplier"].name_ar
+                invoice.supplier_trn_snapshot = vd["supplier"].trn or ""
+                header_fields += ["supplier", "supplier_name_snapshot", "supplier_trn_snapshot"]
+            for field in ("invoice_date", "due_date", "supplier_invoice_number",
+                          "payment_method", "vat_rate", "amount_paid", "notes",
+                          "money_account", "backdate_reason", "deduction_notes",
+                          "slaughterhouse_deduction_amount", "transport_deduction_amount",
+                          "slaughterhouse_mode", "transport_mode"):
+                if field in vd:
+                    setattr(invoice, field, vd[field])
+                    header_fields.append(field)
+            if "slaughterhouse_supplier" in vd:
+                invoice.slaughterhouse_supplier = vd["slaughterhouse_supplier"]
+                header_fields.append("slaughterhouse_supplier")
+            if "transport_supplier" in vd:
+                invoice.transport_supplier = vd["transport_supplier"]
+                header_fields.append("transport_supplier")
+            if "service_notes" in vd:
+                invoice.deduction_notes = vd["service_notes"]
+                header_fields.append("deduction_notes")
+            if "slaughterhouse_amount" in vd:
+                invoice.slaughterhouse_deduction_amount = vd["slaughterhouse_amount"]
+                header_fields.append("slaughterhouse_deduction_amount")
+            if "transport_amount" in vd:
+                invoice.transport_deduction_amount = vd["transport_amount"]
+                header_fields.append("transport_deduction_amount")
+            if header_fields:
+                invoice.updated_by = request.user
+                invoice.save(update_fields=list(set(header_fields)) + ["updated_by", "updated_at"])
 
-                if "lines" in vd:
-                    invoice.lines.all().delete()
-                    for index, line in enumerate(vd["lines"]):
-                        services._create_line(
-                            self.company, invoice, line,
-                            default_sort=index, user=request.user,
-                        )
-                if "adjustments" in vd:
-                    invoice.adjustments.all().delete()
-                    for adj in vd["adjustments"]:
-                        services._create_adjustment(self.company, invoice, adj, created_by=request.user)
+            if "lines" in vd:
+                invoice.lines.all().delete()
+                for index, line in enumerate(vd["lines"]):
+                    services._create_line(
+                        self.company, invoice, line,
+                        default_sort=index, user=request.user,
+                    )
+            if "adjustments" in vd:
+                invoice.adjustments.all().delete()
+                for adj in vd["adjustments"]:
+                    services._create_adjustment(self.company, invoice, adj, created_by=request.user)
 
-                services.recalculate_purchase_invoice(invoice)
+            services.recalculate_purchase_invoice(invoice)
 
-            invoice.refresh_from_db()
-            if "invoice_date" in vd:
-                from apps.core.document_dates import log_backdated_invoice
+        invoice.refresh_from_db()
+        if "invoice_date" in vd:
+            from apps.core.document_dates import log_backdated_invoice
 
-                log_backdated_invoice(
-                    user=request.user,
-                    company=self.company,
-                    module="purchases",
-                    reference_type="purchase_invoice",
-                    invoice_id=invoice.id,
-                    invoice_date=invoice.invoice_date,
-                    backdate_reason=invoice.backdate_reason,
-                    created_at=invoice.created_at,
-                )
-            return Response(PurchaseInvoiceDetailSerializer(invoice).data)
-        except Exception as exc:
-            agent_dbg_exception(
-                "purchases.views.partial_update:error",
-                exc,
-                {"invoice_id": invoice.id},
-                "A",
+            log_backdated_invoice(
+                user=request.user,
+                company=self.company,
+                module="purchases",
+                reference_type="purchase_invoice",
+                invoice_id=invoice.id,
+                invoice_date=invoice.invoice_date,
+                backdate_reason=invoice.backdate_reason,
+                created_at=invoice.created_at,
             )
-            raise
+        return Response(PurchaseInvoiceDetailSerializer(invoice).data)
 
     # --- Workflow actions -------------------------------------------------
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
-        from apps.core.agent_debug import agent_dbg, agent_dbg_exception
-
         invoice = self.get_object()
-        agent_dbg("purchases.views.approve:entry", "approve called", {"invoice_id": pk}, "C")
-        try:
-            serializer = PurchaseApproveSerializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            invoice = services.approve_purchase_invoice(
-                invoice=invoice, user=request.user,
-                reason=serializer.validated_data["reason"],
-                backdate_reason=serializer.validated_data.get("backdate_reason", ""),
-            )
-            agent_dbg(
-                "purchases.views.approve:success",
-                "approve completed",
-                {"invoice_id": pk, "status": invoice.status},
-                "C",
-            )
-            return Response(PurchaseInvoiceDetailSerializer(invoice).data)
-        except Exception as exc:
-            agent_dbg_exception(
-                "purchases.views.approve:error",
-                exc,
-                {"invoice_id": pk},
-                "C",
-            )
-            raise
+        serializer = PurchaseApproveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        invoice = services.approve_purchase_invoice(
+            invoice=invoice, user=request.user,
+            reason=serializer.validated_data["reason"],
+            backdate_reason=serializer.validated_data.get("backdate_reason", ""),
+        )
+        return Response(PurchaseInvoiceDetailSerializer(invoice).data)
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):

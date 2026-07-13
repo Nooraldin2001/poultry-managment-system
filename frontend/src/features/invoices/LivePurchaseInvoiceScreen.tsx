@@ -532,15 +532,9 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       setSaving(false);
       return;
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7860/ingest/00c03889-4edf-41f7-887a-9f04d03e7a1c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cd5244'},body:JSON.stringify({sessionId:'cd5244',location:'LivePurchaseInvoiceScreen.tsx:handleApprove:start',message:'approve flow started',data:{invoiceId:docId,invoiceDate,isBackdated:isBackdatedDate(invoiceDate),vatEnabled,paymentMethod,lines:lines.length},hypothesisId:'E',timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     try {
       const id = await ensureDraft();
       await saveHeader(id);
-      // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/00c03889-4edf-41f7-887a-9f04d03e7a1c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cd5244'},body:JSON.stringify({sessionId:'cd5244',location:'LivePurchaseInvoiceScreen.tsx:handleApprove:afterSaveHeader',message:'saveHeader ok',data:{id},hypothesisId:'A',timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       for (const line of lines) {
         const prod = products.find((p) => p.id === line.productId);
         if (isKgPrimaryProduct(prod) && line.kg <= 0) {
@@ -552,9 +546,6 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
         const synced = applyLineTotals({ ...line, vatRate: lineVatRate });
         if (line.serverId) await updateDraftLine("purchase", id, line.serverId, synced);
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/00c03889-4edf-41f7-887a-9f04d03e7a1c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cd5244'},body:JSON.stringify({sessionId:'cd5244',location:'LivePurchaseInvoiceScreen.tsx:handleApprove:afterLineSync',message:'line sync ok',data:{id,lineCount:lines.length},hypothesisId:'B',timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       const approved = await approvePurchase(
         id,
         reason,
@@ -571,9 +562,6 @@ export function LivePurchaseInvoiceScreen({ lang, role, permissions = [], onNavi
       if (invoiceId) await loadDoc();
       toast.success(isRTL ? "تم الاعتماد" : "Approved");
     } catch (e) {
-      // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/00c03889-4edf-41f7-887a-9f04d03e7a1c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cd5244'},body:JSON.stringify({sessionId:'cd5244',location:'LivePurchaseInvoiceScreen.tsx:handleApprove:error',message:'approve flow failed',data:{errorType:e instanceof ApiError?'ApiError':'unknown',status:e instanceof ApiError?e.status:0,code:e instanceof ApiError?e.code:'',msgPreview:e instanceof ApiError?String(e.message).slice(0,120):String(e).slice(0,120),isHtml:e instanceof ApiError&&typeof e.raw==='string'&&e.raw.includes('<!doctype html>')},hypothesisId:'E',timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       if (e instanceof ApiError) setFieldErrors(e.fieldErrors);
       const fallbackAr = "حدث خطأ في الخادم أثناء اعتماد فاتورة الشراء. برجاء التواصل مع الدعم.";
       const fallbackEn = "Server error while approving purchase invoice. Please contact support.";
