@@ -55,6 +55,7 @@ import { ProductionEmptyState, EMPTY_MESSAGES } from "@/shared/components/Produc
 import { IS_MOCK_MODE } from "@/services/config";
 import { LiveDocumentReadOnly } from "@/features/documents/LiveDocumentReadOnly";
 import { LiveSalesInvoiceScreen } from "@/features/invoices/LiveSalesInvoiceScreen";
+import { LiveCustomerCollectionModal } from "@/features/payments/LivePaymentModals";
 import { getSalesPrintPreview, getSalesDetail, approveSale, cancelSale } from "@/services/salesService";
 import { LivePrintPreviewScreen } from "@/features/print/LivePrintPreviewScreen";
 import { getPurchasePrintPreview } from "@/services/purchaseService";
@@ -1464,7 +1465,7 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
   const isRTL = lang === "ar";
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("active");
-  const [showCollect, setShowCollect] = useState<string | null>(null);
+  const [showCollect, setShowCollect] = useState<{ invoiceId: string; customerId?: string } | null>(null);
   const [showCancel, setShowCancel] = useState<string | null>(null);
   const [showNumbering, setShowNumbering] = useState(false);
 
@@ -1602,7 +1603,7 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         {inv.status === "draft" && <button onClick={() => openEdit(inv.recordId)} className="text-xs px-2 py-1 bg-[#0F2C59] text-white rounded-lg font-bold hover:bg-[#162f5f]">{isRTL ? "تعديل" : "Edit"}</button>}
-                        {(isSalesCollectibleStatus(inv.status)) && <button onClick={() => setShowCollect(inv.recordId)} className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg font-bold hover:bg-emerald-600">{isRTL ? "تحصيل" : "Collect"}</button>}
+                        {(isSalesCollectibleStatus(inv.status)) && <button onClick={() => setShowCollect({ invoiceId: inv.recordId, customerId: inv.customerId })} className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg font-bold hover:bg-emerald-600">{isRTL ? "تحصيل" : "Collect"}</button>}
                         <button onClick={() => openDetail(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-[#0F2C59] transition-all" title={isRTL ? "عرض" : "View"}><Eye size={13} /></button>
                         <button onClick={() => openPreview(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all" title={isRTL ? "طباعة" : "Print"}><Printer size={13} /></button>
                         {isSalesCollectibleStatus(inv.status) && role === "owner" && <button onClick={() => setShowCancel(inv.recordId)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all" title={isRTL ? "إلغاء" : "Cancel"}><Ban size={13} /></button>}
@@ -1633,7 +1634,7 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
               <div className="flex gap-2">
                 <Btn size="sm" variant="secondary" onClick={() => openDetail(inv.recordId)}><Eye size={13} />{isRTL ? "عرض" : "View"}</Btn>
                 {inv.status === "draft" && <Btn size="sm" variant="primary" onClick={() => openEdit(inv.recordId)}><Pencil size={13} />{isRTL ? "تعديل" : "Edit"}</Btn>}
-                {isSalesCollectibleStatus(inv.status) && <Btn size="sm" variant="green" onClick={() => setShowCollect(inv.recordId)}><Wallet size={13} />{isRTL ? "تحصيل" : "Collect"}</Btn>}
+                {isSalesCollectibleStatus(inv.status) && <Btn size="sm" variant="green" onClick={() => setShowCollect({ invoiceId: inv.recordId, customerId: inv.customerId })}><Wallet size={13} />{isRTL ? "تحصيل" : "Collect"}</Btn>}
                 <Btn size="sm" variant="ghost" onClick={() => openPreview(inv.recordId)}><Printer size={13} /></Btn>
               </div>
             </Card>
@@ -1649,7 +1650,7 @@ function SalesListScreen({ lang, role, onNavigate, setSelectedSalesId }: {
         </Card>
       )}
 
-      {showCollect && <SalesCollectModal lang={lang} invoiceId={showCollect} onClose={() => setShowCollect(null)} />}
+      {showCollect && <SalesCollectModal lang={lang} invoiceId={showCollect.invoiceId} customerId={showCollect.customerId} onClose={() => setShowCollect(null)} onSuccess={() => void reload()} />}
       {showCancel && <CancelInvoiceModal lang={lang} invoiceId={showCancel} onClose={() => setShowCancel(null)} onSuccess={() => { setShowCancel(null); void reload(); }} />}
       {showNumbering && <InvoiceNumberingModal lang={lang} role={role} onClose={() => setShowNumbering(false)} />}
     </div>
@@ -2603,7 +2604,21 @@ function SalesDetailScreen({ lang, role, permissions, onNavigate, salesId }: {
 }
 
 // ── MODAL: RECORD COLLECTION ───────────────────────────────────────────────────
-function SalesCollectModal({ lang, invoiceId, onClose }: { lang: Lang; invoiceId: string; onClose: () => void }) {
+function SalesCollectModal({ lang, invoiceId, customerId = "", onClose, onSuccess }: { lang: Lang; invoiceId: string; customerId?: string; onClose: () => void; onSuccess?: () => void }) {
+  if (!IS_MOCK_MODE) {
+    return (
+      <LiveCustomerCollectionModal
+        lang={lang}
+        customerId={customerId}
+        invoiceId={invoiceId}
+        onClose={onClose}
+        onSuccess={() => {
+          onSuccess?.();
+          onClose();
+        }}
+      />
+    );
+  }
   const isRTL = lang === "ar";
   const inv = S_INVOICES.find(i => i.id === invoiceId) || S_INVOICES[1];
   const [amount, setAmount] = useState(String(inv.remaining));

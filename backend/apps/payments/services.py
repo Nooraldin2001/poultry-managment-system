@@ -106,14 +106,15 @@ def post_money_movement(
     account = MoneyAccount.objects.select_for_update().get(pk=money_account.pk)
     next_balance = _d(account.current_balance) + _account_balance_delta(direction, amount)
     if next_balance < 0 and not account.allow_negative:
-        if account.account_type == MoneyAccountType.CASHBOX:
-            message = "Insufficient cashbox balance / الرصيد غير كافٍ في الخزنة"
-        else:
-            message = (
-                "Insufficient bank account balance / "
-                "الرصيد غير كافٍ في الحساب البنكي"
-            )
-        raise ValidationError({"money_account": message})
+        raise ValidationError({
+            "detail": "Insufficient balance in the selected account.",
+            "code": "insufficient_money_account_balance",
+            "fields": {
+                "money_account": [
+                    "الرصيد المتاح غير كافٍ لإتمام الدفعة."
+                ],
+            },
+        })
     account.current_balance = next_balance
     account.save(update_fields=["current_balance", "updated_at"])
     if movement_date is None:
@@ -469,6 +470,45 @@ def _post_party_treasury_movement(
         user=user,
         movement_date=movement_date,
     )
+
+
+def _reverse_treasury_movements_for_payment(*, company, movement, user, reason) -> None:
+    """Reverse treasury effects posted for a payment movement cancellation."""
+    original_qs = MoneyMovement.objects.select_for_update().filter(
+        company=company,
+        reference_type="payment_movement",
+        reference_id=str(movement.id),
+    )
+    if not original_qs.exists():
+        return
+
+    already_reversed = MoneyMovement.objects.filter(
+        company=company,
+        reference_type="payment_movement_cancel",
+        reference_id=str(movement.id),
+    ).exists()
+    if already_reversed:
+        raise ValidationError("Treasury movement has already been reversed.")
+
+    for original in original_qs:
+        reverse_direction = (
+            MoneyDirection.OUT
+            if original.direction == MoneyDirection.IN
+            else MoneyDirection.IN
+        )
+        post_money_movement(
+            company=company,
+            money_account=original.money_account,
+            movement_type=original.movement_type,
+            direction=reverse_direction,
+            amount=original.amount,
+            reference_type="payment_movement_cancel",
+            reference_id=movement.id,
+            description=f"Cancel {movement.receipt_number or movement.movement_number}",
+            reason=reason,
+            user=user,
+            movement_date=timezone.now().date(),
+        )
 
 
 @transaction.atomic
@@ -847,6 +887,13 @@ def cancel_payment_movement(*, movement, user, reason) -> PaymentMovement:
         )
     else:
         raise ValidationError("This movement type cannot be cancelled via API.")
+
+    _reverse_treasury_movements_for_payment(
+        company=company,
+        movement=movement,
+        user=user,
+        reason=reason,
+    )
 
     movement.status = PaymentMovementStatus.CANCELLED
     movement.cancel_reason = reason

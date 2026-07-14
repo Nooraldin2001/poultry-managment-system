@@ -30,14 +30,35 @@ export type PaymentsSummaryData = {
   paymentMethodBreakdown: Record<string, number>;
 };
 
+function normalizeMovementType(type?: string): string {
+  switch (type) {
+    case "customer_collection":
+      return "collection";
+    case "supplier_payment":
+    case "customer_refund":
+    case "supplier_refund":
+      return type;
+    case "collection_adjustment":
+      return "collection_discount";
+    case "supplier_adjustment":
+      return "purchase_deduction";
+    default:
+      return type ?? "";
+  }
+}
+
+function normalizePaymentMethod(method?: string): string {
+  return method === "bank_transfer" ? "bank" : method ?? "";
+}
+
 function mapMovement(row: ApiMovement): PaymentMovementRow {
   return {
     id: String(row.id),
-    type: row.movement_type ?? "",
+    type: normalizeMovementType(row.movement_type),
     party: row.party_name ?? row.party_name_snapshot ?? "",
     partyId: row.party_id != null ? String(row.party_id) : undefined,
     amount: parseAmount(row.amount),
-    method: row.payment_method ?? "",
+    method: normalizePaymentMethod(row.payment_method),
     date: String(row.movement_date ?? "").slice(0, 10),
     reference: row.reference_number ?? row.movement_number ?? row.receipt_number,
     status: row.status,

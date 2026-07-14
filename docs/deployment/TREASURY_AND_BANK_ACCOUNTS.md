@@ -53,7 +53,8 @@ Backend enforcement (`apps/purchases/services.py` approval):
 - cash → account must be `cashbox`; bank → account must be `bank`; credit → account must be null.
   Mismatches are rejected with bilingual 400 errors.
 - Insufficient balance errors are account-type specific:
-  `الرصيد غير كافٍ في الخزنة` / `الرصيد غير كافٍ في الحساب البنكي`.
+  `code=insufficient_money_account_balance` with field error
+  `الرصيد المتاح غير كافٍ لإتمام الدفعة.`
 
 Tests: `tests/test_payments.py` (list filters), `tests/test_purchases.py`
 (account-type mismatch rejections, insufficient cashbox balance, balance deduction).
@@ -65,6 +66,10 @@ Tests: `tests/test_payments.py` (list filters), `tests/test_purchases.py`
 - Negative blocked by default (`allow_negative=false`)
 - Opening balance creates an `opening_balance` movement
 - Manual adjustments require non-empty reason
+- Cancelling a payment movement reverses the original treasury movement by
+  posting an opposite `MoneyMovement` with `reference_type=payment_movement_cancel`.
+  The original selected cashbox/bank balance is restored in the same database
+  transaction as ledger and invoice allocation reversal.
 
 ## Permissions
 

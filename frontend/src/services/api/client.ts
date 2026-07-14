@@ -66,6 +66,17 @@ function parseDrfErrors(data: unknown): { message: string; fieldErrors: Record<s
     return { message: "Request failed", fieldErrors: {} };
   }
   const obj = data as Record<string, unknown>;
+  const structuredFields = obj.fields;
+  if (structuredFields && typeof structuredFields === "object" && !Array.isArray(structuredFields)) {
+    const fieldErrors: Record<string, string[]> = {};
+    for (const [key, val] of Object.entries(structuredFields as Record<string, unknown>)) {
+      fieldErrors[key] = Array.isArray(val) ? val.map(String) : [String(val)];
+    }
+    return {
+      message: typeof obj.detail === "string" ? obj.detail : Object.values(fieldErrors)[0]?.[0] ?? "Validation failed",
+      fieldErrors,
+    };
+  }
   if (typeof obj.detail === "string") {
     return { message: obj.detail, fieldErrors: {} };
   }
@@ -198,15 +209,20 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       typeof data === "string" &&
       (data.includes("<!doctype html>") || data.includes("<title>Server Error"));
     const { message, fieldErrors } = parseDrfErrors(data);
+    const responseCode =
+      data && typeof data === "object" && typeof (data as Record<string, unknown>).code === "string"
+        ? String((data as Record<string, unknown>).code)
+        : "";
     const code =
+      responseCode || (
       res.status === 401 ? "unauthorized" :
       res.status === 403 ? "forbidden" :
       res.status === 404 ? "not_found" :
       isHtml || res.status >= 500 ? "server_error" :
-      "api_error";
+      "api_error");
     const safeMessage =
       isHtml || (res.status >= 500 && typeof data === "string")
-        ? "Server error while approving purchase invoice. Please contact support."
+        ? "Server error. Please try again or contact support."
         : message;
     throw new ApiError(safeMessage, { status: res.status, code, fieldErrors, raw: data });
   }

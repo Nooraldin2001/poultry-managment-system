@@ -139,6 +139,7 @@ def _posted_expense(company, owner):
         company=company, category=cat, created_by=owner,
         title="Transport", expense_date=date.today(),
         amount=Decimal("200"), vat_rate=Decimal("5"),
+        money_account=_treasury_account(company, "cash"),
     )
 
 

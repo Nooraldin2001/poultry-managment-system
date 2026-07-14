@@ -24,6 +24,10 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function apiErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback;
+}
+
 export function LiveCustomerCollectionModal({
   lang,
   customerId = "",
@@ -53,12 +57,14 @@ export function LiveCustomerCollectionModal({
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [successId, setSuccessId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     void listCustomerRows()
       .then((rows) => setCustomers(rows.map((c) => ({ id: c.id, name: c.nameAr ?? c.name, balance: c.balance }))))
+      .catch((err) => setLoadError(apiErrorMessage(err, isRTL ? "فشل تحميل العملاء" : "Failed to load customers")))
       .finally(() => setLoadingParties(false));
-  }, []);
+  }, [isRTL]);
 
   useEffect(() => {
     if (!custId) {
@@ -68,8 +74,12 @@ export function LiveCustomerCollectionModal({
     setLoadingInvoices(true);
     void listCustomerSalesInvoices(custId)
       .then((rows) => setOpenInvoices(rows.filter((r) => r.remaining > 0).map((r) => ({ id: r.id, number: r.number, remaining: r.remaining }))))
+      .catch((err) => {
+        setOpenInvoices([]);
+        setLoadError(apiErrorMessage(err, isRTL ? "فشل تحميل فواتير العميل" : "Failed to load customer invoices"));
+      })
       .finally(() => setLoadingInvoices(false));
-  }, [custId]);
+  }, [custId, isRTL]);
 
   const cust = useMemo(() => customers.find((c) => c.id === custId), [customers, custId]);
   const amtNum = parseFloat(amount) || 0;
@@ -78,11 +88,20 @@ export function LiveCustomerCollectionModal({
   const unallocated = Math.max(0, amtNum - allocTotal);
 
   useEffect(() => {
+    if (selectedInvoice && !amount) {
+      setAmount(String(selectedInvoice.remaining));
+    }
+  }, [selectedInvoice, amount]);
+
+  useEffect(() => {
     if (IS_MOCK_MODE) return;
     void listMoneyAccounts()
       .then(setMoneyAccounts)
-      .catch(() => setMoneyAccounts([]));
-  }, []);
+      .catch((err) => {
+        setMoneyAccounts([]);
+        setLoadError(apiErrorMessage(err, isRTL ? "فشل تحميل حسابات الخزنة والبنك" : "Failed to load money accounts"));
+      });
+  }, [isRTL]);
 
   useEffect(() => {
     setMoneyAccountId("");
@@ -91,6 +110,7 @@ export function LiveCustomerCollectionModal({
   const eligibleAccounts = eligibleMoneyAccounts(moneyAccounts, method);
 
   const submit = async () => {
+    if (submitting) return;
     if (!custId || amtNum <= 0) return;
     if (!moneyAccountId) {
       toast.error(isRTL ? "اختر الخزنة أو الحساب البنكي" : "Select a cashbox or bank account");
@@ -115,7 +135,7 @@ export function LiveCustomerCollectionModal({
       onSuccess?.(row.id);
       toast.success(isRTL ? "تم تسجيل التحصيل" : "Collection recorded");
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Failed");
+      toast.error(apiErrorMessage(e, isRTL ? "فشل تسجيل التحصيل" : "Failed to record collection"));
     } finally {
       setSubmitting(false);
     }
@@ -144,6 +164,11 @@ export function LiveCustomerCollectionModal({
           <button type="button" aria-label={isRTL ? "إغلاق" : "Close"} onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100"><X size={17} /></button>
         </div>
         <div className="p-6 space-y-4">
+          {loadError && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+              {loadError}
+            </div>
+          )}
           <label className="text-sm font-bold text-slate-700 block">{isRTL ? "العميل" : "Customer"}</label>
           <select value={custId} onChange={(e) => { setCustId(e.target.value); setSelInv(""); }} className="w-full rounded-xl border px-3 py-2 text-sm">
             <option value="">{isRTL ? "اختر العميل" : "Select customer"}</option>
@@ -250,29 +275,43 @@ export function LiveSupplierPaymentModal({
   const [ref, setRef] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [successId, setSuccessId] = useState<string | null>(null);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     void listSupplierRows()
       .then((rows) => setSuppliers(rows.map((s) => ({ id: s.id, name: s.name, balance: s.balance }))))
+      .catch((err) => setLoadError(apiErrorMessage(err, isRTL ? "فشل تحميل الموردين" : "Failed to load suppliers")))
       .finally(() => setLoadingParties(false));
-  }, []);
+  }, [isRTL]);
 
   useEffect(() => {
     if (!suppId) { setOpenInvoices([]); return; }
+    setLoadingInvoices(true);
     void listSupplierPurchases(suppId)
-      .then((rows) => setOpenInvoices(rows.filter((r) => r.remaining > 0).map((r) => ({ id: r.id, number: r.number, remaining: r.remaining }))));
-  }, [suppId]);
+      .then((rows) => setOpenInvoices(rows.filter((r) => r.remaining > 0).map((r) => ({ id: r.id, number: r.number, remaining: r.remaining }))))
+      .catch((err) => {
+        setOpenInvoices([]);
+        setLoadError(apiErrorMessage(err, isRTL ? "فشل تحميل فواتير المورد" : "Failed to load supplier invoices"));
+      })
+      .finally(() => setLoadingInvoices(false));
+  }, [suppId, isRTL]);
 
   const supp = suppliers.find((s) => s.id === suppId);
   const amtNum = parseFloat(amount) || 0;
   const selectedInvoice = openInvoices.find((i) => i.id === selInv);
+  const selectedAccount = moneyAccounts.find((acc) => acc.id === moneyAccountId);
+  const insufficientAccountBalance = !!selectedAccount && !selectedAccount.allowNegative && selectedAccount.currentBalance < amtNum;
 
   useEffect(() => {
     if (IS_MOCK_MODE) return;
     void listMoneyAccounts()
       .then(setMoneyAccounts)
-      .catch(() => setMoneyAccounts([]));
-  }, []);
+      .catch((err) => {
+        setMoneyAccounts([]);
+        setLoadError(apiErrorMessage(err, isRTL ? "فشل تحميل حسابات الخزنة والبنك" : "Failed to load money accounts"));
+      });
+  }, [isRTL]);
 
   useEffect(() => {
     setMoneyAccountId("");
@@ -281,9 +320,14 @@ export function LiveSupplierPaymentModal({
   const eligibleAccounts = eligibleMoneyAccounts(moneyAccounts, method);
 
   const submit = async () => {
+    if (submitting) return;
     if (!suppId || amtNum <= 0) return;
     if (!moneyAccountId) {
       toast.error(isRTL ? "اختر الخزنة أو الحساب البنكي" : "Select a cashbox or bank account");
+      return;
+    }
+    if (insufficientAccountBalance) {
+      toast.error(isRTL ? "الرصيد المتاح غير كافٍ لإتمام الدفعة" : "Insufficient balance in the selected account");
       return;
     }
     setSubmitting(true);
@@ -304,7 +348,7 @@ export function LiveSupplierPaymentModal({
       onSuccess?.(row.id);
       toast.success(isRTL ? "تم تسجيل الدفعة" : "Payment recorded");
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Failed");
+      toast.error(apiErrorMessage(e, isRTL ? "فشل تسجيل الدفعة" : "Failed to record payment"));
     } finally {
       setSubmitting(false);
     }
@@ -331,13 +375,18 @@ export function LiveSupplierPaymentModal({
           <button type="button" aria-label={isRTL ? "إغلاق" : "Close"} onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100"><X size={17} /></button>
         </div>
         <div className="p-6 space-y-4">
+          {loadError && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+              {loadError}
+            </div>
+          )}
           <select value={suppId} onChange={(e) => { setSuppId(e.target.value); setSelInv(""); }} className="w-full rounded-xl border px-3 py-2 text-sm">
             <option value="">{isRTL ? "اختر المورد" : "Select supplier"}</option>
             {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           {supp && <div className="text-sm font-mono text-amber-600">AED {supp.balance.toLocaleString()}</div>}
           {suppId && (
-            <select value={selInv} onChange={(e) => setSelInv(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm">
+            <select value={selInv} onChange={(e) => setSelInv(e.target.value)} disabled={loadingInvoices} className="w-full rounded-xl border px-3 py-2 text-sm">
               <option value="">{isRTL ? "دفعة على الحساب" : "Account payment"}</option>
               {openInvoices.map((i) => <option key={i.id} value={i.id}>{i.number} — AED {i.remaining.toLocaleString()}</option>)}
             </select>
@@ -378,10 +427,15 @@ export function LiveSupplierPaymentModal({
               ))}
             </select>
           )}
+          {selectedAccount && (
+            <div className={`rounded-xl px-3 py-2 text-xs font-bold ${insufficientAccountBalance ? "bg-red-50 text-red-600" : "bg-slate-50 text-slate-500"}`}>
+              {isRTL ? "الرصيد المتاح" : "Available balance"}: AED {selectedAccount.currentBalance.toLocaleString()}
+            </div>
+          )}
         </div>
         <div className="p-6 border-t flex gap-3 justify-end">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border font-bold">{isRTL ? "إلغاء" : "Cancel"}</button>
-          <button type="button" disabled={!suppId || amtNum <= 0 || !moneyAccountId || submitting} onClick={() => void submit()} className="px-4 py-2 rounded-xl bg-[#0F2C59] text-white font-bold disabled:opacity-50">
+          <button type="button" disabled={!suppId || amtNum <= 0 || !moneyAccountId || insufficientAccountBalance || submitting} onClick={() => void submit()} className="px-4 py-2 rounded-xl bg-[#0F2C59] text-white font-bold disabled:opacity-50">
             {isRTL ? "تسجيل الدفعة" : "Record payment"}
           </button>
         </div>

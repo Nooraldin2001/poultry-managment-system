@@ -167,7 +167,7 @@ def test_money_accounts_filter_by_account_type_and_active(api, owner):
 
 def test_negative_balance_blocked_by_default(company, owner):
     acc = _money_account(company, opening="10")
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         payment_services.post_money_movement(
             company=company,
             money_account=acc,
@@ -177,6 +177,8 @@ def test_negative_balance_blocked_by_default(company, owner):
             reason="test",
             user=owner,
         )
+    assert exc_info.value.detail["code"] == "insufficient_money_account_balance"
+    assert "money_account" in exc_info.value.detail["fields"]
 
 
 def _product(company, sku="PAY1"):
@@ -407,23 +409,67 @@ def test_cancel_collection_reverses_ledger_and_invoice(company, owner):
     customer = _customer(company)
     product = _product(company, sku="CAN1")
     inv = _approved_sale(company, customer, owner, product)
+    cashbox = _treasury_account(company, "cash")
     movement = payment_services.record_customer_collection(
         company=company, customer=customer, amount=Decimal("300"),
-        payment_method="cash", user=owner, money_account=_treasury_account(company, "cash"),
+        payment_method="cash", user=owner, money_account=cashbox,
         allocations=[{"sales_invoice": inv, "allocated_amount": Decimal("300")}],
     )
+    cashbox.refresh_from_db()
+    assert cashbox.current_balance == Decimal("1300.00")
     payment_services.cancel_payment_movement(
         movement=movement, user=owner, reason="wrong amount"
     )
     customer.refresh_from_db()
     inv.refresh_from_db()
     movement.refresh_from_db()
+    cashbox.refresh_from_db()
     assert movement.status == PaymentMovementStatus.CANCELLED
     assert customer.current_balance == Decimal("1000.00")
     assert inv.amount_paid == Decimal("0.00")
     assert inv.payment_status == SalesPaymentStatus.UNPAID
+    assert cashbox.current_balance == Decimal("1000.00")
+    assert MoneyMovement.objects.filter(
+        company=company,
+        money_account=cashbox,
+        reference_type="payment_movement_cancel",
+        reference_id=str(movement.id),
+        direction="out",
+        amount=Decimal("300.00"),
+    ).exists()
     assert AuditLog.objects.filter(
         company=company, action="payment_cancel", reference_id=str(movement.id)
+    ).exists()
+
+
+def test_cancel_supplier_payment_reverses_bank_account(company, owner):
+    supplier = _supplier(company)
+    product = _product(company, sku="CANSP")
+    inv = _approved_purchase(company, supplier, owner, product)
+    bank = _treasury_account(company, "bank_transfer")
+    movement = payment_services.record_supplier_payment(
+        company=company, supplier=supplier, amount=Decimal("50"),
+        payment_method="bank_transfer", user=owner, money_account=bank,
+        allocations=[{"purchase_invoice": inv, "allocated_amount": Decimal("50")}],
+    )
+    bank.refresh_from_db()
+    assert bank.current_balance == Decimal("950.00")
+    payment_services.cancel_payment_movement(
+        movement=movement, user=owner, reason="wrong supplier"
+    )
+    supplier.refresh_from_db()
+    inv.refresh_from_db()
+    bank.refresh_from_db()
+    assert supplier.current_balance == Decimal("100.00")
+    assert inv.amount_paid == Decimal("0.00")
+    assert bank.current_balance == Decimal("1000.00")
+    assert MoneyMovement.objects.filter(
+        company=company,
+        money_account=bank,
+        reference_type="payment_movement_cancel",
+        reference_id=str(movement.id),
+        direction="in",
+        amount=Decimal("50.00"),
     ).exists()
 
 

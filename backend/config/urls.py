@@ -2,12 +2,17 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
-from drf_spectacular.views import (
-    SpectacularAPIView,
-    SpectacularSwaggerView,
-)
 
 from apps.core.health import HealthView
+
+try:
+    from drf_spectacular.views import (
+        SpectacularAPIView,
+        SpectacularSwaggerView,
+    )
+except ImportError:
+    SpectacularAPIView = None
+    SpectacularSwaggerView = None
 
 api_v1 = [
     path("health/", HealthView.as_view(), name="health"),
@@ -35,14 +40,18 @@ api_v1 = [
 urlpatterns = [
     path("django-admin/", admin.site.urls),
     path("api/v1/", include((api_v1, "api_v1"))),
-    # OpenAPI schema + docs
-    path("api/v1/schema/", SpectacularAPIView.as_view(), name="schema"),
-    path(
-        "api/v1/docs/",
-        SpectacularSwaggerView.as_view(url_name="schema"),
-        name="swagger-ui",
-    ),
 ]
+
+if SpectacularAPIView and SpectacularSwaggerView:
+    urlpatterns += [
+        # OpenAPI schema + docs
+        path("api/v1/schema/", SpectacularAPIView.as_view(), name="schema"),
+        path(
+            "api/v1/docs/",
+            SpectacularSwaggerView.as_view(url_name="schema"),
+            name="swagger-ui",
+        ),
+    ]
 
 if settings.DEBUG:
     # Local development only — Nginx serves /media/ in production.

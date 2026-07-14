@@ -194,7 +194,7 @@ function DirBadge({ dir, lang }: { dir: MovDir; lang: Lang }) {
   }[dir];
   return <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.t}`}>{isRTL ? cfg.ar : cfg.en}</span>;
 }
-function MovTypeBadge({ type, lang }: { type: MovType; lang: Lang }) {
+function MovTypeBadge({ type, lang }: { type: string; lang: Lang }) {
   const isRTL = lang === "ar";
   const labels: Record<MovType, [string, string, string, string]> = {
     collection:          ["تحصيل من عميل",           "Customer Collection",  "bg-emerald-50", "text-emerald-700"],
@@ -206,10 +206,10 @@ function MovTypeBadge({ type, lang }: { type: MovType; lang: Lang }) {
     linked_expense:      ["مصروف مرتبط",              "Linked Expense",       "bg-slate-100",  "text-slate-600"],
     account_adjustment:  ["تسوية حساب",               "Account Adjustment",   "bg-amber-50",   "text-amber-700"],
   };
-  const [ar, en, bg, t] = labels[type];
+  const [ar, en, bg, t] = labels[type as MovType] ?? [type || "حركة مالية", type || "Payment Movement", "bg-slate-100", "text-slate-600"];
   return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${bg} ${t}`}>{isRTL ? ar : en}</span>;
 }
-function MethodBadge({ method, lang }: { method: PayMethod | ""; lang: Lang }) {
+function MethodBadge({ method, lang }: { method: string; lang: Lang }) {
   const isRTL = lang === "ar";
   if (!method) return null;
   const cfg: Record<PayMethod, [string, string, string, string]> = {
@@ -218,7 +218,7 @@ function MethodBadge({ method, lang }: { method: PayMethod | ""; lang: Lang }) {
     cheque: ["شيك",          "Cheque",        "bg-amber-100",   "text-amber-700"],
     other:  ["أخرى",         "Other",         "bg-slate-100",   "text-slate-600"],
   };
-  const [ar, en, bg, t] = cfg[method];
+  const [ar, en, bg, t] = cfg[method as PayMethod] ?? [method, method, "bg-slate-100", "text-slate-600"];
   return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${bg} ${t}`}>{isRTL ? ar : en}</span>;
 }
 
@@ -228,15 +228,20 @@ function paymentRowFromMock(m: PayMovement) {
 
 function enrichPayment(row: import("@/shared/types/entities").PaymentMovementRow, mock?: PayMovement): PayMovement {
   const m = toModulePayment(row);
+  const type = (mock?.type ?? m.type) as MovType;
+  const dir: MovDir =
+    mock?.dir ??
+    (type === "supplier_payment" || type === "customer_refund" ? "out" :
+      type === "collection" || type === "supplier_refund" ? "in" : "adjustment");
   return {
     id: m.id,
     date: mock?.date ?? m.date,
-    type: (mock?.type ?? m.type) as MovType,
+    type,
     typeAr: mock?.typeAr ?? "",
     typeEn: mock?.typeEn ?? "",
     party: m.party,
     amount: m.amount,
-    dir: mock?.dir ?? "in",
+    dir,
     method: (mock?.method ?? m.method) as PayMethod | "",
     ref: m.reference,
     receipt: mock?.receipt ?? "",

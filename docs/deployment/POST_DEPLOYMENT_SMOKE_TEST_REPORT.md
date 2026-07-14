@@ -7,6 +7,29 @@
 - **Commit under test:** `dcdd536`
 - **Tester:** Release owner (manual Super Admin login) + Cursor Agent (browser/API verification)
 
+## Payments Hotfix Pre-Deployment Note (2026-07-14)
+
+First View production evidence:
+
+- Backend health: **200**
+- `GET /api/v1/tenant/payments/movements/?page=1&page_size=100`: **200**
+- Payments UI crash: `undefined is not iterable`
+- Root cause: frontend enum display mismatch (`customer_collection`/`bank_transfer`
+  from API vs `collection`/`bank` UI badge keys)
+
+Local verification for the hotfix:
+
+- `python manage.py check` — pass
+- `python -m pytest tests/test_payments.py` — pass
+- `corepack pnpm run typecheck` — pass
+- `corepack pnpm run build` — pass
+
+Production smoke still required after deploy:
+
+- Payments page renders live movement rows.
+- AED 10 customer collection updates invoice/customer/cashbox and cancel reverses once.
+- AED 10 supplier payment updates purchase/supplier/bank and cancel reverses once.
+
 ---
 
 ## Infrastructure (pre-credentialed ? unchanged)
