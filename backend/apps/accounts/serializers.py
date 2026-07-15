@@ -1,7 +1,10 @@
 from rest_framework import serializers
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.settings import api_settings
 
-from apps.core.tenancy import host_context_from_request
+from apps.core.tenancy import assert_auth_host_compatible
 from apps.permissions.services import allowed_permission_codes
 
 from .models import TenantRole, User
@@ -80,42 +83,7 @@ class LoginSerializer(TokenObtainPairSerializer):
             )
 
         if request is not None:
-            ctx = host_context_from_request(request)
-
-            if user.is_superuser:
-                if ctx["is_tenant_host"]:
-                    raise serializers.ValidationError(
-                        {
-                            "detail": (
-                                "Super Admin users must sign in from the Super Admin "
-                                "domain, not a company workspace."
-                            )
-                        }
-                    )
-            elif user.company_id is not None:
-                if ctx["is_superadmin_host"]:
-                    raise serializers.ValidationError(
-                        {
-                            "detail": (
-                                "Tenant users cannot sign in from the Super Admin domain."
-                            )
-                        }
-                    )
-
-                if ctx["is_tenant_host"]:
-                    tenant = ctx["tenant_company"]
-                    if tenant is None:
-                        raise serializers.ValidationError(
-                            {"detail": "This company workspace was not found."}
-                        )
-                    if user.company_id != tenant.id:
-                        raise serializers.ValidationError(
-                            {
-                                "detail": (
-                                    "This user does not belong to this company workspace."
-                                )
-                            }
-                        )
+            assert_auth_host_compatible(request, user)
 
         if user.company_id is not None and not user.company.is_operational:
             raise serializers.ValidationError(
@@ -123,6 +91,22 @@ class LoginSerializer(TokenObtainPairSerializer):
             )
         data["user"] = UserMeSerializer(user, context=self.context).data
         return data
+
+
+class HostAwareTokenRefreshSerializer(TokenRefreshSerializer):
+    """Refresh JWT only when the token user is valid for the request host."""
+
+    def validate(self, attrs):
+        refresh = self.token_class(attrs["refresh"])
+        user_id = refresh.get(api_settings.USER_ID_CLAIM)
+        try:
+            user = User.objects.get(**{api_settings.USER_ID_FIELD: user_id})
+        except User.DoesNotExist as exc:
+            raise AuthenticationFailed("User not found.", code="user_not_found") from exc
+        request = self.context.get("request")
+        if request is not None:
+            assert_auth_host_compatible(request, user)
+        return super().validate(attrs)
 
 
 class TenantUserSerializer(serializers.ModelSerializer):

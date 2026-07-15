@@ -2,6 +2,8 @@
 
 from rest_framework.permissions import BasePermission
 
+from apps.core.tenancy import assert_auth_host_compatible
+
 
 class IsSuperAdmin(BasePermission):
     """Allow only platform Super Admin users (global scope)."""
@@ -10,7 +12,10 @@ class IsSuperAdmin(BasePermission):
 
     def has_permission(self, request, view):
         user = request.user
-        return bool(user and user.is_authenticated and user.is_superuser)
+        if not (user and user.is_authenticated and user.is_superuser):
+            return False
+        assert_auth_host_compatible(request, user)
+        return True
 
 
 class IsTenantUser(BasePermission):
@@ -20,12 +25,15 @@ class IsTenantUser(BasePermission):
 
     def has_permission(self, request, view):
         user = request.user
-        return bool(
+        if not (
             user
             and user.is_authenticated
             and not user.is_superuser
             and user.company_id is not None
-        )
+        ):
+            return False
+        assert_auth_host_compatible(request, user)
+        return True
 
 
 class IsOwnerAdmin(BasePermission):
@@ -37,12 +45,15 @@ class IsOwnerAdmin(BasePermission):
         user = request.user
         from apps.accounts.models import TenantRole
 
-        return bool(
+        if not (
             user
             and user.is_authenticated
             and user.company_id is not None
             and user.role == TenantRole.OWNER_ADMIN
-        )
+        ):
+            return False
+        assert_auth_host_compatible(request, user)
+        return True
 
 
 class HasTenantPermission(BasePermission):
@@ -58,6 +69,7 @@ class HasTenantPermission(BasePermission):
         user = request.user
         if not (user and user.is_authenticated):
             return False
+        assert_auth_host_compatible(request, user)
         if user.is_superuser:
             return True
         code = getattr(view, "required_permission", None)

@@ -52,7 +52,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(me);
     } catch (err) {
       setUser(null);
-      if (err instanceof ApiError && (err.status === 401 || err.code === "session_expired")) {
+      if (
+        err instanceof ApiError &&
+        (err.status === 401 || err.code === "session_expired" || err.code === "session_incompatible")
+      ) {
         setError(null);
       } else {
         setError(err instanceof Error ? err.message : "Failed to load session");

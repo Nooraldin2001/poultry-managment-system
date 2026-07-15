@@ -2,15 +2,17 @@ from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from apps.audit.services import record_action, require_reason_for_sensitive_action
 from apps.core.permissions import HasTenantPermission, IsTenantUser
+from apps.core.tenancy import assert_auth_host_compatible
 
 from . import services
 from .models import User
 from .serializers import (
     LoginSerializer,
+    HostAwareTokenRefreshSerializer,
     TenantUserCreateSerializer,
     TenantUserSerializer,
     TenantUserUpdateSerializer,
@@ -22,10 +24,15 @@ class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
 
 
+class HostAwareTokenRefreshView(TokenRefreshView):
+    serializer_class = HostAwareTokenRefreshSerializer
+
+
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        assert_auth_host_compatible(request, request.user)
         return Response(UserMeSerializer(request.user, context={"request": request}).data)
 
 
@@ -40,6 +47,7 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        assert_auth_host_compatible(request, request.user)
         return Response(status=status.HTTP_205_RESET_CONTENT)
 
 

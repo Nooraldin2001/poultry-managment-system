@@ -18,7 +18,7 @@ VENV_DIR="${VENV_DIR:-$APP_DIR/.venv}"
 SERVICE_NAME="${SERVICE_NAME:-poultryhero-backend}"
 NGINX_SERVICE="${NGINX_SERVICE:-nginx}"
 BRANCH="${BRANCH:-main}"
-VITE_API_BASE="${VITE_API_BASE:-https://poultryhero.solutions/api}"
+VITE_API_BASE="${VITE_API_BASE:-/api}"
 VITE_TENANT_BASE_DOMAIN="${VITE_TENANT_BASE_DOMAIN:-poultryhero.solutions}"
 # DATA HYGIENE: production frontend builds must run in live-API mode (no demo
 # data). Default the flag to false and treat this deploy as a production env.
@@ -33,6 +33,15 @@ if [[ "$ENVIRONMENT" == "production" && "$VITE_USE_MOCK_DATA" == "true" ]]; then
   echo "       Production must run on live API data, never demo/mock data." >&2
   echo "       Unset VITE_USE_MOCK_DATA (or set it to false) and re-run." >&2
   exit 1
+fi
+
+if [[ "$ENVIRONMENT" == "production" && "$VITE_API_BASE" =~ https?://([a-z0-9-]+)\.poultryhero\.solutions(/|$) ]]; then
+  api_subdomain="${BASH_REMATCH[1]}"
+  if [[ "$api_subdomain" != "www" && "$api_subdomain" != "admin" ]]; then
+    echo "ERROR: refusing to deploy — VITE_API_BASE points at tenant host '$api_subdomain.poultryhero.solutions'." >&2
+    echo "       Production builds must use same-origin /api or the neutral apex/admin API host." >&2
+    exit 1
+  fi
 fi
 
 PY="$VENV_DIR/bin/python"

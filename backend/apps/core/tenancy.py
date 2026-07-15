@@ -1,6 +1,31 @@
 """Host/subdomain helpers for multi-tenant routing."""
 
 from django.conf import settings
+from rest_framework.exceptions import APIException
+
+
+RESERVED_SUBDOMAINS = {
+    "www",
+    "admin",
+    "api",
+    "static",
+    "media",
+    "demo",
+}
+
+
+class AuthHostMismatch(APIException):
+    status_code = 403
+    default_code = "auth_host_mismatch"
+    default_detail = "This session is not valid for the current domain."
+
+    def __init__(self, detail=None):
+        super().__init__(
+            {
+                "detail": detail or self.default_detail,
+                "code": self.default_code,
+            }
+        )
 
 
 def parse_subdomain(host: str):
@@ -45,11 +70,7 @@ def is_tenant_host(host: str) -> bool:
     subdomain = parse_subdomain(host)
     if not subdomain:
         return False
-    reserved = {
-        getattr(settings, "SUPERADMIN_SUBDOMAIN", "admin"),
-        "www",
-        "demo",
-    }
+    reserved = RESERVED_SUBDOMAINS | {getattr(settings, "SUPERADMIN_SUBDOMAIN", "admin")}
     return subdomain not in reserved
 
 
@@ -57,11 +78,7 @@ def resolve_company_for_subdomain(subdomain: str):
     """Look up a Company by subdomain. Returns None if not found/reserved."""
     if not subdomain:
         return None
-    if subdomain in {
-        getattr(settings, "SUPERADMIN_SUBDOMAIN", "admin"),
-        "www",
-        "demo",
-    }:
+    if subdomain in (RESERVED_SUBDOMAINS | {getattr(settings, "SUPERADMIN_SUBDOMAIN", "admin")}):
         return None
     from apps.tenants.models import Company
 
@@ -80,6 +97,40 @@ def host_context_from_request(request) -> dict:
         "is_tenant_host": is_tenant_host(host),
         "tenant_company": resolve_company_for_subdomain(subdomain) if is_tenant_host(host) else None,
     }
+
+
+def _is_local_or_test_host(host: str) -> bool:
+    host = (host or "").split(":")[0].strip().lower()
+    return host in {"", "localhost", "127.0.0.1", "testserver"} or host.endswith(".localhost")
+
+
+def is_auth_host_compatible(request, user) -> bool:
+    """Return whether an authenticated user may operate on the current host."""
+    if not (user and getattr(user, "is_authenticated", False)):
+        return False
+
+    ctx = host_context_from_request(request)
+    host = ctx["host"]
+    if _is_local_or_test_host(host):
+        return True
+
+    if user.is_superuser:
+        return bool(ctx["is_root_host"] or ctx["is_superadmin_host"])
+
+    if user.company_id is None:
+        return False
+
+    if not ctx["is_tenant_host"]:
+        return False
+
+    tenant = ctx["tenant_company"]
+    return bool(tenant and tenant.id == user.company_id)
+
+
+def assert_auth_host_compatible(request, user):
+    if is_auth_host_compatible(request, user):
+        return
+    raise AuthHostMismatch()
 
 
 class TenantResolutionMiddleware:

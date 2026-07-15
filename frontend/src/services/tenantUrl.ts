@@ -1,6 +1,7 @@
 /** Tenant subdomain URL + host-aware API base resolution (production multi-tenant). */
 
 const DEFAULT_TENANT_BASE_DOMAIN = "poultryhero.solutions";
+const RESERVED_SUBDOMAINS = new Set(["www", "admin", "api", "static", "media"]);
 
 export function getTenantBaseDomain(): string {
   const raw = (import.meta.env.VITE_TENANT_BASE_DOMAIN ?? DEFAULT_TENANT_BASE_DOMAIN)
@@ -43,7 +44,7 @@ export function getTenantSubdomainFromHost(): string | null {
   if (!host.endsWith(`.${base}`)) return null;
   const prefix = host.slice(0, -(base.length + 1));
   const label = prefix.split(".").pop() ?? "";
-  if (!label || label === "admin" || label === "www") return null;
+  if (!label || RESERVED_SUBDOMAINS.has(label)) return null;
   return label;
 }
 
@@ -69,8 +70,7 @@ export function resolveApiBase(): string {
 
   const isTenantSubdomain =
     host.endsWith(`.${base}`) &&
-    host !== `admin.${base}` &&
-    host !== `www.${base}` &&
+    !RESERVED_SUBDOMAINS.has(host.slice(0, -(base.length + 1)).split(".").pop() ?? "") &&
     host !== base;
 
   if (isTenantSubdomain) {

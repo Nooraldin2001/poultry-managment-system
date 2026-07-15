@@ -2,6 +2,7 @@ import { IS_MOCK_MODE } from "@/services/config";
 import { resolveApiBase } from "@/services/tenantUrl";
 import { notifySessionExpired } from "./session";
 import { ApiError } from "./errors";
+import { getTokenStorageNamespace, resolveHostContext, type HostContext } from "@/services/hostContext";
 
 const ACCESS_KEY = "poultry_hero_access_token";
 const REFRESH_KEY = "poultry_hero_refresh_token";
@@ -13,30 +14,56 @@ export const API_CONFIG = {
   useMock: IS_MOCK_MODE,
 };
 
-export function getAccessToken(): string | null {
+function scopedKey(baseKey: string, ctx: HostContext = resolveHostContext()): string {
+  return `${baseKey}:${getTokenStorageNamespace(ctx)}`;
+}
+
+export function getAccessToken(ctx: HostContext = resolveHostContext()): string | null {
   try {
-    return localStorage.getItem(ACCESS_KEY);
+    return localStorage.getItem(scopedKey(ACCESS_KEY, ctx)) ?? localStorage.getItem(ACCESS_KEY);
   } catch {
     return null;
   }
 }
 
-export function getRefreshToken(): string | null {
+export function getRefreshToken(ctx: HostContext = resolveHostContext()): string | null {
   try {
-    return localStorage.getItem(REFRESH_KEY);
+    return localStorage.getItem(scopedKey(REFRESH_KEY, ctx)) ?? localStorage.getItem(REFRESH_KEY);
   } catch {
     return null;
   }
 }
 
-export function setTokens(access: string, refresh: string): void {
-  localStorage.setItem(ACCESS_KEY, access);
-  localStorage.setItem(REFRESH_KEY, refresh);
+export function setTokens(access: string, refresh: string, ctx: HostContext = resolveHostContext()): void {
+  localStorage.setItem(scopedKey(ACCESS_KEY, ctx), access);
+  localStorage.setItem(scopedKey(REFRESH_KEY, ctx), refresh);
 }
 
-export function clearTokens(): void {
+export function clearTokens(ctx: HostContext = resolveHostContext(), includeLegacy = false): void {
+  localStorage.removeItem(scopedKey(ACCESS_KEY, ctx));
+  localStorage.removeItem(scopedKey(REFRESH_KEY, ctx));
+  if (includeLegacy) {
+    localStorage.removeItem(ACCESS_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+  }
+}
+
+export function migrateLegacyTokens(access: string, refresh: string, ctx: HostContext = resolveHostContext()): void {
+  setTokens(access, refresh, ctx);
+  clearLegacyTokens();
+}
+
+export function clearLegacyTokens(): void {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
+}
+
+export function hasLegacyTokens(): boolean {
+  try {
+    return !!(localStorage.getItem(ACCESS_KEY) || localStorage.getItem(REFRESH_KEY));
+  } catch {
+    return false;
+  }
 }
 
 function buildUrl(path: string, query?: Record<string, string | number | boolean | undefined | null>): string {
@@ -80,6 +107,12 @@ function parseDrfErrors(data: unknown): { message: string; fieldErrors: Record<s
   if (typeof obj.detail === "string") {
     return { message: obj.detail, fieldErrors: {} };
   }
+  if (obj.detail && typeof obj.detail === "object" && !Array.isArray(obj.detail)) {
+    const nested = obj.detail as Record<string, unknown>;
+    if (typeof nested.detail === "string") {
+      return { message: nested.detail, fieldErrors: {} };
+    }
+  }
   if (Array.isArray(obj.non_field_errors) && obj.non_field_errors.length) {
     return { message: String(obj.non_field_errors[0]), fieldErrors: {} };
   }
@@ -100,7 +133,8 @@ function parseDrfErrors(data: unknown): { message: string; fieldErrors: Record<s
 let refreshPromise: Promise<string | null> | null = null;
 
 async function refreshAccessToken(): Promise<string | null> {
-  const refresh = getRefreshToken();
+  const ctx = resolveHostContext();
+  const refresh = getRefreshToken(ctx);
   if (!refresh) return null;
   if (!refreshPromise) {
     refreshPromise = (async () => {
@@ -111,15 +145,15 @@ async function refreshAccessToken(): Promise<string | null> {
           body: JSON.stringify({ refresh }),
         });
         if (!res.ok) {
-          clearTokens();
+          clearTokens(ctx, true);
           notifySessionExpired();
           return null;
         }
         const data = (await res.json()) as { access: string };
-        localStorage.setItem(ACCESS_KEY, data.access);
+        localStorage.setItem(scopedKey(ACCESS_KEY, ctx), data.access);
         return data.access;
       } catch {
-        clearTokens();
+        clearTokens(ctx, true);
         notifySessionExpired();
         return null;
       } finally {
@@ -209,10 +243,16 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       typeof data === "string" &&
       (data.includes("<!doctype html>") || data.includes("<title>Server Error"));
     const { message, fieldErrors } = parseDrfErrors(data);
-    const responseCode =
-      data && typeof data === "object" && typeof (data as Record<string, unknown>).code === "string"
-        ? String((data as Record<string, unknown>).code)
-        : "";
+    const responseCode = (() => {
+      if (!data || typeof data !== "object") return "";
+      const obj = data as Record<string, unknown>;
+      if (typeof obj.code === "string") return obj.code;
+      if (obj.detail && typeof obj.detail === "object" && !Array.isArray(obj.detail)) {
+        const nested = obj.detail as Record<string, unknown>;
+        if (typeof nested.code === "string") return nested.code;
+      }
+      return "";
+    })();
     const code =
       responseCode || (
       res.status === 401 ? "unauthorized" :

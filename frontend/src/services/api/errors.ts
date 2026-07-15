@@ -23,7 +23,7 @@ export class ApiError extends Error {
   }
 
   static isUnauthorized(err: unknown): boolean {
-    return err instanceof ApiError && (err.status === 401 || err.code === "session_expired");
+    return err instanceof ApiError && (err.status === 401 || err.code === "session_expired" || err.code === "session_incompatible");
   }
 
   static isForbidden(err: unknown): boolean {

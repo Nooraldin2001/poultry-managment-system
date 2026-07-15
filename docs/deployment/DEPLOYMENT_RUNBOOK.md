@@ -172,12 +172,18 @@ refuses to build with `VITE_USE_MOCK_DATA=true`.
 **Frontend build env (Phase 1):** copy `frontend/.env.production.example` or pass at build time:
 
 ```bash
-VITE_API_BASE=https://poultryhero.solutions/api
+VITE_API_BASE=/api
 VITE_USE_MOCK_DATA=false
 ```
 
 The production bundle calls live JWT auth and dashboard APIs at `{VITE_API_BASE}/v1/...`.
+Use same-origin `/api` so the same frontend build works on the root/admin hosts
+and every tenant subdomain without embedding a tenant hostname.
 See `docs/frontend/PHASE_1_API_INTEGRATION_NOTES.md`.
+
+The deploy script rejects production builds where `VITE_API_BASE` points to a
+tenant-specific `*.poultryhero.solutions` host. See
+`docs/deployment/TENANT_DOMAIN_ISOLATION.md`.
 
 ---
 

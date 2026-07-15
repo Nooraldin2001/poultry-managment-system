@@ -53,6 +53,7 @@ import { ModuleErrorBoundary } from "@/shared/components/ModuleErrorBoundary";
 import { normalizeSalesInvoiceStatus, isSalesCollectibleStatus } from "@/shared/utils/invoiceStatus";
 import { ProductionEmptyState, EMPTY_MESSAGES } from "@/shared/components/ProductionEmptyState";
 import { IS_MOCK_MODE } from "@/services/config";
+import { isSessionCompatibleWithHost, resolveHostContext } from "@/services/hostContext";
 import { LiveDocumentReadOnly } from "@/features/documents/LiveDocumentReadOnly";
 import { LiveSalesInvoiceScreen } from "@/features/invoices/LiveSalesInvoiceScreen";
 import { LiveCustomerCollectionModal } from "@/features/payments/LivePaymentModals";
@@ -276,9 +277,9 @@ function LoginScreen({ onLogin, lang, onLangSwitch }: { onLogin: (user: CurrentU
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const isRTL = lang === "ar";
-  const hostKind = getAppHostKind();
-  const isTenantLogin = hostKind === "tenant";
-  const tenantSub = getTenantSubdomainFromHost();
+  const hostContext = resolveHostContext();
+  const isTenantLogin = hostContext.kind === "tenant";
+  const tenantSub = isTenantLogin ? hostContext.subdomain : getTenantSubdomainFromHost();
   const handleSubmit = async () => {
     if (!email || !password) {
       toast.error(isRTL ? "يرجى إدخال البريد وكلمة المرور" : "Please fill in all fields");
@@ -289,7 +290,14 @@ function LoginScreen({ onLogin, lang, onLangSwitch }: { onLogin: (user: CurrentU
       const user = await login(email.trim(), password);
       onLogin(user);
     } catch (err) {
+      const isCompanyAccountOnAdmin =
+        err instanceof ApiError &&
+        err.code === "session_incompatible" &&
+        resolveHostContext().kind === "super_admin";
       const msg =
+        isCompanyAccountOnAdmin && isRTL
+          ? "هذا الحساب تابع لشركة. يرجى تسجيل الدخول من رابط الشركة المخصص."
+          :
         err instanceof ApiError
           ? err.message
           : isRTL
@@ -328,7 +336,11 @@ function LoginScreen({ onLogin, lang, onLangSwitch }: { onLogin: (user: CurrentU
             <h1 className="text-2xl font-black text-[#0F2C59]">Poultry Hero</h1>
           </div>
           <div className="mb-8">
-            <h2 className="text-3xl font-black text-[#0F2C59] mb-1">{isRTL ? "لوحة تحكم Poultry Hero" : "Poultry Hero Control Panel"}</h2>
+            <h2 className="text-3xl font-black text-[#0F2C59] mb-1">
+              {isTenantLogin
+                ? (isRTL ? "لوحة تحكم Poultry Hero" : "Poultry Hero Control Panel")
+                : (isRTL ? "Poultry Hero — لوحة الإدارة العليا" : "Poultry Hero — Super Admin Portal")}
+            </h2>
             <p className="text-slate-400 font-semibold">
               {isTenantLogin
                 ? (isRTL ? `تسجيل الدخول — ${tenantSub ?? "الشركة"}` : `Company Sign In — ${tenantSub ?? "workspace"}`)
@@ -3944,7 +3956,7 @@ function TenantApp({ companyId, lang, onLangSwitch, onBack }: {
 
 function initialAppMode(): AppMode {
   if (IS_MOCK_MODE) return "superadmin";
-  return getAppHostKind() === "tenant" ? "tenant" : "superadmin";
+  return resolveHostContext().kind === "tenant" ? "tenant" : "superadmin";
 }
 
 // ── MAIN APP ───────────────────────────────────────────────────────────────────
@@ -3985,7 +3997,13 @@ export default function App() {
   }, [logout, isRTL, hostKind]);
 
   const handleLogin = (loggedIn: CurrentUser) => {
-    const hostKind = getAppHostKind();
+    const hostContext = resolveHostContext();
+    if (!isSessionCompatibleWithHost(loggedIn, hostContext)) {
+      setMode(hostContext.kind === "tenant" ? "tenant" : "superadmin");
+      setScreen("login");
+      setTenantAccessDenied(false);
+      return;
+    }
     if (loggedIn.is_superuser) {
       setTenantAccessDenied(false);
       setMode("superadmin");
@@ -3993,25 +4011,6 @@ export default function App() {
       return;
     }
     if (!loggedIn.company) return;
-
-    if (hostKind === "superadmin") {
-      setTenantAccessDenied(true);
-      return;
-    }
-
-    if (hostKind === "tenant") {
-      const sub = getTenantSubdomainFromHost();
-      if (sub && loggedIn.company.subdomain !== sub) {
-        toast.error(isRTL ? "ليس لديك صلاحية للوصول إلى هذه الشركة" : "You do not have access to this company workspace");
-        void logout();
-        return;
-      }
-    }
-
-    if (hostKind === "root" && !IS_MOCK_MODE) {
-      window.location.assign(getTenantUrl(loggedIn.company.subdomain));
-      return;
-    }
 
     setTenantCompanyId(String(loggedIn.company.id));
     setMode("tenant");
@@ -4032,20 +4031,15 @@ export default function App() {
       setTenantAccessDenied(false);
       return;
     }
+    const hostContext = resolveHostContext();
+    if (!isSessionCompatibleWithHost(user, hostContext)) {
+      void logout();
+      setMode(hostContext.kind === "tenant" ? "tenant" : "superadmin");
+      setScreen("login");
+      setTenantAccessDenied(false);
+      return;
+    }
     if (!user.is_superuser && user.company) {
-      const hostKind = getAppHostKind();
-      if (hostKind === "superadmin") {
-        setTenantAccessDenied(true);
-        return;
-      }
-      if (hostKind === "tenant") {
-        const sub = getTenantSubdomainFromHost();
-        if (sub && user.company.subdomain !== sub) {
-          toast.error(isRTL ? "ليس لديك صلاحية للوصول إلى هذه الشركة" : "You do not have access to this company workspace");
-          void logout();
-          return;
-        }
-      }
       setTenantCompanyId(String(user.company.id));
       setMode("tenant");
       setTenantAccessDenied(false);

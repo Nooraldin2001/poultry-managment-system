@@ -290,7 +290,7 @@ python manage.py purge_demo_data --company-subdomain demo --confirm-delete-demo-
 The production frontend build runs in **live-API mode** and shows clean empty
 states (never demo data) until screens are wired to the backend:
 
-* `frontend/.env.production` → `VITE_API_BASE=https://poultryhero.solutions/api`,
+* `frontend/.env.production` → `VITE_API_BASE=/api`,
   `VITE_USE_MOCK_DATA=false` (see `frontend/.env.production.example`).
 * `VITE_USE_MOCK_DATA` defaults to `false` and is force-disabled in any
   production build. `scripts/deploy_vps.sh` refuses to build with it set to `true`.
@@ -344,7 +344,7 @@ BASE_DOMAIN=poultryhero.solutions bash scripts/verify_production.sh
 | `DisallowedHost` | Add the host to `DJANGO_ALLOWED_HOSTS` in `backend/.env` |
 | CSRF/CORS errors | Set `CSRF_TRUSTED_ORIGINS` and `CORS_ALLOWED_ORIGINS` (https origins) in `backend/.env` |
 | Frontend blank page | Build missing/failed — check `frontend/dist` exists; rebuild via deploy script; check Nginx `root` path |
-| API calls hit wrong host | Set `VITE_API_BASE` at build time (deploy script passes `https://poultryhero.solutions/api`) |
+| API calls hit wrong host | Use same-origin `VITE_API_BASE=/api`; production deploy rejects tenant-specific API hosts |
 | `corepack` not found / disabled | Re-run `corepack enable`, or use `corepack pnpm ...` directly (the scripts do) |
 | Certbot validation failed | DNS must point to the VPS and ports 80/443 open (`ufw`); re-run after DNS resolves |
 

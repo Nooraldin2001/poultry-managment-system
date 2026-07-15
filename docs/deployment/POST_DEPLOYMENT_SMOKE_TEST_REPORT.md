@@ -30,6 +30,38 @@ Production smoke still required after deploy:
 - AED 10 customer collection updates invoice/customer/cashbox and cancel reverses once.
 - AED 10 supplier payment updates purchase/supplier/bank and cancel reverses once.
 
+## Auth Host Routing Pre-Deployment Note (2026-07-15)
+
+Local root-cause finding:
+
+- Session restore accepted a tenant `/auth/me/` response on the root domain and
+  switched React into tenant mode.
+- Backend `/auth/me/` and shared permission classes did not reject host/user
+  mismatches, so frontend-only fixes would not be sufficient.
+
+Local fixes:
+
+- Frontend host resolver and session compatibility matrix.
+- Host-namespaced JWT storage with safe legacy-token migration.
+- Root domain no longer redirects tenant users to their tenant subdomain.
+- Backend host validation on login, refresh, `/auth/me/`, logout, and protected
+  permission classes.
+- Production build default changed to same-origin `VITE_API_BASE=/api`; deploy
+  guard blocks tenant-specific API hosts.
+
+Local verification:
+
+- `python manage.py check` - pass
+- `python -m pytest tests/test_auth.py tests/test_auth_host_login.py tests/test_tenant_isolation.py tests/test_companies.py tests/test_users.py` - pass
+- `corepack pnpm run typecheck` - pass
+
+Production smoke still required after deploy:
+
+- Root domain remains on Super Admin sign-in after a tenant session exists.
+- First View tenant remains on tenant sign-in/dashboard for matching tenant user.
+- Super Admin session is not silently accepted on tenant host.
+- `sudo nginx -T` confirms no apex-to-First View redirect.
+
 ---
 
 ## Infrastructure (pre-credentialed ? unchanged)
