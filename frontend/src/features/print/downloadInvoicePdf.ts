@@ -1,6 +1,7 @@
 const PDF_DOCUMENT_ID = "invoice-pdf-document";
 const A4_WIDTH_MM = 210;
-const CONTENT_WIDTH_MM = 198;
+// Full-bleed export: content spans the entire A4 width with no page margins.
+const CONTENT_WIDTH_MM = A4_WIDTH_MM;
 
 function safeFilename(raw: string): string {
   const cleaned = raw
@@ -85,8 +86,7 @@ export async function downloadInvoicePdf(): Promise<number> {
     void clone.offsetHeight;
 
     const options = {
-      // Slightly larger bottom margin prevents signature labels from being sliced.
-      margin: [5, 6, 8, 6] as [number, number, number, number],
+      margin: [0, 0, 0, 0] as [number, number, number, number],
       filename,
       image: { type: "jpeg" as const, quality: 0.98 },
       html2canvas: {

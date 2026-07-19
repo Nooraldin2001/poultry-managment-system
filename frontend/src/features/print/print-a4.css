@@ -41,11 +41,12 @@
  * Keep spacing readable and never clip Arabic/Latin glyphs with tight boxes.
  */
 .invoice-a4-page.pdf-export-active {
-  width: 194mm !important;
+  width: 210mm !important;
   max-width: none !important;
   min-height: auto !important;
   margin: 0 !important;
-  padding: 0 !important;
+  /* Tiny inner padding only so glyphs are not sliced at the paper edge. */
+  padding: 2mm !important;
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
