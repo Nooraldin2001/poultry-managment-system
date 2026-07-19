@@ -2,8 +2,7 @@ import type { InvoiceTemplateProps } from "../types";
 import { InvoiceHeader } from "../components/InvoiceHeader";
 import { InvoicePartyInfo } from "../components/InvoicePartyInfo";
 import { InvoiceLineTable } from "../components/InvoiceLineTable";
-import { InvoiceTotals } from "../components/InvoiceTotals";
-import { InvoiceFooterBranding } from "../components/InvoiceFooterBranding";
+import { InvoiceFinalSummary } from "../components/InvoiceFinalSummary";
 
 /**
  * Bilingual layout: forces Arabic/English side-by-side labels everywhere,
@@ -19,8 +18,7 @@ export function InvoiceTemplateBilingual(props: InvoiceTemplateProps) {
       <InvoiceHeader {...bilingualProps} variant="banded" />
       <InvoicePartyInfo {...bilingualProps} />
       <InvoiceLineTable {...bilingualProps} headerStyle="solid" />
-      <InvoiceTotals {...bilingualProps} />
-      <InvoiceFooterBranding {...bilingualProps} />
+      <InvoiceFinalSummary {...bilingualProps} />
     </div>
   );
 }

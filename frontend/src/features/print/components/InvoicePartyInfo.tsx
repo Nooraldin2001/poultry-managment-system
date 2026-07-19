@@ -25,16 +25,23 @@ export function InvoicePartyInfo({
 
   return (
     <div
-      className={`flex flex-wrap gap-3 mb-4 text-sm ${isRTL ? "flex-row-reverse text-right" : "text-left"}`}
+      className={`invoice-party-info flex flex-wrap gap-3 mb-4 text-sm ${isRTL ? "flex-row-reverse text-right" : "text-left"}`}
     >
       <div
-        className="flex-1 min-w-[200px] rounded-lg p-3"
+        className="invoice-party-card flex-1 min-w-[200px] rounded-lg p-3"
         style={{ border: `1px solid ${theme.border}` }}
       >
-        <p className="text-[11px] font-black uppercase tracking-wide" style={{ color: theme.muted }}>
-          {partyLabel}
-        </p>
-        <p className="font-black mt-0.5" style={{ color: theme.text }}>{party.name || "—"}</p>
+        <div className="invoice-party-heading flex items-baseline gap-1 flex-wrap">
+          <span
+            className="invoice-party-label text-[11px] font-black uppercase tracking-wide"
+            style={{ color: theme.muted }}
+          >
+            {partyLabel}:
+          </span>
+          <strong className="invoice-party-name font-black" style={{ color: theme.text }}>
+            {party.name || "—"}
+          </strong>
+        </div>
         {party.phone && (
           <p className="text-xs mt-0.5" style={{ color: theme.muted }} dir="ltr">{party.phone}</p>
         )}
@@ -49,7 +56,7 @@ export function InvoicePartyInfo({
       </div>
       {meta.length > 0 && (
         <div
-          className="min-w-[180px] rounded-lg p-3 space-y-1"
+          className="invoice-meta-card min-w-[180px] rounded-lg p-3 space-y-1"
           style={{ border: `1px solid ${theme.border}` }}
         >
           {meta.map((m) => (

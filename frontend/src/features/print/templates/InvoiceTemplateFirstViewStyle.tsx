@@ -2,8 +2,7 @@ import type { InvoiceTemplateProps } from "../types";
 import { InvoiceHeader } from "../components/InvoiceHeader";
 import { InvoicePartyInfo } from "../components/InvoicePartyInfo";
 import { InvoiceLineTable } from "../components/InvoiceLineTable";
-import { InvoiceTotals } from "../components/InvoiceTotals";
-import { InvoiceFooterBranding } from "../components/InvoiceFooterBranding";
+import { InvoiceFinalSummary } from "../components/InvoiceFinalSummary";
 
 /**
  * Official style inspired by the client's printed tax invoice:
@@ -17,8 +16,7 @@ export function InvoiceTemplateFirstViewStyle(props: InvoiceTemplateProps) {
       <InvoiceHeader {...props} variant="banded" />
       <InvoicePartyInfo {...props} />
       <InvoiceLineTable {...props} headerStyle="solid" />
-      <InvoiceTotals {...props} />
-      <InvoiceFooterBranding {...props} />
+      <InvoiceFinalSummary {...props} />
     </div>
   );
 }

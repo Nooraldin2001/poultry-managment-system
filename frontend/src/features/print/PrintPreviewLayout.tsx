@@ -79,8 +79,8 @@ export function PrintPreviewLayout({
   const partyPhone = String(party?.phone ?? "").trim();
   const partyAddress = String(party?.address ?? "").trim();
   const partyLabel = partyKind === "supplier"
-    ? (isRTL ? "المورد" : "Supplier")
-    : (isRTL ? "العميل" : "Customer");
+    ? "المورد / SUPPLIER"
+    : "العميل / CUSTOMER";
   const partyTrnLabel = partyKind === "supplier"
     ? (isRTL ? "الرقم الضريبي للمورد" : "Supplier TRN")
     : (isRTL ? "الرقم الضريبي للعميل" : "Customer TRN");
@@ -130,8 +130,10 @@ export function PrintPreviewLayout({
 
       {partyName && (
         <div className={`mb-4 text-sm ${isRTL ? "text-right" : "text-left"}`}>
-          <p className="font-bold text-slate-500">{partyLabel}</p>
-          <p className="font-black text-slate-800">{partyName}</p>
+          <div className="invoice-party-heading flex items-baseline gap-1 flex-wrap">
+            <span className="invoice-party-label font-bold text-slate-500">{partyLabel}:</span>
+            <strong className="invoice-party-name font-black text-slate-800">{partyName}</strong>
+          </div>
           {partyPhone && (
             <p className="text-xs text-slate-600 mt-0.5">{partyPhone}</p>
           )}
@@ -212,62 +214,64 @@ export function PrintPreviewLayout({
         </table>
       </div>
 
-      <div
-        className={`invoice-totals mt-4 flex gap-6 items-end ${
-          isRTL ? "flex-row-reverse" : ""
-        }`}
-      >
-        <div className="flex-1 space-y-1 max-w-xs ms-auto">
-          {totals.map((t) => (
-            <div key={t.label} className="flex justify-between text-sm font-bold">
-              <span className="text-slate-500">{t.label}</span>
-              <span className="font-mono">{t.value}</span>
-            </div>
-          ))}
-        </div>
-        {stampUrl && (
-          <PrintAssetImage
-            src={stampUrl}
-            alt=""
-            className="max-w-[160px] max-h-20 object-contain shrink-0 print-preview-stamp"
-          />
-        )}
-      </div>
-
-      {notes && (
-        <p className={`mt-4 text-sm text-slate-500 ${isRTL ? "text-right" : "text-left"}`}>
-          {notes}
-        </p>
-      )}
-
-      {(signatureUrl || footer) && (
+      <section className="invoice-final-summary">
         <div
-          className={`signature-section invoice-footer mt-8 pt-4 border-t border-slate-100 flex flex-wrap gap-8 items-end ${
-            isRTL ? "flex-row-reverse justify-between" : "justify-between"
+          className={`invoice-totals mt-4 flex gap-6 items-end ${
+            isRTL ? "flex-row-reverse" : ""
           }`}
         >
-          {signatureUrl && (
-            <div className={`${isRTL ? "text-right" : "text-left"}`}>
-              <PrintAssetImage
-                src={signatureUrl}
-                alt=""
-                className="max-w-[180px] max-h-16 object-contain mb-1 print-preview-signature"
-              />
-              <p className="text-[10px] font-bold text-slate-400 border-t border-slate-200 pt-1">
-                {isRTL ? "توقيع المفوض" : "Authorized Signature"}
+          <div className="flex-1 space-y-1 max-w-xs ms-auto">
+            {totals.map((t) => (
+              <div key={t.label} className="flex justify-between text-sm font-bold">
+                <span className="text-slate-500">{t.label}</span>
+                <span className="font-mono">{t.value}</span>
+              </div>
+            ))}
+          </div>
+          {stampUrl && (
+            <PrintAssetImage
+              src={stampUrl}
+              alt=""
+              className="max-w-[160px] max-h-20 object-contain shrink-0 print-preview-stamp"
+            />
+          )}
+        </div>
+
+        {notes && (
+          <p className={`mt-4 text-sm text-slate-500 ${isRTL ? "text-right" : "text-left"}`}>
+            {notes}
+          </p>
+        )}
+
+        {(signatureUrl || footer) && (
+          <div
+            className="signature-section invoice-footer mt-8 pt-4 border-t border-slate-100 grid grid-cols-2 gap-8 items-end"
+          >
+            <div className={`invoice-signature-column ${isRTL ? "text-right" : "text-left"}`}>
+              {signatureUrl ? (
+                <PrintAssetImage
+                  src={signatureUrl}
+                  alt=""
+                  className="invoice-signature-asset max-w-[180px] max-h-16 object-contain mb-1 print-preview-signature"
+                />
+              ) : (
+                <div className="invoice-signature-space w-full h-8 mb-1" />
+              )}
+              <p className="invoice-signature-label text-[10px] font-bold text-slate-400 border-t border-slate-200 pt-1">
+                {isRTL ? "توقيع المفوض / Authorized Signature" : "Authorized Signature / توقيع المفوض"}
               </p>
             </div>
-          )}
-          <div className={`${isRTL ? "text-right" : "text-left"}`}>
-            <div className="w-40 border-b border-slate-300 mb-1 h-8" />
-            <p className="text-[10px] font-bold text-slate-400">
-              {isRTL ? "توقيع المستلم" : "Receiver Signature"}
-            </p>
+            <div className={`invoice-signature-column ${isRTL ? "text-right" : "text-left"}`}>
+              <div className="invoice-signature-space w-full h-8 mb-1" />
+              <p className="invoice-signature-label text-[10px] font-bold text-slate-400 border-t border-slate-200 pt-1">
+                {isRTL ? "توقيع المستلم / Receiver Signature" : "Receiver Signature / توقيع المستلم"}
+              </p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {footer}
+        {footer}
+      </section>
     </PrintA4Shell>
   );
 }

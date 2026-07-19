@@ -45,7 +45,7 @@ function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; 
     totals.gross_total != null ||
     totals.net_supplier_payable != null ||
     totals.slaughterhouse_deduction != null;
-  const pairs: [string, string][] = [];
+  const pairs: [label: string, value: string, monetary: boolean][] = [];
   const subtotal = data.subtotal ?? totals.subtotal;
   const vat = data.vat_amount ?? data.vat ?? totals.vat_amount;
   const gross = totals.gross_total ?? data.gross_total;
@@ -63,42 +63,44 @@ function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; 
     cheque: { ar: "شيك", en: "Cheque" },
     other: { ar: "أخرى", en: "Other" },
   };
-  if (subtotal != null) pairs.push([L("الإجمالي قبل الضريبة", "Subtotal before VAT"), String(subtotal)]);
+  if (subtotal != null) pairs.push([L("الإجمالي قبل الضريبة", "Subtotal before VAT"), String(subtotal), true]);
   if (vat != null && String(vat) !== "0" && String(vat) !== "0.00") {
-    pairs.push([L("ضريبة القيمة المضافة", "VAT"), String(vat)]);
+    pairs.push([L("ضريبة القيمة المضافة", "VAT"), String(vat), true]);
   }
   if (gross != null && isPurchase) {
-    pairs.push([L("الإجمالي شامل الضريبة", "Total incl. VAT"), String(gross)]);
+    pairs.push([L("الإجمالي شامل الضريبة", "Total incl. VAT"), String(gross), true]);
   }
   if (slaughter != null && parseFloat(String(slaughter)) > 0) {
-    pairs.push([L("خصم المسلخ", "Slaughterhouse Deduction"), `-${slaughter}`]);
+    pairs.push([L("خصم المسلخ", "Slaughterhouse Deduction"), `-${slaughter}`, true]);
   }
   if (transport != null && parseFloat(String(transport)) > 0) {
-    pairs.push([L("خصم النقل", "Transport Deduction"), `-${transport}`]);
+    pairs.push([L("خصم النقل", "Transport Deduction"), `-${transport}`, true]);
   }
   if (total != null) {
     pairs.push([
       isPurchase ? L("صافي المستحق للمورد", "Net Supplier Payable") : L("الإجمالي شامل الضريبة", "Total incl. VAT"),
       String(total),
+      true,
     ]);
   }
-  if (paid != null) pairs.push([L("المدفوع", "Paid"), String(paid)]);
+  if (paid != null) pairs.push([L("المدفوع", "Paid"), String(paid), true]);
   if (balance != null) {
     pairs.push([
       isPurchase ? L("الرصيد", "Balance") : L("المتبقي", "Balance"),
       String(balance),
+      true,
     ]);
   }
   if (paymentMethod) {
     const pm = paymentLabels[String(paymentMethod)] ?? { ar: String(paymentMethod), en: String(paymentMethod) };
-    pairs.push([L("طريقة الدفع", "Payment method"), isRTL ? pm.ar : pm.en]);
+    pairs.push([L("طريقة الدفع", "Payment method"), isRTL ? pm.ar : pm.en, false]);
   }
   if (moneyAccountName) {
-    pairs.push([L("حساب الدفع", "Payment account"), String(moneyAccountName)]);
+    pairs.push([L("حساب الدفع", "Payment account"), String(moneyAccountName), false]);
   }
-  return pairs.map(([label, value]) => ({
+  return pairs.map(([label, value, monetary]) => ({
     label,
-    value: value.startsWith("-") ? `AED ${value}` : `AED ${value}`,
+    value: monetary ? `AED ${value}` : value,
   }));
 }
 

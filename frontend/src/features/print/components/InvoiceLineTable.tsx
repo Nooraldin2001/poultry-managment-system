@@ -70,15 +70,6 @@ export function InvoiceLineTable({
               </td>
             </tr>
           ))}
-          {lines.length > 0 && lineTotals && (
-            <InvoiceTotalsSummaryRow
-              lang={lang}
-              isRTL={isRTL}
-              bilingual={bilingual}
-              theme={theme}
-              lineTotals={lineTotals}
-            />
-          )}
           {lines.length === 0 && (
             <tr>
               <td colSpan={5} className="py-4 text-center text-xs" style={{ color: theme.muted }}>
@@ -87,6 +78,17 @@ export function InvoiceLineTable({
             </tr>
           )}
         </tbody>
+        {lines.length > 0 && lineTotals && (
+          <tfoot>
+            <InvoiceTotalsSummaryRow
+              lang={lang}
+              isRTL={isRTL}
+              bilingual={bilingual}
+              theme={theme}
+              lineTotals={lineTotals}
+            />
+          </tfoot>
+        )}
       </table>
     </div>
   );

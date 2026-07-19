@@ -62,6 +62,37 @@ Production smoke still required after deploy:
 - Super Admin session is not silently accepted on tenant host.
 - `sudo nginx -T` confirms no apex-to-First View redirect.
 
+## Invoice PDF Pagination Pre-Deployment Note (2026-07-19)
+
+Reference invoice `INV-00117` previously printed as two pages with totals and
+signatures alone on a mostly empty second page.
+
+Local changes:
+
+- Browser print remains the renderer (`window.print()`).
+- A4 margins reduced from 8 mm to 6 mm top and 7 mm on other sides.
+- Print document now uses the full 196 mm printable width.
+- Header, party cards, table rows, totals, and signature spacing use compact
+  print-only sizing.
+- Totals, payment details, and signatures are one indivisible final block.
+- Party label and legal name are inline and wrap safely.
+- Payment method now prints `Credit`, not `AED Credit`.
+
+Local verification:
+
+- Exact 19-line reference fixture: one-page measured layout (960.39 px content
+  against 1,073.39 px printable height).
+- 64-line stress fixture: two-page measured layout.
+- Repeating table header and row/final-block break protection confirmed through
+  computed print styles.
+- `corepack pnpm run typecheck` - pass.
+- `corepack pnpm run build` - pass.
+- `python manage.py check` - pass.
+- Invoice branding, sales, and purchase tests: 159 passed.
+
+Production and physical-device smoke remains pending for Chrome, Edge, iPhone
+Safari, and Android Chrome.
+
 ---
 
 ## Infrastructure (pre-credentialed ? unchanged)

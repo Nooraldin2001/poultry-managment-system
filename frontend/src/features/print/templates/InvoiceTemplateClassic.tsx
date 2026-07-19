@@ -2,8 +2,7 @@ import type { InvoiceTemplateProps } from "../types";
 import { InvoiceHeader } from "../components/InvoiceHeader";
 import { InvoicePartyInfo } from "../components/InvoicePartyInfo";
 import { InvoiceLineTable } from "../components/InvoiceLineTable";
-import { InvoiceTotals } from "../components/InvoiceTotals";
-import { InvoiceFooterBranding } from "../components/InvoiceFooterBranding";
+import { InvoiceFinalSummary } from "../components/InvoiceFinalSummary";
 
 /** Traditional minimal layout: plain header, underlined table header. */
 export function InvoiceTemplateClassic(props: InvoiceTemplateProps) {
@@ -12,8 +11,7 @@ export function InvoiceTemplateClassic(props: InvoiceTemplateProps) {
       <InvoiceHeader {...props} variant="plain" />
       <InvoicePartyInfo {...props} />
       <InvoiceLineTable {...props} headerStyle="underline" />
-      <InvoiceTotals {...props} />
-      <InvoiceFooterBranding {...props} />
+      <InvoiceFinalSummary {...props} />
     </div>
   );
 }

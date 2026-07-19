@@ -22,26 +22,26 @@ export function InvoiceFooterBranding({
         </p>
       )}
       <div
-        className={`signature-section invoice-footer mt-8 pt-4 flex flex-wrap gap-8 items-end justify-between ${isRTL ? "flex-row-reverse" : ""}`}
+        className="signature-section invoice-footer mt-8 pt-4 grid grid-cols-2 gap-8 items-end"
         style={{ borderTop: `1px solid ${theme.border}` }}
       >
-        <div className={isRTL ? "text-right" : "text-left"}>
+        <div className={`invoice-signature-column ${isRTL ? "text-right" : "text-left"}`}>
           {signatureUrl ? (
             <PrintAssetImage
               src={signatureUrl}
               alt=""
-              className="max-w-[180px] max-h-16 object-contain mb-1 print-preview-signature"
+              className="invoice-signature-asset max-w-[180px] max-h-16 object-contain mb-1 print-preview-signature"
             />
           ) : (
-            <div className="w-40 h-8 mb-1" style={{ borderBottom: `1px solid ${theme.border}` }} />
+            <div className="invoice-signature-space w-full h-8 mb-1" />
           )}
-          <p className="text-[10px] font-bold pt-1" style={{ color: theme.muted, borderTop: `1px solid ${theme.border}` }}>
+          <p className="invoice-signature-label text-[10px] font-bold pt-1" style={{ color: theme.muted, borderTop: `1px solid ${theme.border}` }}>
             {label("توقيع المفوض", "Authorized Signature")}
           </p>
         </div>
-        <div className={isRTL ? "text-right" : "text-left"}>
-          <div className="w-40 h-8 mb-1" style={{ borderBottom: `1px solid ${theme.border}` }} />
-          <p className="text-[10px] font-bold" style={{ color: theme.muted }}>
+        <div className={`invoice-signature-column ${isRTL ? "text-right" : "text-left"}`}>
+          <div className="invoice-signature-space w-full h-8 mb-1" />
+          <p className="invoice-signature-label text-[10px] font-bold pt-1" style={{ color: theme.muted, borderTop: `1px solid ${theme.border}` }}>
             {label("توقيع المستلم", "Receiver Signature")}
           </p>
         </div>
