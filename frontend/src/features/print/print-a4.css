@@ -41,7 +41,7 @@
  * Keep spacing readable and never clip Arabic/Latin glyphs with tight boxes.
  */
 .invoice-a4-page.pdf-export-active {
-  width: 210mm !important;
+  width: var(--pdf-export-layout-width, 210mm) !important;
   max-width: none !important;
   min-height: auto !important;
   margin: 0 !important;
@@ -51,8 +51,8 @@
   border-radius: 0 !important;
   box-shadow: none !important;
   transform: none !important;
-  font-size: 9.5pt;
-  line-height: 1.35;
+  font-size: 9pt;
+  line-height: 1.25;
   overflow: visible !important;
   background: white !important;
   print-color-adjust: exact;
@@ -68,14 +68,14 @@
 }
 
 .pdf-export-active .invoice-header {
-  margin-bottom: 3mm !important;
+  margin-bottom: 2.5mm !important;
   break-inside: avoid;
   page-break-inside: avoid;
 }
 
 .pdf-export-active .invoice-header > div:first-child {
-  gap: 3mm !important;
-  padding: 3mm !important;
+  gap: 2.5mm !important;
+  padding: 2.5mm !important;
 }
 
 .pdf-export-active .invoice-header .print-preview-logo {
@@ -92,10 +92,10 @@
 
 .pdf-export-active .invoice-title-strip,
 .pdf-export-active .invoice-header > div:nth-child(2) {
-  min-height: 8mm !important;
-  padding-top: 2mm !important;
-  padding-bottom: 2mm !important;
-  line-height: 1.35 !important;
+  min-height: 7mm !important;
+  padding-top: 1.6mm !important;
+  padding-bottom: 1.6mm !important;
+  line-height: 1.3 !important;
   overflow: visible !important;
 }
 
@@ -107,19 +107,19 @@
 }
 
 .pdf-export-active .invoice-header > div:nth-child(3) {
-  padding-top: 1.2mm !important;
-  padding-bottom: 1.2mm !important;
+  padding-top: 0.8mm !important;
+  padding-bottom: 0.8mm !important;
 }
 
 .pdf-export-active .invoice-party-info {
   gap: 2.5mm !important;
-  margin-bottom: 3mm !important;
+  margin-bottom: 2.5mm !important;
   flex-wrap: nowrap !important;
 }
 
 .pdf-export-active .invoice-party-card,
 .pdf-export-active .invoice-meta-card {
-  padding: 2.5mm !important;
+  padding: 2mm !important;
   border-radius: 2mm !important;
 }
 
@@ -128,8 +128,8 @@
 }
 
 .pdf-export-active .invoice-meta-card > div {
-  font-size: 8.5pt !important;
-  line-height: 1.3 !important;
+  font-size: 8pt !important;
+  line-height: 1.15 !important;
 }
 
 .pdf-export-active .invoice-party-heading {
@@ -153,11 +153,11 @@
 
 .pdf-export-active .invoice-party-heading,
 .pdf-export-active .invoice-party-heading ~ p {
-  line-height: 1.3 !important;
+  line-height: 1.2 !important;
 }
 
 .pdf-export-active .invoice-party-heading ~ p {
-  margin-top: 0.6mm !important;
+  margin-top: 0.5mm !important;
 }
 
 .pdf-export-active .print-line-table {
@@ -168,16 +168,16 @@
 }
 
 .pdf-export-active .print-line-table th {
-  padding: 1.6mm 1.5mm !important;
+  padding: 1.2mm 1.5mm !important;
   font-size: 8pt !important;
-  line-height: 1.3 !important;
+  line-height: 1.15 !important;
   white-space: normal !important;
 }
 
 .pdf-export-active .print-line-table td {
-  padding: 1.4mm 1.5mm !important;
+  padding: 1.05mm 1.5mm !important;
   font-size: 8.5pt !important;
-  line-height: 1.3 !important;
+  line-height: 1.15 !important;
 }
 
 .pdf-export-active .print-line-table th:first-child,
@@ -221,8 +221,8 @@
 }
 
 .pdf-export-active .invoice-final-summary {
-  margin-top: 3mm !important;
-  padding-bottom: 2mm !important;
+  margin-top: 2.5mm !important;
+  padding-bottom: 1mm !important;
 }
 
 .pdf-export-active .invoice-final-summary .invoice-totals {
@@ -231,15 +231,15 @@
 }
 
 .pdf-export-active .invoice-totals > div:last-child {
-  width: 68mm !important;
+  width: 66mm !important;
 }
 
 .pdf-export-active .invoice-totals > div:last-child > div,
 .pdf-export-active .invoice-total-row {
-  min-height: 5.5mm;
-  padding: 1.2mm 1.8mm !important;
+  min-height: 4.6mm;
+  padding: 0.7mm 1.5mm !important;
   font-size: 8.5pt !important;
-  line-height: 1.3 !important;
+  line-height: 1.15 !important;
 }
 
 .pdf-export-active .print-preview-stamp {
@@ -249,9 +249,9 @@
 
 .pdf-export-active .invoice-footer,
 .pdf-export-active .signature-section {
-  margin-top: 4mm !important;
-  padding-top: 2.5mm !important;
-  padding-bottom: 2mm !important;
+  margin-top: 2.5mm !important;
+  padding-top: 2mm !important;
+  padding-bottom: 1mm !important;
   column-gap: 10mm !important;
 }
 
@@ -264,10 +264,10 @@
 }
 
 .pdf-export-active .invoice-signature-label {
-  padding-top: 1mm !important;
-  padding-bottom: 1mm !important;
-  font-size: 8pt !important;
-  line-height: 1.3 !important;
+  padding-top: 0.8mm !important;
+  padding-bottom: 0.5mm !important;
+  font-size: 7.5pt !important;
+  line-height: 1.15 !important;
 }
 
 @media print {

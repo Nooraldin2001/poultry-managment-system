@@ -1,5 +1,7 @@
 const PDF_DOCUMENT_ID = "invoice-pdf-document";
 const A4_WIDTH_MM = 210;
+const A4_HEIGHT_MM = 297;
+const MAX_SINGLE_PAGE_LAYOUT_WIDTH_MM = 250;
 // Full-bleed export: content spans the entire A4 width with no page margins.
 const CONTENT_WIDTH_MM = A4_WIDTH_MM;
 
@@ -69,6 +71,44 @@ function createExportClone(source: HTMLElement): { host: HTMLElement; clone: HTM
   return { host, clone };
 }
 
+/**
+ * Render a near-fitting invoice on one A4 page, like the browser's "fit to
+ * printable area" behavior. Widening the off-screen layout makes html2pdf
+ * scale it uniformly back to 210mm, without stretching text or adding margins.
+ * The cap keeps text readable; larger invoices retain normal pagination.
+ */
+function fitCloneToSinglePage(host: HTMLElement, clone: HTMLElement): boolean {
+  const targetHeightMm = A4_HEIGHT_MM - 1;
+  let layoutWidthMm = CONTENT_WIDTH_MM;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    host.style.width = `${layoutWidthMm}mm`;
+    clone.style.setProperty("--pdf-export-layout-width", `${layoutWidthMm}mm`);
+    void clone.offsetHeight;
+
+    const renderedWidth = clone.getBoundingClientRect().width;
+    const outputHeightMm = renderedWidth > 0
+      ? (clone.scrollHeight / renderedWidth) * A4_WIDTH_MM
+      : Number.POSITIVE_INFINITY;
+
+    if (outputHeightMm <= targetHeightMm) {
+      clone.classList.add("pdf-export-single-page");
+      return true;
+    }
+
+    const requiredWidthMm = layoutWidthMm * (outputHeightMm / targetHeightMm) * 1.01;
+    const nextWidthMm = Math.min(MAX_SINGLE_PAGE_LAYOUT_WIDTH_MM, requiredWidthMm);
+    if (nextWidthMm <= layoutWidthMm + 0.5) break;
+    layoutWidthMm = nextWidthMm;
+  }
+
+  // Keep the normal A4-width layout when readable one-page fitting is not possible.
+  host.style.width = `${CONTENT_WIDTH_MM}mm`;
+  clone.style.setProperty("--pdf-export-layout-width", `${CONTENT_WIDTH_MM}mm`);
+  void clone.offsetHeight;
+  return false;
+}
+
 export async function downloadInvoicePdf(): Promise<number> {
   const documentElement = document.getElementById(PDF_DOCUMENT_ID);
   if (!(documentElement instanceof HTMLElement)) {
@@ -82,8 +122,8 @@ export async function downloadInvoicePdf(): Promise<number> {
 
   try {
     await waitForPrintAssets(clone);
-    // Force layout so html2canvas measures the fixed A4 clone, not the viewport.
-    void clone.offsetHeight;
+    // Prefer one page when the whole invoice fits without excessive shrinking.
+    fitCloneToSinglePage(host, clone);
 
     const options = {
       margin: [0, 0, 0, 0] as [number, number, number, number],
