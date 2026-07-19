@@ -1,6 +1,6 @@
 const PDF_DOCUMENT_ID = "invoice-pdf-document";
 const A4_WIDTH_MM = 210;
-const CONTENT_WIDTH_MM = 194;
+const CONTENT_WIDTH_MM = 198;
 
 function safeFilename(raw: string): string {
   const cleaned = raw
@@ -85,8 +85,8 @@ export async function downloadInvoicePdf(): Promise<number> {
     void clone.offsetHeight;
 
     const options = {
-      // Extra bottom margin prevents signature labels from being sliced.
-      margin: [8, 8, 12, 8] as [number, number, number, number],
+      // Slightly larger bottom margin prevents signature labels from being sliced.
+      margin: [5, 6, 8, 6] as [number, number, number, number],
       filename,
       image: { type: "jpeg" as const, quality: 0.98 },
       html2canvas: {
@@ -104,6 +104,9 @@ export async function downloadInvoicePdf(): Promise<number> {
           el.style.overflow = "visible";
           el.querySelectorAll<HTMLElement>("*").forEach((node) => {
             node.style.overflow = "visible";
+            // html2canvas draws glyphs one-by-one when letter-spacing is set,
+            // which destroys Arabic contextual joining. Force normal spacing.
+            node.style.letterSpacing = "normal";
           });
         },
       },
