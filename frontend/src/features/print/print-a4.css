@@ -36,6 +36,214 @@
   }
 }
 
+/*
+ * Direct PDF export is generated from the live DOM while screen media is active.
+ * Mirror the compact print geometry on the export element so html2pdf receives
+ * the same fixed A4 layout regardless of device viewport.
+ */
+.invoice-a4-page.pdf-export-active {
+  width: 196mm !important;
+  max-width: none !important;
+  min-height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font-size: 9pt;
+  line-height: 1.25;
+  overflow: visible !important;
+  background: white !important;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.pdf-export-active .invoice-header {
+  margin-bottom: 2.5mm !important;
+  break-inside: avoid;
+}
+
+.pdf-export-active .invoice-header > div:first-child {
+  gap: 2.5mm !important;
+  padding: 2.5mm !important;
+}
+
+.pdf-export-active .invoice-header .print-preview-logo {
+  max-height: 18mm !important;
+  max-width: 32mm !important;
+}
+
+.pdf-export-active .invoice-header h1,
+.pdf-export-active .invoice-header p {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.pdf-export-active .invoice-header > div:nth-child(2) {
+  padding-top: 1.2mm !important;
+  padding-bottom: 1.2mm !important;
+}
+
+.pdf-export-active .invoice-header > div:nth-child(3) {
+  padding-top: 0.8mm !important;
+  padding-bottom: 0.8mm !important;
+}
+
+.pdf-export-active .invoice-party-info {
+  gap: 2.5mm !important;
+  margin-bottom: 2.5mm !important;
+  flex-wrap: nowrap !important;
+}
+
+.pdf-export-active .invoice-party-card,
+.pdf-export-active .invoice-meta-card {
+  padding: 2mm !important;
+  border-radius: 2mm !important;
+}
+
+.pdf-export-active .invoice-meta-card {
+  min-width: 42mm !important;
+}
+
+.pdf-export-active .invoice-meta-card > div {
+  font-size: 8pt !important;
+  line-height: 1.15 !important;
+}
+
+.pdf-export-active .invoice-party-heading {
+  align-items: baseline !important;
+  column-gap: 1.2mm !important;
+  row-gap: 0 !important;
+  margin-bottom: 0.4mm !important;
+  font-size: 9pt;
+}
+
+.pdf-export-active .invoice-party-label {
+  white-space: nowrap;
+  font-size: 8pt !important;
+}
+
+.pdf-export-active .invoice-party-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 9.5pt !important;
+}
+
+.pdf-export-active .invoice-party-heading,
+.pdf-export-active .invoice-party-heading ~ p {
+  line-height: 1.2 !important;
+}
+
+.pdf-export-active .invoice-party-heading ~ p {
+  margin-top: 0.5mm !important;
+}
+
+.pdf-export-active .print-line-table {
+  width: 100% !important;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 8.5pt !important;
+}
+
+.pdf-export-active .print-line-table th {
+  padding: 1.2mm 1.5mm !important;
+  font-size: 8pt !important;
+  line-height: 1.15 !important;
+  white-space: normal !important;
+}
+
+.pdf-export-active .print-line-table td {
+  padding: 1.05mm 1.5mm !important;
+  font-size: 8.5pt !important;
+  line-height: 1.15 !important;
+}
+
+.pdf-export-active .print-line-table th:first-child,
+.pdf-export-active .print-line-table td:first-child {
+  width: 29%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.pdf-export-active .print-line-table th:nth-child(2),
+.pdf-export-active .print-line-table td:nth-child(2) {
+  width: 11%;
+}
+
+.pdf-export-active .print-line-table th:nth-child(3),
+.pdf-export-active .print-line-table td:nth-child(3) {
+  width: 15%;
+}
+
+.pdf-export-active .print-line-table th:nth-child(4),
+.pdf-export-active .print-line-table td:nth-child(4) {
+  width: 20%;
+}
+
+.pdf-export-active .print-line-table th:nth-child(5),
+.pdf-export-active .print-line-table td:nth-child(5) {
+  width: 25%;
+}
+
+.pdf-export-active .print-line-table th:not(:first-child),
+.pdf-export-active .print-line-table td:not(:first-child) {
+  white-space: nowrap;
+}
+
+.pdf-export-active .print-line-table tr,
+.pdf-export-active .invoice-final-summary,
+.pdf-export-active .signature-section {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.pdf-export-active .invoice-final-summary {
+  margin-top: 2.5mm !important;
+}
+
+.pdf-export-active .invoice-final-summary .invoice-totals {
+  margin-top: 0 !important;
+  gap: 3mm !important;
+}
+
+.pdf-export-active .invoice-totals > div:last-child {
+  width: 66mm !important;
+}
+
+.pdf-export-active .invoice-totals > div:last-child > div {
+  min-height: 4.6mm;
+  padding: 0.7mm 1.5mm !important;
+  font-size: 8.5pt !important;
+  line-height: 1.15 !important;
+}
+
+.pdf-export-active .print-preview-stamp {
+  max-height: 20mm !important;
+  max-width: 34mm !important;
+}
+
+.pdf-export-active .invoice-footer,
+.pdf-export-active .signature-section {
+  margin-top: 2.5mm !important;
+  padding-top: 2mm !important;
+  column-gap: 10mm !important;
+}
+
+.pdf-export-active .invoice-signature-space,
+.pdf-export-active .invoice-signature-asset {
+  height: 18mm !important;
+  max-height: 18mm !important;
+  margin-bottom: 0.7mm !important;
+  object-fit: contain;
+}
+
+.pdf-export-active .invoice-signature-label {
+  padding-top: 0.8mm !important;
+  font-size: 7.5pt !important;
+  line-height: 1.15 !important;
+}
+
 @media print {
   @page {
     size: A4 portrait;

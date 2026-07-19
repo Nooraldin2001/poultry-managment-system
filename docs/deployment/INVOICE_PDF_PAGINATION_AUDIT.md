@@ -45,6 +45,8 @@ it to page 2.
   divider, and signatures.
 - Added inline, wrapping supplier/customer heading.
 - Removed the currency prefix from non-monetary payment method/account values.
+- Added a direct `html2pdf.js` download action that uses the same compact A4
+  layout and invoice-number filename without opening browser print settings.
 
 ## Local page-fit verification
 
@@ -59,6 +61,7 @@ measurement.
 - Final summary height: 228.95 CSS px
 - Table header overflow: none
 - Payment method value: `Credit`
+- Direct generated PDF page count: 1
 
 A 64-line stress case measured two pages. Computed print rules confirmed:
 

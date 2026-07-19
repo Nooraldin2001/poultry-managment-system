@@ -88,6 +88,7 @@ export function PrintPreviewLayout({
   return (
     <PrintA4Shell
       dir={isRTL ? "rtl" : "ltr"}
+      pdfFilename={`invoice-${meta?.[0]?.value ?? "document"}`}
       actions={<PrintActionButtons isRTL={isRTL} onBack={onBack} />}
     >
       {/* Header: logo + company identity + title */}

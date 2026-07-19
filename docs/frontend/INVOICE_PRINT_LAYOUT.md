@@ -2,7 +2,8 @@
 
 Sales and purchase invoices use the shared React print components under
 `frontend/src/features/print/` and the browser's native `window.print()`.
-There is no jsPDF, html2canvas, or backend PDF renderer in this flow.
+The preview now also provides a direct **Download PDF** action powered by
+`html2pdf.js`; it generates an A4 file without opening the browser print dialog.
 
 ## A4 contract
 
@@ -47,3 +48,10 @@ account values are plain labels, for example `Credit`, not `AED Credit`.
 Mobile Safari and Android Chrome use the same 196 mm print document as desktop.
 The screen viewport only affects the scrollable preview; print mode removes
 screen transforms, width constraints, overflow clipping, and app navigation.
+
+## Direct download
+
+`downloadInvoicePdf.ts` waits for document fonts and invoice images, applies the
+same fixed 196 mm compact layout, and generates A4 pages with 6/7 mm margins.
+Invoice rows and the complete final summary are protected from splitting.
+Downloaded files use the invoice number, for example `invoice-INV-00117.pdf`.

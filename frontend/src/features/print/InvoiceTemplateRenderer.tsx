@@ -15,10 +15,15 @@ export function InvoiceTemplateRenderer({
 }) {
   const isRTL = data.lang === "ar";
   const Template = resolveTemplate(data.branding.template_key);
+  const documentNumber =
+    data.meta.find((item) => /number|invoice|الرقم/i.test(item.label))?.value ??
+    data.meta[0]?.value ??
+    "invoice";
 
   return (
     <PrintA4Shell
       dir={isRTL ? "rtl" : "ltr"}
+      pdfFilename={`invoice-${documentNumber}`}
       pageClassName="border border-slate-200 print:border-0"
       actions={
         <PrintActionButtons

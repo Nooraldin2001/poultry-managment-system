@@ -77,6 +77,7 @@ Local changes:
 - Totals, payment details, and signatures are one indivisible final block.
 - Party label and legal name are inline and wrap safely.
 - Payment method now prints `Credit`, not `AED Credit`.
+- Added a direct Download PDF action that bypasses the browser print dialog.
 
 Local verification:
 
@@ -85,6 +86,7 @@ Local verification:
 - 64-line stress fixture: two-page measured layout.
 - Repeating table header and row/final-block break protection confirmed through
   computed print styles.
+- Direct PDF generation for the 19-line fixture reported one A4 page.
 - `corepack pnpm run typecheck` - pass.
 - `corepack pnpm run build` - pass.
 - `python manage.py check` - pass.
