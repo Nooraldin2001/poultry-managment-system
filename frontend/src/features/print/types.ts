@@ -73,7 +73,7 @@ export interface InvoiceTemplateProps {
   meta: { label: string; value: string }[];
   lines: PrintLineRow[];
   lineTotals?: InvoiceLineTotals;
-  totals: { label: string; value: string }[];
+  totals: { label: string; value: string; emphasize?: boolean }[];
   notes?: string;
   branding: InvoiceBranding;
   theme: InvoiceThemeTokens;

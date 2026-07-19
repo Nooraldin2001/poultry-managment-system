@@ -37,7 +37,10 @@ function mapPrintLines(data: Record<string, unknown>): PrintLineRow[] {
   });
 }
 
-function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; value: string }[] {
+function mapTotals(
+  data: Record<string, unknown>,
+  lang: Lang,
+): { label: string; value: string; emphasize?: boolean }[] {
   const totals = (data.totals ?? {}) as Record<string, unknown>;
   const isRTL = lang === "ar";
   const L = (ar: string, en: string) => (isRTL ? ar : en);
@@ -45,7 +48,7 @@ function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; 
     totals.gross_total != null ||
     totals.net_supplier_payable != null ||
     totals.slaughterhouse_deduction != null;
-  const pairs: [label: string, value: string, monetary: boolean][] = [];
+  const pairs: [label: string, value: string, monetary: boolean, emphasize?: boolean][] = [];
   const subtotal = data.subtotal ?? totals.subtotal;
   const vat = data.vat_amount ?? data.vat ?? totals.vat_amount;
   const gross = totals.gross_total ?? data.gross_total;
@@ -68,7 +71,7 @@ function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; 
     pairs.push([L("ضريبة القيمة المضافة", "VAT"), String(vat), true]);
   }
   if (gross != null && isPurchase) {
-    pairs.push([L("الإجمالي شامل الضريبة", "Total incl. VAT"), String(gross), true]);
+    pairs.push([L("الإجمالي شامل الضريبة", "Total incl. VAT"), String(gross), true, balance == null]);
   }
   if (slaughter != null && parseFloat(String(slaughter)) > 0) {
     pairs.push([L("خصم المسلخ", "Slaughterhouse Deduction"), `-${slaughter}`, true]);
@@ -81,6 +84,7 @@ function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; 
       isPurchase ? L("صافي المستحق للمورد", "Net Supplier Payable") : L("الإجمالي شامل الضريبة", "Total incl. VAT"),
       String(total),
       true,
+      balance == null,
     ]);
   }
   if (paid != null) pairs.push([L("المدفوع", "Paid"), String(paid), true]);
@@ -88,6 +92,7 @@ function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; 
     pairs.push([
       isPurchase ? L("الرصيد", "Balance") : L("المتبقي", "Balance"),
       String(balance),
+      true,
       true,
     ]);
   }
@@ -98,9 +103,10 @@ function mapTotals(data: Record<string, unknown>, lang: Lang): { label: string; 
   if (moneyAccountName) {
     pairs.push([L("حساب الدفع", "Payment account"), String(moneyAccountName), false]);
   }
-  return pairs.map(([label, value, monetary]) => ({
+  return pairs.map(([label, value, monetary, emphasize]) => ({
     label,
     value: monetary ? `AED ${value}` : value,
+    emphasize: emphasize === true,
   }));
 }
 

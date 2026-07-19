@@ -22,11 +22,17 @@ export function InvoiceHeader({
   const showPhone = branding.show_company_phone && !!company.phone;
   const bilingual = branding.show_bilingual_labels;
 
-  const title = bilingual
-    ? `${titleAr} / ${titleEn}`
-    : isRTL
-      ? titleAr
-      : titleEn;
+  const titleNode = bilingual ? (
+    <span className="invoice-doc-title" dir="ltr">
+      <bdi dir="rtl">{titleAr}</bdi>
+      <span aria-hidden="true"> / </span>
+      <bdi dir="ltr">{titleEn}</bdi>
+    </span>
+  ) : (
+    <span className="invoice-doc-title" dir={isRTL ? "rtl" : "ltr"}>
+      {isRTL ? titleAr : titleEn}
+    </span>
+  );
 
   if (variant === "plain") {
     return (
@@ -42,7 +48,7 @@ export function InvoiceHeader({
           />
         )}
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-black" style={{ color: theme.primary }}>{title}</h1>
+          <h1 className="text-xl font-black" style={{ color: theme.primary }}>{titleNode}</h1>
           {company.name_ar && <p className="text-sm font-bold mt-1" style={{ color: theme.text }}>{company.name_ar}</p>}
           {company.name_en && company.name_en !== company.name_ar && (
             <p className="text-xs font-semibold mt-0.5" style={{ color: theme.muted }}>{company.name_en}</p>
@@ -92,7 +98,7 @@ export function InvoiceHeader({
               </p>
             )}
           </div>
-          <h1 className="text-lg font-black shrink-0">{title}</h1>
+          <h1 className="text-lg font-black shrink-0">{titleNode}</h1>
         </div>
         {showTrn && (
           <div
@@ -139,10 +145,10 @@ export function InvoiceHeader({
         {showLogo && <div className="w-[130px] shrink-0 hidden sm:block print:block" />}
       </div>
       <div
-        className="text-center py-1.5 font-black text-sm tracking-wide"
+        className="invoice-title-strip text-center py-1.5 font-black text-sm tracking-wide"
         style={{ background: theme.titleBg, color: "#FFFFFF" }}
       >
-        {title}
+        {titleNode}
       </div>
       {showTrn && (
         <div

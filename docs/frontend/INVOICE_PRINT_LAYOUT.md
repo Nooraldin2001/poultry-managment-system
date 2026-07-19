@@ -55,3 +55,8 @@ screen transforms, width constraints, overflow clipping, and app navigation.
 same fixed 196 mm compact layout, and generates A4 pages with 6/7 mm margins.
 Invoice rows and the complete final summary are protected from splitting.
 Downloaded files use the invoice number, for example `invoice-INV-00117.pdf`.
+
+Export uses an off-screen fixed-width clone with larger bottom margin so title,
+table totals, payment method, and signature labels are not clipped by
+html2canvas/page edges. Bilingual titles use isolated Arabic/English spans to
+avoid RTL garbling in the generated PDF.
